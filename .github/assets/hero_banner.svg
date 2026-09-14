@@ -107,8 +107,8 @@
     <rect x="385" y="0" width="175" height="38" rx="19" fill="#201330" stroke="#F2B43A" stroke-opacity="0.4" stroke-width="1.2"/>
     <text x="472" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#FCEAC2">✨ Adaptive 5-Phase UX</text>
 
-    <!-- Pill 4: DeepSeek Intelligence -->
+    <!-- Pill 4: Clinical AI -->
     <rect x="575" y="0" width="155" height="38" rx="19" fill="#201330" stroke="#D94F6E" stroke-opacity="0.4" stroke-width="1.2"/>
-    <text x="652" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#FAD1DC">🤖 DeepSeek AI V3</text>
+    <text x="652" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#FAD1DC">🤖 Clinical AI</text>
   </g>
 </svg>

@@ -6,7 +6,7 @@
   <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.27+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" /></a>
   <a href="https://riverpod.dev"><img src="https://img.shields.io/badge/Riverpod-2.6-4B32C3?style=for-the-badge" alt="Riverpod" /></a>
   <a href="https://sqlite.org"><img src="https://img.shields.io/badge/Local--First-SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" /></a>
-  <a href="https://deepseek.com"><img src="https://img.shields.io/badge/AI-DeepSeek--V3-4D6BFE?style=for-the-badge" alt="DeepSeek" /></a>
+  <img src="https://img.shields.io/badge/AI-Clinical%20Companion-4D6BFE?style=for-the-badge" alt="AI Companion" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License" /></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge" alt="PRs Welcome" /></a>
 </p>
@@ -81,7 +81,7 @@ Luna has no static dark or light mode. Instead, the entire visual language — a
 </td>
 <td width="50%" valign="top">
 
-### 🤖 Clinical AI Companion (DeepSeek)
+### 🤖 Clinical AI Companion
 * **Zero Platitudes**: Strictly eliminates toxic positivity and generic advice. Delivers 3 actionable vectors: *Targeted Biochemical/Nutritional*, *Neuro-cognitive/Pacing*, and *Physical/Somatic Reset*.
 * **Extreme Efficiency**: Budgeted under 450–600 tokens per check-in via strict JSON schemas ($5.00 lasts multiple years of daily usage).
 * **100% Offline Fallback**: Deterministic on-device fallback operates smoothly without connectivity.
@@ -113,7 +113,7 @@ lib/
 │   │   ├── cycle_daily_intelligence.dart # 28-day individual day wisdom engine
 │   │   ├── cycle_engine.dart             # Modulo arithmetic cycle calculator
 │   │   ├── cycle_refinement_service.dart # Rolling average gap adjustment
-│   │   ├── deepseek_service.dart         # DeepSeek API client with strict JSON schema
+│   │   ├── deepseek_service.dart         # Clinical AI client with strict JSON schema
 │   │   ├── notification_service.dart     # Local scheduled reminders
 │   │   └── storage_service.dart          # Local SQLite & SharedPreferences
 │   └── theme/                # LunaTheme dynamic 5-phase styling engine
