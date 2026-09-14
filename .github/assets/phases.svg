@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="100%" height="100%">
+  <defs>
+    <!-- Filter for soft shadow -->
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="300" fill="transparent"/>
+
+  <!-- Card 1: Menstrual -->
+  <g transform="translate(10, 15)" filter="url(#cardShadow)">
+    <rect width="225" height="260" rx="20" fill="#241016" stroke="#D94F6E" stroke-opacity="0.4" stroke-width="1.5"/>
+    <circle cx="112" cy="55" r="28" fill="#D94F6E" fill-opacity="0.2"/>
+    <text x="112" y="63" text-anchor="middle" font-size="24">🩸</text>
+    <text x="112" y="112" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="20" font-weight="700" fill="#FCE8EC">Menstrual</text>
+    <rect x="57" y="125" width="110" height="22" rx="11" fill="#D94F6E" fill-opacity="0.25"/>
+    <text x="112" y="140" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" font-weight="700" fill="#FF8FA3">DAYS 1 – 5</text>
+    <text x="112" y="175" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#E8B4BE">Rest, renew &amp; heat</text>
+    <text x="112" y="196" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#BA8894">Estrogen &amp; Prog low</text>
+    <text x="112" y="215" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#BA8894">Iron &amp; Mg replenish</text>
+    <rect x="35" y="235" width="155" height="4" rx="2" fill="#D94F6E"/>
+  </g>
+
+  <!-- Card 2: Follicular -->
+  <g transform="translate(250, 15)" filter="url(#cardShadow)">
+    <rect width="225" height="260" rx="20" fill="#10241A" stroke="#4CAF87" stroke-opacity="0.4" stroke-width="1.5"/>
+    <circle cx="112" cy="55" r="28" fill="#4CAF87" fill-opacity="0.2"/>
+    <text x="112" y="63" text-anchor="middle" font-size="24">🌱</text>
+    <text x="112" y="112" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="20" font-weight="700" fill="#E2F7ED">Follicular</text>
+    <rect x="57" y="125" width="110" height="22" rx="11" fill="#4CAF87" fill-opacity="0.25"/>
+    <text x="112" y="140" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" font-weight="700" fill="#80E8B8">DAYS 6 – 13</text>
+    <text x="112" y="175" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#A8E0C4">Rising energy &amp; spark</text>
+    <text x="112" y="196" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#78B896">Estrogen climbing</text>
+    <text x="112" y="215" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#78B896">High verbal fluency</text>
+    <rect x="35" y="235" width="155" height="4" rx="2" fill="#4CAF87"/>
+  </g>
+
+  <!-- Card 3: Ovulatory -->
+  <g transform="translate(490, 15)" filter="url(#cardShadow)">
+    <rect width="225" height="260" rx="20" fill="#241E10" stroke="#F2B43A" stroke-opacity="0.4" stroke-width="1.5"/>
+    <circle cx="112" cy="55" r="28" fill="#F2B43A" fill-opacity="0.2"/>
+    <text x="112" y="63" text-anchor="middle" font-size="24">✨</text>
+    <text x="112" y="112" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="20" font-weight="700" fill="#FFF6E0">Ovulatory</text>
+    <rect x="52" y="125" width="120" height="22" rx="11" fill="#F2B43A" fill-opacity="0.25"/>
+    <text x="112" y="140" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" font-weight="700" fill="#FFD980">DAYS 14 – 16</text>
+    <text x="112" y="175" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#F0D28E">Peak magnetism</text>
+    <text x="112" y="196" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#C4A356">LH Surge + Testo peak</text>
+    <text x="112" y="215" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#C4A356">Strength PRs &amp; drive</text>
+    <rect x="35" y="235" width="155" height="4" rx="2" fill="#F2B43A"/>
+  </g>
+
+  <!-- Card 4: Early Luteal -->
+  <g transform="translate(730, 15)" filter="url(#cardShadow)">
+    <rect width="225" height="260" rx="20" fill="#241812" stroke="#E8A87C" stroke-opacity="0.4" stroke-width="1.5"/>
+    <circle cx="112" cy="55" r="28" fill="#E8A87C" fill-opacity="0.2"/>
+    <text x="112" y="63" text-anchor="middle" font-size="24">🍂</text>
+    <text x="112" y="112" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="20" font-weight="700" fill="#FDF1E8">Early Luteal</text>
+    <rect x="52" y="125" width="120" height="22" rx="11" fill="#E8A87C" fill-opacity="0.25"/>
+    <text x="112" y="140" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" font-weight="700" fill="#F2BE9B">DAYS 17 – 22</text>
+    <text x="112" y="175" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#E8BCA0">Cozy &amp; detail-focused</text>
+    <text x="112" y="196" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#BA8D72">Progesterone &amp; GABA</text>
+    <text x="112" y="215" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#BA8D72">Metabolic burn +200 kcal</text>
+    <rect x="35" y="235" width="155" height="4" rx="2" fill="#E8A87C"/>
+  </g>
+
+  <!-- Card 5: Late Luteal (PMS) -->
+  <g transform="translate(970, 15)" filter="url(#cardShadow)">
+    <rect width="225" height="260" rx="20" fill="#1C1628" stroke="#9B84D4" stroke-opacity="0.4" stroke-width="1.5"/>
+    <circle cx="112" cy="55" r="28" fill="#9B84D4" fill-opacity="0.2"/>
+    <text x="112" y="63" text-anchor="middle" font-size="24">🌙</text>
+    <text x="112" y="112" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="20" font-weight="700" fill="#F3EEFB">Late Luteal</text>
+    <rect x="47" y="125" width="130" height="22" rx="11" fill="#9B84D4" fill-opacity="0.25"/>
+    <text x="112" y="140" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" font-weight="700" fill="#C2B2EA">DAYS 23 – 28+</text>
+    <text x="112" y="175" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#C5B6E8">Radical gentleness</text>
+    <text x="112" y="196" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#9884BD">Hormone reset drop</text>
+    <text x="112" y="215" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="11" fill="#9884BD">Amygdala sensitivity</text>
+    <rect x="35" y="235" width="155" height="4" rx="2" fill="#9B84D4"/>
+  </g>
+</svg>

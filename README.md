@@ -1,128 +1,155 @@
-# 🌙 Luna
+<p align="center">
+  <img src=".github/assets/hero_banner.svg" alt="Luna Banner" width="100%" />
+</p>
 
-> An open-source, offline-first cycle companion built for women who are tired of paywalled health data, invasive ad trackers, and generic "drink more water" advice.
+<p align="center">
+  <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.27+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" /></a>
+  <a href="https://riverpod.dev"><img src="https://img.shields.io/badge/Riverpod-2.6-4B32C3?style=for-the-badge" alt="Riverpod" /></a>
+  <a href="https://sqlite.org"><img src="https://img.shields.io/badge/Local--First-SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" /></a>
+  <a href="https://deepseek.com"><img src="https://img.shields.io/badge/AI-DeepSeek--V3-4D6BFE?style=for-the-badge" alt="DeepSeek" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License" /></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge" alt="PRs Welcome" /></a>
+</p>
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.27+-02569B?style=flat-square&logo=flutter&logoColor=white)](https://flutter.dev)
-[![Riverpod](https://img.shields.io/badge/Riverpod-2.6-4B32C3?style=flat-square)](https://riverpod.dev)
-[![SQLite](https://img.shields.io/badge/Local--First-SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
-[![DeepSeek](https://img.shields.io/badge/AI-DeepSeek--V3-4D6BFE?style=flat-square)](https://deepseek.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-
----
-
-## Why Luna Exists
-
-Most period-tracking apps in the store today share the same fundamental flaws:
-1. **The Paywall Problem**: Basic physiological insights, cycle history, and symptom correlations are locked behind aggressive \$40–\$70/year subscriptions.
-2. **The Privacy Nightmare**: Menstrual and fertility telemetry is routinely sold to third-party data brokers and ad networks.
-3. **The "Cliche Robot" Syndrome**: They treat a woman's body like a static calendar date, offering robotic tips ("take a warm bath", "hydrate!") that ignore real endocrine physiology.
-
-**Luna is our answer.** It is an elegant, privacy-first, scientifically rigorous cycle companion that treats cycle tracking as an interconnected hormonal continuum. It runs 100% locally on your phone, charges \$0, collects zero analytics, and changes its entire visual identity to match the biological phase your body is currently experiencing.
+<p align="center">
+  <b>A science-first, offline-private cycle companion built for women who are tired of paywalled health data, intrusive ad trackers, and generic "drink more water" platitudes.</b>
+</p>
 
 ---
 
-## Key Features
+## 🎯 Why Luna Exists
 
-### 🎨 Adaptive Living Design System
-Luna doesn't have a static dark mode or light mode. Instead, the entire app visually shifts its ambient glow, gradients, typography, and card accents to reflect your endocrine phase:
+Most period-tracking apps treat a woman's body as an advertising asset or a static date counter. Luna was engineered from the ground up as a biological companion — honoring real endocrinology, 100% on-device privacy, and zero paywalls.
 
-| Phase | Aesthetic & Theme | Dominant Hormones | Primary Experience |
-| :--- | :--- | :--- | :--- |
-| **Menstrual** (Days 1–5) | Deep Velvet Crimson (`#D94F6E`) | Estrogen & Progesterone low | Rest, heat therapy, iron replenishment |
-| **Follicular** (Days 6–13) | Vibrant Emerald Mint (`#4CAF87`) | Estrogen & Serotonin rising | Creativity, high cognitive energy, strength |
-| **Ovulatory** (Days 14–16) | Luminous Citrine Gold (`#F2B43A`) | Estrogen peak + LH surge | High confidence, vocal clarity, peak endurance |
-| **Early Luteal** (Days 17–22) | Cozy Terracotta Amber (`#E8A87C`) | Progesterone rising (GABA) | Detail work, complex carbs, steady pacing |
-| **Late Luteal / PMS** (Days 23–28+) | Twilight Violet Lavender (`#9B84D4`) | Steep hormone drop | Amygdala sensitivity care, gentle boundaries |
+<p align="center">
+  <img src=".github/assets/comparison.svg" alt="Legacy Trackers vs Luna" width="100%" />
+</p>
 
 ---
 
-### 🧬 The 28-Day Biological Intelligence Engine
-Instead of repeating the same canned text across an entire 5-day phase, Luna includes a day-by-day biological intelligence engine (`CycleDailyIntelligence`) covering every single day of the cycle:
-* **Day 2**: Focuses on acute iron and magnesium replenishment during peak blood volume loss.
-* **Day 8**: Targets prefrontal cortex connectivity and progressive strength gains as estrogen spikes insulin sensitivity.
-* **Day 14**: Calibrates for peak LH surge and vocal clarity.
-* **Day 20**: Details sleep cooling strategies (~18°C/65°F) to counter progesterone-induced basal body temperature elevation.
-* **Day 25**: Recommends natural COX-2 anti-inflammatory teas (ginger/turmeric) to preempt prostaglandin cramping before your bleed arrives.
-* **Infinite Multi-Cycle Engine**: Circular modulo arithmetic accurately calculates past and future dates without blank states.
+## 🎨 The Adaptive Living Design System
+
+Luna has no static dark or light mode. Instead, the entire visual language — ambient radial glows, typography highlights, card surfaces, and navigation accents — dynamically morphs to reflect your real hormonal state:
+
+<p align="center">
+  <img src=".github/assets/phases.svg" alt="Luna Phase System" width="100%" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Menstrual_Phase-Days_1--5-D94F6E?style=flat-square" alt="Menstrual" />
+  <img src="https://img.shields.io/badge/Follicular_Phase-Days_6--13-4CAF87?style=flat-square" alt="Follicular" />
+  <img src="https://img.shields.io/badge/Ovulatory_Phase-Days_14--16-F2B43A?style=flat-square" alt="Ovulatory" />
+  <img src="https://img.shields.io/badge/Early_Luteal-Days_17--22-E8A87C?style=flat-square" alt="Early Luteal" />
+  <img src="https://img.shields.io/badge/Late_Luteal_(PMS)-Days_23--28+-9B84D4?style=flat-square" alt="Late Luteal" />
+</p>
+
+* **Menstrual (`#D94F6E`)**: Deep velvet crimson aesthetic. Focuses on uterine muscle relaxation, heat therapy, iron, and restorative stillness.
+* **Follicular (`#4CAF87`)**: Vibrant emerald mint theme. Capitalizes on rising estrogen and dopamine for project kick-offs, social energy, and verbal fluency.
+* **Ovulatory (`#F2B43A`)**: Citrine gold glow. Peak magnetism, strength PRs, and LH surge alignment.
+* **Early Luteal (`#E8A87C`)**: Terracotta amber warmth. Progesterone-driven calm, detail orientation, and metabolic carb balance.
+* **Late Luteal / PMS (`#9B84D4`)**: Twilight lavender ambiance. Gentle boundaries, amygdala sensitivity care, and biological PMS validation.
 
 ---
 
-### 🍽️ Craving & Diet-Adaptive Smart Nutrition Sync
-Food cravings aren't a lack of willpower — they're hormonal biochemistry asking for specific micronutrients. Luna features an on-demand functional nutrition engine:
-* **Strict Dietary Filtering**: Explicit support for **Pure Vegetarian** (strictly zero meat, fish, or egg), **Eggetarian** (vegetarian with eggs allowed), and **Non-Vegetarian**.
-* **Craving Synchronization**: Whether she feels like fast food, warm brothy comfort, fresh salads, or sweet treats, Luna translates the craving into a hormone-safe, nutrient-dense recommendation with biological rationale and smart ingredient swaps.
+## ⚡ Core Feature Highlights
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🧬 28-Day Biological Intelligence
+* **Every Single Day Has Unique Science**: No repeated canned cards. Day 2 focuses on acute blood volume and iron loss; Day 8 targets prefrontal cortex synaptic density; Day 20 manages basal body temp elevation (~18°C sleep); Day 25 leverages natural COX-2 inhibitors for prostaglandin cramp prevention.
+* **Mathematical Modulo Engine**: Continuous circular cycle projection ensures zero blank calendar states, whether reviewing past history or looking 6 months ahead.
+
+</td>
+<td width="50%" valign="top">
+
+### 🍽️ Smart Nutrition Sync
+* **Diet-Adaptive Filtering**: Toggle between **Pure Vegetarian** (strictly zero meat, seafood, or egg), **Eggetarian**, and **Non-Vegetarian** presets.
+* **Craving Biochemistry**: Craving salty snacks, chocolate, or warm comfort? Luna translates cravings into hormonal micronutrient cues (magnesium, zinc, healthy lipids) with tailored biological ingredient swaps.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 📅 Visual Rhythm Calendar
+* **Continuous Period Flow Banding**: Menstrual bleeding days connect horizontally across the calendar grid with smooth, translucent rose ribbons (inspired by Apple Health and Flo).
+* **Surge Indicators**: Elegant gold rings pinpoint peak LH surge and estimated fertile windows.
+* **1-Tap Date Anchoring**: Long-press or tap any past day to calibrate cycle start dates instantly.
+
+</td>
+<td width="50%" valign="top">
+
+### 🤖 Clinical AI Companion (DeepSeek)
+* **Zero Platitudes**: Strictly eliminates toxic positivity and generic advice. Delivers 3 actionable vectors: *Targeted Biochemical/Nutritional*, *Neuro-cognitive/Pacing*, and *Physical/Somatic Reset*.
+* **Extreme Efficiency**: Budgeted under 450–600 tokens per check-in via strict JSON schemas ($5.00 lasts multiple years of daily usage).
+* **100% Offline Fallback**: Deterministic on-device fallback operates smoothly without connectivity.
+
+</td>
+</tr>
+</table>
 
 ---
 
-### 📅 Visual Calendar Rhythm
-* **Continuous Period Flow Banding**: Menstrual bleeding days are linked with soft, translucent rose bands across the grid (inspired by Flo and Apple Health).
-* **Ovulatory Surge Rings**: Delicate gold indicators mark estimated peak fertility and LH surge windows.
-* **Historical Check-in Dots**: Subtle lavender accents mark days with logged symptoms.
-* **1-Tap Period Anchoring**: Tap any calendar day to anchor or update your cycle start date instantly.
+## 🔒 Privacy & Architecture Guarantees
+
+* **100% On-Device SQLite**: All cycle entries, symptoms, notes, and profile settings remain exclusively in your phone's encrypted sandbox (`luna.db`).
+* **Zero User Tracking**: No Google Analytics, no Facebook SDK, no AppsFlyer, no ad networks.
+* **No Account Mandate**: Launch the app and use it immediately — no phone numbers, passwords, or emails required.
 
 ---
 
-### 🤖 Intelligent Companion (DeepSeek-V3)
-* **Clinical System Prompts**: Luna's companion prompt strictly bans platitudes ("a sock full of rice", toxic positivity) and enforces 3 targeted action vectors:
-  1. *Targeted Biochemical/Nutritional action*
-  2. *Neuro-cognitive/Pacing action*
-  3. *Physical/Somatic reset*
-* **Extreme Token Efficiency**: Prompts are budgeted under 450–600 tokens with strict JSON schemas. (A normal user's daily check-in costs less than \$0.001 / day; \$5.00 lasts multiple years).
-* **100% Offline Fallbacks**: If offline or without an API key, Luna seamlessly falls back to on-device deterministic biological intelligence without interruption.
-
----
-
-### 🔒 Privacy by Design
-* **100% On-Device SQLite**: All logs, symptoms, notes, and cycle history are stored in a local SQLite database (`luna.db`).
-* **Zero Telemetry**: No Google Analytics, no Mixpanel, no Facebook SDK, no user trackers.
-* **No Account Required**: Open the app and use it immediately.
-
----
-
-## 🏗️ Architecture & Codebase Overview
+<details>
+<summary><b>📂 Codebase Architecture &amp; File Tree (Click to expand)</b></summary>
 
 ```
 lib/
 ├── core/
-│   ├── constants/            # Phase color schemes, hormonal definitions & knowledge
-│   ├── models/               # UserProfile, LogEntry data models
-│   ├── providers/            # Riverpod state providers (cycle, profile, theme)
+│   ├── constants/            # Phase color schemes, hormonal definitions & science knowledge
+│   ├── models/               # UserProfile, LogEntry immutable data models
+│   ├── providers/            # Riverpod state management (cycle, profile, dynamic theme)
 │   ├── services/
-│   │   ├── cycle_daily_intelligence.dart # 28-day biological wisdom engine
-│   │   ├── cycle_engine.dart             # Mathematical modulo cycle arithmetic
+│   │   ├── cycle_daily_intelligence.dart # 28-day individual day wisdom engine
+│   │   ├── cycle_engine.dart             # Modulo arithmetic cycle calculator
 │   │   ├── cycle_refinement_service.dart # Rolling average gap adjustment
-│   │   ├── deepseek_service.dart         # DeepSeek API client with JSON schema
-│   │   ├── notification_service.dart     # Local scheduled notifications
+│   │   ├── deepseek_service.dart         # DeepSeek API client with strict JSON schema
+│   │   ├── notification_service.dart     # Local scheduled reminders
 │   │   └── storage_service.dart          # Local SQLite & SharedPreferences
-│   └── theme/                # LunaTheme dynamic styling engine
+│   └── theme/                # LunaTheme dynamic 5-phase styling engine
 ├── features/
 │   ├── calendar/             # Cycle rhythm calendar & day detail cards
 │   ├── comfort/              # Comfort spin & dopamine care mode
-│   ├── home/                 # Dynamic main feed & daily playbook
+│   ├── home/                 # Dynamic daily feed, playbook & body dispatch
 │   ├── insights/             # Long-term blueprint, energy trends & mood climate
-│   ├── knowledge/            # Women's health educational library
+│   ├── knowledge/            # Women's health educational encyclopedia
 │   ├── log/                  # Daily check-in logger (mood, energy, flow, cramps)
 │   ├── luna_ai/              # Deep conversational companion
 │   ├── nutrition/            # Craving-adaptive cycle nutrition sheet
 │   ├── onboarding/           # 5-step smooth profile setup
-│   ├── settings/             # Notification times & cycle defaults
+│   ├── settings/             # Notification times & cycle preferences
 │   └── splash/               # Breathing radial orb splash
 └── shared/
-    └── widgets/              # Bottom navigation bar & custom phase orb
+    └── widgets/              # Adaptive bottom navigation bar & custom phase orb
 ```
 
-### Core Technologies:
-* **Framework**: Flutter (SDK `>=3.3.0 <4.0.0`, tested on Flutter 3.27+)
-* **State Management**: [flutter_riverpod 2.6](https://pub.dev/packages/flutter_riverpod)
-* **Local Database**: [sqflite 2.3](https://pub.dev/packages/sqflite) + [shared_preferences](https://pub.dev/packages/shared_preferences)
+</details>
+
+<details>
+<summary><b>⚙️ Technical Stack &amp; Dependencies (Click to expand)</b></summary>
+
+* **Framework**: Flutter (SDK `>=3.3.0 <4.0.0`, fully modernized for Flutter 3.27+)
+* **State Architecture**: [flutter_riverpod 2.6](https://pub.dev/packages/flutter_riverpod)
+* **Persistence**: [sqflite 2.3](https://pub.dev/packages/sqflite) + [shared_preferences](https://pub.dev/packages/shared_preferences)
 * **Routing**: [go_router 13.2](https://pub.dev/packages/go_router)
 * **Typography**: Google Fonts (*Cormorant Garamond* for editorial luxury, *DM Sans* for UI clarity)
-* **Animations**: [flutter_animate 4.5](https://pub.dev/packages/flutter_animate)
+* **Motion & Polish**: [flutter_animate 4.5](https://pub.dev/packages/flutter_animate)
+
+</details>
 
 ---
 
-## ⚡ Quickstart & Development
+## 🚀 Quickstart & Development
 
 ### 1. Clone & Install
 ```bash
@@ -131,16 +158,16 @@ cd Luna
 flutter pub get
 ```
 
-### 2. Verify Codebase
+### 2. Verify Code Quality
 ```bash
 flutter analyze lib
 flutter test
 ```
-*(Should output: `No issues found!` and `All tests passed!`)*
+*Expected result: `No issues found!` and `All tests passed!`*
 
 ### 3. Run Locally
 ```bash
-# Run on connected Android device or emulator
+# Launch on connected Android device or emulator
 flutter run
 ```
 
@@ -148,31 +175,29 @@ flutter run
 ```bash
 flutter build apk --release --target-platform android-arm64
 ```
-The compiled binary will be located at:
-```
-build/app/outputs/flutter-apk/app-release.apk
-```
+The compiled production binary will be generated at:
+`build/app/outputs/flutter-apk/app-release.apk`
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions from developers, designers, endocrinologists, and women's health advocates!
-1. Fork the repo.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Ensure `flutter analyze lib` passes with **0 errors and 0 warnings**.
-4. Commit your changes (`git commit -m 'feat: add amazing feature'`).
-5. Push to the branch (`git push origin feature/amazing-feature`).
-6. Open a Pull Request.
+Contributions are welcome from developers, designers, endocrinologists, and women's health advocates.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Ensure `flutter analyze lib` passes with **0 errors, 0 warnings**
+4. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+5. Push to your branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+Please review our [Contributing Guide](CONTRIBUTING.md) for style and architecture guidelines.
 
 ---
 
 ## 📜 License
 
-Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
----
-
-<div align="center">
-Built with care for a healthier, more intuitive understanding of the female body.
-</div>
+<p align="center">
+  <sub>Built with care for a healthier, scientifically intuitive understanding of the female body.</sub>
+</p>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="100%" height="100%">
+  <defs>
+    <filter id="shadowBox" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="320" fill="transparent"/>
+
+  <!-- Left Column: Legacy Trackers -->
+  <g transform="translate(40, 20)" filter="url(#shadowBox)">
+    <rect width="530" height="280" rx="20" fill="#1C1014" stroke="#E07070" stroke-opacity="0.3" stroke-width="1.2"/>
+    <rect x="24" y="24" width="130" height="26" rx="13" fill="#E07070" fill-opacity="0.18"/>
+    <text x="89" y="42" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="700" fill="#FF8FA3">LEGACY APPS</text>
+    
+    <text x="24" y="85" font-family="'DM Sans', sans-serif" font-size="14" fill="#E0B4BC">❌ Aggressive $50–$70/year paywalls for basic history</text>
+    <text x="24" y="125" font-family="'DM Sans', sans-serif" font-size="14" fill="#E0B4BC">❌ Intimate cycle telemetry shared with ad networks</text>
+    <text x="24" y="165" font-family="'DM Sans', sans-serif" font-size="14" fill="#E0B4BC">❌ Robotic cliches ("take a bath", "drink warm water")</text>
+    <text x="24" y="205" font-family="'DM Sans', sans-serif" font-size="14" fill="#E0B4BC">❌ Treats all days of a phase identically (hardcoded index)</text>
+    <text x="24" y="245" font-family="'DM Sans', sans-serif" font-size="14" fill="#E0B4BC">❌ Requires mandatory account creation to track a date</text>
+  </g>
+
+  <!-- Right Column: Luna -->
+  <g transform="translate(630, 20)" filter="url(#shadowBox)">
+    <rect width="530" height="280" rx="20" fill="#122018" stroke="#4CAF87" stroke-opacity="0.4" stroke-width="1.2"/>
+    <rect x="24" y="24" width="130" height="26" rx="13" fill="#4CAF87" fill-opacity="0.2"/>
+    <text x="89" y="42" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="700" fill="#80E8B8">LUNA (OPEN SOURCE)</text>
+    
+    <text x="24" y="85" font-family="'DM Sans', sans-serif" font-size="14" font-weight="600" fill="#D5F5E3">✓ 100% Free &amp; Open Source forever (MIT License)</text>
+    <text x="24" y="125" font-family="'DM Sans', sans-serif" font-size="14" font-weight="600" fill="#D5F5E3">✓ Zero telemetry; encrypted local SQLite database</text>
+    <text x="24" y="165" font-family="'DM Sans', sans-serif" font-size="14" font-weight="600" fill="#D5F5E3">✓ Clinical DeepSeek reasoning: biochemical &amp; somatic cues</text>
+    <text x="24" y="205" font-family="'DM Sans', sans-serif" font-size="14" font-weight="600" fill="#D5F5E3">✓ 28-day biological wisdom: unique advice every single day</text>
+    <text x="24" y="245" font-family="'DM Sans', sans-serif" font-size="14" font-weight="600" fill="#D5F5E3">✓ Zero accounts needed — install and use immediately</text>
+  </g>
+</svg>

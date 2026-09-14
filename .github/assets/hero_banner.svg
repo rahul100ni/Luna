@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0E0817"/>
+      <stop offset="50%" stop-color="#180D25"/>
+      <stop offset="100%" stop-color="#0A0610"/>
+    </linearGradient>
+
+    <!-- Ambient Glows -->
+    <radialGradient id="glowPurple" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#9B84D4" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#9B84D4" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glowRose" cx="20%" cy="30%" r="40%">
+      <stop offset="0%" stop-color="#D94F6E" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glowGold" cx="80%" cy="70%" r="40%">
+      <stop offset="0%" stop-color="#F2B43A" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Moon Glow Filter -->
+    <filter id="moonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur1"/>
+      <feGaussianBlur stdDeviation="30" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <linearGradient id="moonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="50%" stop-color="#E5D9F8"/>
+      <stop offset="100%" stop-color="#9B84D4"/>
+    </linearGradient>
+
+    <linearGradient id="pillBorder" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#D94F6E" stop-opacity="0.6"/>
+      <stop offset="33%" stop-color="#F2B43A" stop-opacity="0.6"/>
+      <stop offset="66%" stop-color="#4CAF87" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#9B84D4" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="420" fill="url(#bgGrad)" rx="24"/>
+  <circle cx="240" cy="120" r="300" fill="url(#glowRose)"/>
+  <circle cx="960" cy="300" r="320" fill="url(#glowGold)"/>
+  <circle cx="600" cy="180" r="380" fill="url(#glowPurple)"/>
+
+  <!-- Subtle grid pattern -->
+  <g stroke="#FFFFFF" stroke-opacity="0.03" stroke-width="1">
+    <line x1="100" y1="0" x2="100" y2="420"/>
+    <line x1="300" y1="0" x2="300" y2="420"/>
+    <line x1="500" y1="0" x2="500" y2="420"/>
+    <line x1="700" y1="0" x2="700" y2="420"/>
+    <line x1="900" y1="0" x2="900" y2="420"/>
+    <line x1="1100" y1="0" x2="1100" y2="420"/>
+    <line x1="0" y1="100" x2="1200" y2="100"/>
+    <line x1="0" y1="200" x2="1200" y2="200"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/>
+  </g>
+
+  <!-- Center Artwork: Glowing Crescent Moon -->
+  <g transform="translate(600, 110)" filter="url(#moonGlow)">
+    <!-- Outer halo -->
+    <circle cx="0" cy="0" r="54" fill="#9B84D4" fill-opacity="0.18"/>
+    <!-- Crescent Moon Path -->
+    <path d="M 0 -42 A 42 42 0 1 0 36 21 A 34 34 0 1 1 -8 -36 A 42 42 0 0 0 0 -42 Z" fill="url(#moonGrad)"/>
+    <!-- Inner Sparkle -->
+    <circle cx="16" cy="-2" r="3.5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Brand Title -->
+  <text x="600" y="215" text-anchor="middle" font-family="'Cormorant Garamond', 'Georgia', serif" font-size="56" font-weight="700" fill="#FFFFFF" letter-spacing="8">
+    L U N A
+  </text>
+
+  <!-- Tagline -->
+  <text x="600" y="258" text-anchor="middle" font-family="'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" font-weight="400" fill="#D0C4E8" letter-spacing="0.5">
+    The Science-First, Offline-Private Cycle Intelligence Companion
+  </text>
+
+  <!-- Subtitle description -->
+  <text x="600" y="290" text-anchor="middle" font-family="'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="400" fill="#9D8BB8" letter-spacing="0.2">
+    No paywalls. No data brokers. Real endocrinology &amp; adaptive hormonal UX.
+  </text>
+
+  <!-- Badges / Pillars Ribbon -->
+  <g transform="translate(235, 335)">
+    <!-- Pill 1: Offline SQLite -->
+    <rect x="0" y="0" width="165" height="38" rx="19" fill="#201330" stroke="#9B84D4" stroke-opacity="0.4" stroke-width="1.2"/>
+    <text x="82" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#E2D9F3">🔒 100% Local SQLite</text>
+
+    <!-- Pill 2: 28-Day Intelligence -->
+    <rect x="180" y="0" width="190" height="38" rx="19" fill="#201330" stroke="#4CAF87" stroke-opacity="0.4" stroke-width="1.2"/>
+    <text x="275" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#D2F5E3">🧬 28-Day Daily Science</text>
+
+    <!-- Pill 3: Adaptive Themes -->
+    <rect x="385" y="0" width="175" height="38" rx="19" fill="#201330" stroke="#F2B43A" stroke-opacity="0.4" stroke-width="1.2"/>
+    <text x="472" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#FCEAC2">✨ Adaptive 5-Phase UX</text>
+
+    <!-- Pill 4: DeepSeek Intelligence -->
+    <rect x="575" y="0" width="155" height="38" rx="19" fill="#201330" stroke="#D94F6E" stroke-opacity="0.4" stroke-width="1.2"/>
+    <text x="652" y="24" text-anchor="middle" font-family="'DM Sans', sans-serif" font-size="12" font-weight="600" fill="#FAD1DC">🤖 DeepSeek AI V3</text>
+  </g>
+</svg>
