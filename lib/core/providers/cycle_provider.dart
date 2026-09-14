@@ -3,6 +3,7 @@ import '../models/user_profile.dart';
 import '../models/log_entry.dart';
 import '../services/storage_service.dart';
 import '../services/cycle_engine.dart';
+import '../services/notification_service.dart';
 import '../constants/phase_constants.dart';
 
 // ── Profile Provider ─────────────────────────────────────────────────────────
@@ -22,6 +23,8 @@ class ProfileNotifier extends StateNotifier<UserProfile?> {
   Future<void> saveProfile(UserProfile profile) async {
     await StorageService.saveProfile(profile);
     state = profile;
+    final cycleState = CycleEngine.calculate(profile);
+    NotificationService.schedulePhaseNotifications(cycleState);
   }
 
   Future<void> updateLastPeriod(DateTime? date) async {
@@ -31,6 +34,8 @@ class ProfileNotifier extends StateNotifier<UserProfile?> {
         : state!.copyWith(lastPeriodStart: date);
     await StorageService.saveProfile(updated);
     state = updated;
+    final cycleState = CycleEngine.calculate(updated);
+    NotificationService.schedulePhaseNotifications(cycleState);
   }
 
   Future<void> clear() async {

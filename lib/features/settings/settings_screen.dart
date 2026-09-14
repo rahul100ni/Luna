@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/notification_service.dart';
 import 'version_manager_screen.dart';
 
 // ── Keys for notification SharedPreferences ───────────────────────────────────
@@ -662,16 +663,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 }
 
-// ── Notification bottom sheet (StatefulWidget to manage prefs state) ──────────
-class _NotificationSheet extends StatefulWidget {
+// ── Notification bottom sheet (ConsumerStatefulWidget to manage prefs state & reschedule) ──────────
+class _NotificationSheet extends ConsumerStatefulWidget {
   final PhaseColors colors;
   const _NotificationSheet({required this.colors});
 
   @override
-  State<_NotificationSheet> createState() => _NotificationSheetState();
+  ConsumerState<_NotificationSheet> createState() => _NotificationSheetState();
 }
 
-class _NotificationSheetState extends State<_NotificationSheet> {
+class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
   bool _dailyCheckin = true;
   bool _periodSoon = true;
   bool _phaseChange = true;
@@ -701,6 +702,14 @@ class _NotificationSheetState extends State<_NotificationSheet> {
   Future<void> _setPref(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
+    await _rescheduleNotifications();
+  }
+
+  Future<void> _rescheduleNotifications() async {
+    final cycleState = ref.read(cycleStateProvider);
+    if (cycleState != null) {
+      await NotificationService.schedulePhaseNotifications(cycleState);
+    }
   }
 
   Future<void> _pickTime() async {
@@ -723,6 +732,7 @@ class _NotificationSheetState extends State<_NotificationSheet> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_kNotifDailyHour, picked.hour);
       await prefs.setInt(_kNotifDailyMinute, picked.minute);
+      await _rescheduleNotifications();
     }
   }
 
@@ -805,6 +815,60 @@ class _NotificationSheetState extends State<_NotificationSheet> {
               setState(() => _pms = v);
               _setPref(_kNotifPms, v);
             },
+          ),
+
+          const SizedBox(height: 16),
+
+          // Immediate test notification button
+          GestureDetector(
+            onTap: () async {
+              final granted = await NotificationService.requestPermission();
+              await NotificationService.showImmediateNotification(
+                title: 'Luna is active 🌙',
+                body: 'Your cycle notifications and daily reminders are working smoothly.',
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: colors.surface,
+                    content: Text(
+                      granted
+                          ? 'Test notification sent to status bar 🌙'
+                          : 'Notification sent (ensure notifications are enabled in Android settings)',
+                      style: GoogleFonts.dmSans(color: colors.onSurface),
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: colors.primary.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.notifications_active_outlined,
+                      size: 18, color: colors.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Send Test Notification',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: colors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 8),

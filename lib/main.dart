@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'core/services/storage_service.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/cycle_engine.dart';
 import 'core/providers/theme_provider.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -28,6 +29,13 @@ void main() async {
   // Init services
   await StorageService.init();
   await NotificationService.init();
+
+  // Schedule notifications if profile exists
+  final profile = StorageService.getProfile();
+  if (profile != null) {
+    final state = CycleEngine.calculate(profile);
+    NotificationService.schedulePhaseNotifications(state);
+  }
 
 
   // Transparent status bar
