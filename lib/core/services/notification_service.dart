@@ -36,8 +36,8 @@ class NotificationService {
     }
 
     try {
-      // 2. Android Initialization Settings with dedicated custom silhouette icon
-      const androidInit = AndroidInitializationSettings('ic_notification');
+      // 2. Android Initialization Settings with universal app launcher icon
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
       const initSettings = InitializationSettings(android: androidInit);
 
       await _plugin.initialize(
@@ -47,13 +47,7 @@ class NotificationService {
         },
       );
     } catch (e) {
-      debugPrint('NotificationService primary init failed ($e), attempting fallback to app icon');
-      try {
-        const fallbackInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-        await _plugin.initialize(const InitializationSettings(android: fallbackInit));
-      } catch (fallbackErr) {
-        debugPrint('NotificationService fallback init also failed: $fallbackErr');
-      }
+      debugPrint('NotificationService init error: $e');
     }
 
     try {
@@ -237,7 +231,7 @@ class NotificationService {
           channelDescription: channelDescription,
           importance: Importance.high,
           priority: Priority.high,
-          icon: 'ic_notification',
+          icon: '@mipmap/ic_launcher',
           color: brandColor,
           styleInformation: BigTextStyleInformation(''),
         ),
@@ -276,7 +270,7 @@ class NotificationService {
           channelDescription: channelDescription,
           importance: Importance.high,
           priority: Priority.high,
-          icon: 'ic_notification',
+          icon: '@mipmap/ic_launcher',
           color: brandColor,
           styleInformation: BigTextStyleInformation(''),
         ),
@@ -303,7 +297,7 @@ class NotificationService {
           channelDescription: channelDescription,
           importance: Importance.high,
           priority: Priority.high,
-          icon: 'ic_notification',
+          icon: '@mipmap/ic_launcher',
           color: brandColor,
           styleInformation: BigTextStyleInformation(''),
         ),
