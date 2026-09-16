@@ -2,9 +2,27 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../constants/phase_constants.dart';
 import '../models/log_entry.dart';
+import 'storage_service.dart';
 
 class DeepSeekService {
-  static const String _apiKey = 'DEEPSEEK_API_KEY_PLACEHOLDER';
+  static String? _inMemoryApiKey;
+
+  static String get apiKey {
+    if (_inMemoryApiKey != null && _inMemoryApiKey!.isNotEmpty) {
+      return _inMemoryApiKey!;
+    }
+    const envKey = String.fromEnvironment('DEEPSEEK_API_KEY', defaultValue: '');
+    if (envKey.isNotEmpty) return envKey;
+    return StorageService.getDeepSeekApiKey() ?? '';
+  }
+
+  static bool get hasApiKey => apiKey.isNotEmpty;
+
+  static void setApiKey(String key) {
+    _inMemoryApiKey = key.trim();
+    StorageService.setDeepSeekApiKey(_inMemoryApiKey!);
+  }
+
   static const String _baseUrl = 'https://api.deepseek.com/chat/completions';
   static const String _model = 'deepseek-chat';
 
@@ -119,12 +137,22 @@ class DeepSeekService {
       isChatMode: false,
     );
 
+    if (!hasApiKey) {
+      return LunaResponse.smartFallback(
+        hasCycleAnchor: hasCycleAnchor,
+        phase: phase,
+        dayOfCycle: dayOfCycle,
+        mood: mood,
+        symptoms: symptoms,
+      );
+    }
+
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
+          'Authorization': 'Bearer $apiKey',
         },
         body: jsonEncode({
           'model': _model,
@@ -195,12 +223,22 @@ class DeepSeekService {
       isChatMode: false,
     );
 
+    if (!hasApiKey) {
+      return LunaResponse.smartFallback(
+        hasCycleAnchor: hasCycleAnchor,
+        phase: phase,
+        dayOfCycle: dayOfCycle,
+        mood: mood,
+        symptoms: symptoms,
+      );
+    }
+
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
+          'Authorization': 'Bearer $apiKey',
         },
         body: jsonEncode({
           'model': _model,
@@ -270,12 +308,16 @@ class DeepSeekService {
       isChatMode: true,
     );
 
+    if (!hasApiKey) {
+      return 'I hear you, and your body is giving you clear signals right now. I am operating in offline mode — add an API key in Settings for full real-time conversational reasoning, or ask about your cycle phase! 💜';
+    }
+
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
+          'Authorization': 'Bearer $apiKey',
         },
         body: jsonEncode({
           'model': _model,
@@ -321,6 +363,16 @@ class DeepSeekService {
       symptoms: symptoms,
     );
 
+    if (!hasApiKey) {
+      return DailyPrescription.smartFallback(
+        hasCycleAnchor: hasCycleAnchor,
+        phase: phase,
+        dayOfCycle: dayOfCycle,
+        mood: mood,
+        energyLevel: energyLevel,
+      );
+    }
+
     final userInstruction = '''
 Generate today's personalized biological daily prescription for $userName.
 Return ONLY a valid JSON object matching this schema:
@@ -338,7 +390,7 @@ Return ONLY a valid JSON object matching this schema:
         Uri.parse(_baseUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
+          'Authorization': 'Bearer $apiKey',
         },
         body: jsonEncode({
           'model': _model,
@@ -436,12 +488,21 @@ Return ONLY a JSON object:
 }
 ''';
 
+    if (!hasApiKey) {
+      return NutritionPrescription.smartFallback(
+        dietType: dietType,
+        cravingVibe: cravingVibe,
+        phase: phase,
+        hasCycleAnchor: hasCycleAnchor,
+      );
+    }
+
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_apiKey',
+          'Authorization': 'Bearer $apiKey',
         },
         body: jsonEncode({
           'model': _model,

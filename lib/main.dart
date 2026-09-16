@@ -21,30 +21,45 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Lock to portrait
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Init services
-  await StorageService.init();
-  await NotificationService.init();
-
-  // Schedule notifications if profile exists
-  final profile = StorageService.getProfile();
-  if (profile != null) {
-    final state = CycleEngine.calculate(profile);
-    NotificationService.schedulePhaseNotifications(state);
+  try {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  } catch (e) {
+    debugPrint('Orientation configuration error: $e');
   }
 
+  // Init storage service
+  try {
+    await StorageService.init();
+  } catch (e) {
+    debugPrint('StorageService init error: $e');
+  }
+
+  // Init notifications and schedule
+  try {
+    await NotificationService.init();
+    final profile = StorageService.getProfile();
+    if (profile != null) {
+      final state = CycleEngine.calculate(profile);
+      await NotificationService.schedulePhaseNotifications(state);
+    }
+  } catch (e) {
+    debugPrint('Notification startup error: $e');
+  }
 
   // Transparent status bar
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
+  try {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
+  } catch (e) {
+    debugPrint('System UI overlay style error: $e');
+  }
 
   runApp(const ProviderScope(child: LunaApp()));
 }

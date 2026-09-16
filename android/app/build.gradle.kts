@@ -60,26 +60,4 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
 }
 
-// ── Strip native debug symbols for release (local Windows NDK hook) ─────────
-afterEvaluate {
-    val stripExe = "C:\\Users\\Rahul\\AppData\\Local\\Android\\sdk\\ndk\\30.0.16248370\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-strip.exe"
-    val stripFile = file(stripExe)
-    if (stripFile.exists()) {
-        tasks.matching { it.name == "mergeReleaseNativeLibs" }.configureEach {
-            doLast {
-                val mergedDir = file("${layout.buildDirectory.get()}/intermediates/merged_native_libs/release/mergeReleaseNativeLibs")
-                if (mergedDir.exists()) {
-                    fileTree(mergedDir) { include("**/*.so") }.forEach { soFile ->
-                        val before = soFile.length() / 1_048_576.0
-                        val proc = ProcessBuilder(stripFile.absolutePath, "--strip-debug", soFile.absolutePath)
-                            .redirectErrorStream(true)
-                            .start()
-                        proc.waitFor()
-                        val after = soFile.length() / 1_048_576.0
-                        println("Stripped ${soFile.name}: ${"%.1f".format(before)}MB → ${"%.1f".format(after)}MB")
-                    }
-                }
-            }
-        }
-    }
-}
+

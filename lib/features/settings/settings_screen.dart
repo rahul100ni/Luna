@@ -7,6 +7,7 @@ import '../../core/constants/phase_constants.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/deepseek_service.dart';
 import 'version_manager_screen.dart';
 
 // ── Keys for notification SharedPreferences ───────────────────────────────────
@@ -422,6 +423,136 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  // ── 5b. DeepSeek API Key Configuration ─────────────────────────────────────
+  void _showApiKeySheet(PhaseColors colors) {
+    final currentKey = DeepSeekService.apiKey;
+    final controller = TextEditingController(text: currentKey);
+    bool obscure = true;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: _BottomSheetContainer(
+            colors: colors,
+            child: StatefulBuilder(
+              builder: (ctx, setSheetState) {
+                final hasKey = currentKey.isNotEmpty;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SheetTitle(label: 'DeepSeek AI Configuration', colors: colors),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Luna includes a comprehensive offline clinical reasoning engine that operates 100% locally and privately without internet.\n\nOptionally add your personal DeepSeek API key to enable live online conversational reasoning.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        color: colors.onSurface.withValues(alpha: 0.65),
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      obscureText: obscure,
+                      style: GoogleFonts.dmSans(
+                        color: colors.onSurface,
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'sk-...',
+                        hintStyle: GoogleFonts.dmSans(
+                          color: colors.onSurface.withValues(alpha: 0.35),
+                        ),
+                        filled: true,
+                        fillColor: colors.background,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscure ? Icons.visibility_off : Icons.visibility,
+                            color: colors.onSurface.withValues(alpha: 0.4),
+                          ),
+                          onPressed: () => setSheetState(() => obscure = !obscure),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        if (hasKey) ...[
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: colors.primary,
+                                side: BorderSide(
+                                  color: colors.primary.withValues(alpha: 0.4),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              onPressed: () {
+                                DeepSeekService.setApiKey('');
+                                if (ctx.mounted) Navigator.of(ctx).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('API key removed. Running in offline mode.'),
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                'Remove Key',
+                                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Expanded(
+                          child: _SheetSaveButton(
+                            colors: colors,
+                            onTap: () {
+                              final key = controller.text.trim();
+                              DeepSeekService.setApiKey(key);
+                              if (ctx.mounted) Navigator.of(ctx).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    key.isEmpty
+                                        ? 'Switched to offline clinical intelligence mode.'
+                                        : 'Personal API key saved securely on device.',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // ── 6. About Luna dialog ─────────────────────────────────────────────────────
   void _showAboutDialog(PhaseColors colors) {
     showDialog(
@@ -606,6 +737,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: 'Notification preferences',
             colors: colors,
             onTap: () => _showNotificationSheet(colors),
+          ),
+          // ── AI & Intelligence section ─────────────────────────────────────
+          _SectionHeader(label: 'AI & Intelligence', colors: colors),
+          _SettingsTile(
+            icon: Icons.psychology_outlined,
+            label: 'DeepSeek API Key (Optional)',
+            colors: colors,
+            onTap: () => _showApiKeySheet(colors),
           ),
           const SizedBox(height: 20),
 

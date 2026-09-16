@@ -11,26 +11,30 @@ class StorageService {
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    final dbPath = path.join(await getDatabasesPath(), 'luna.db');
-    _db = await openDatabase(
-      dbPath,
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE log_entries (
-            id TEXT PRIMARY KEY,
-            date TEXT NOT NULL,
-            mood INTEGER NOT NULL,
-            energyLevel INTEGER NOT NULL,
-            flow INTEGER,
-            cramps INTEGER,
-            symptoms TEXT,
-            notes TEXT,
-            periodStarted INTEGER DEFAULT 0
-          )
-        ''');
-      },
-    );
+    try {
+      final dbPath = path.join(await getDatabasesPath(), 'luna.db');
+      _db = await openDatabase(
+        dbPath,
+        version: 1,
+        onCreate: (db, version) async {
+          await db.execute('''
+            CREATE TABLE log_entries (
+              id TEXT PRIMARY KEY,
+              date TEXT NOT NULL,
+              mood INTEGER NOT NULL,
+              energyLevel INTEGER NOT NULL,
+              flow INTEGER,
+              cramps INTEGER,
+              symptoms TEXT,
+              notes TEXT,
+              periodStarted INTEGER DEFAULT 0
+            )
+          ''');
+        },
+      );
+    } catch (_) {
+      // Database factory not available (e.g. host unit testing environment)
+    }
   }
 
   // ── User Profile ──────────────────────────────────────────────────
@@ -114,5 +118,19 @@ class StorageService {
 
   static Future<void> cacheDailyPrescription(String key, String jsonStr) async {
     await _prefs!.setString('prescription_$key', jsonStr);
+  }
+
+  // ── AI API Key ─────────────────────────────────────────────────────
+  static String? getDeepSeekApiKey() {
+    return _prefs?.getString('deepseek_api_key');
+  }
+
+  static Future<void> setDeepSeekApiKey(String apiKey) async {
+    final trimmed = apiKey.trim();
+    if (trimmed.isEmpty) {
+      await _prefs?.remove('deepseek_api_key');
+    } else {
+      await _prefs?.setString('deepseek_api_key', trimmed);
+    }
   }
 }

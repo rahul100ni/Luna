@@ -27,38 +27,53 @@ class NotificationService {
 
   /// Initializes timezone data, notification channels, and Android settings
   static Future<void> init() async {
-    // 1. Initialize Timezone database and align with local device offset
-    tz.initializeTimeZones();
-    _configureLocalTimezone();
+    try {
+      // 1. Initialize Timezone database and align with local device offset
+      tz.initializeTimeZones();
+      _configureLocalTimezone();
+    } catch (e) {
+      debugPrint('NotificationService timezone init error: $e');
+    }
 
-    // 2. Android Initialization Settings with dedicated custom silhouette icon
-    const androidInit =
-        AndroidInitializationSettings('@drawable/ic_notification');
-    const initSettings = InitializationSettings(
-      android: androidInit,
-    );
+    try {
+      // 2. Android Initialization Settings with dedicated custom silhouette icon
+      const androidInit = AndroidInitializationSettings('ic_notification');
+      const initSettings = InitializationSettings(android: androidInit);
 
-    await _plugin.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (details) {
-        // App opened from notification
-      },
-    );
-
-    // 3. Create high-importance notification channel for Android 8.0+ (API 26+)
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-
-    if (androidPlugin != null) {
-      const channel = AndroidNotificationChannel(
-        channelId,
-        channelName,
-        description: channelDescription,
-        importance: Importance.high,
-        enableVibration: true,
-        playSound: true,
+      await _plugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (details) {
+          // App opened from notification
+        },
       );
-      await androidPlugin.createNotificationChannel(channel);
+    } catch (e) {
+      debugPrint('NotificationService primary init failed ($e), attempting fallback to app icon');
+      try {
+        const fallbackInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+        await _plugin.initialize(const InitializationSettings(android: fallbackInit));
+      } catch (fallbackErr) {
+        debugPrint('NotificationService fallback init also failed: $fallbackErr');
+      }
+    }
+
+    try {
+      // 3. Create high-importance notification channel for Android 8.0+ (API 26+)
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidPlugin != null) {
+        const channel = AndroidNotificationChannel(
+          channelId,
+          channelName,
+          description: channelDescription,
+          importance: Importance.high,
+          enableVibration: true,
+          playSound: true,
+        );
+        await androidPlugin.createNotificationChannel(channel);
+      }
+    } catch (e) {
+      debugPrint('NotificationChannel creation error: $e');
     }
   }
 
