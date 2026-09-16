@@ -35,35 +35,39 @@ jobs:
         run: flutter build apk --release
 
       - name: Build Split per ABI APKs
-        run: flutter build apk --split-per-abi
+        run: flutter build apk --split-per-abi --release
 
       - name: Prepare Release Assets
         run: |
           mkdir -p release-assets
           cp build/app/outputs/flutter-apk/app-release.apk release-assets/Luna-universal.apk
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-assets/Luna-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-assets/Luna-v1.0.0.apk
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release-assets/Luna-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk release-assets/Luna-x86_64.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.0
+          name: Luna v1.0.0 — The Science-First Cycle Intelligence Companion
           files: release-assets/*.apk
-          generate_release_notes: true
-          name: Luna ${{ github.ref_name }}
+          generate_release_notes: false
           body: |
-            ## 🌙 Luna ${{ github.ref_name }}
+            ## 🌙 Luna v1.0.0 — Official Production Release
 
-            Welcome to the official release of **Luna** — the science-first, offline-private cycle intelligence companion.
+            Welcome to the official **Luna v1.0.0** release — an offline-first, private cycle intelligence companion equipped with deep longitudinal biomarker pattern recognition.
 
             ### 📦 Packages Included
-            - **`Luna-arm64-v8a.apk`** *(Recommended)*: Optimized for modern 64-bit Android smartphones.
-            - **`Luna-universal.apk`**: Compatible with all Android architectures.
-            - **`Luna-armeabi-v7a.apk`**: Compatible with legacy 32-bit Android devices.
+            - **`Luna-v1.0.0.apk`** *(Recommended)*: Optimized for all modern 64-bit Android smartphones (~20 MB).
+            - **`Luna-arm64-v8a.apk`**: Identical to primary ARM64 package.
+            - **`Luna-universal.apk`**: Compatible with all Android architectures (~57 MB).
+            - **`Luna-armeabi-v7a.apk`**: Compatible with legacy 32-bit Android devices (~17 MB).
+            - **`Luna-x86_64.apk`**: Optimized for Android emulators and Chromebooks (~21 MB).
 
-            ### ✨ Highlights
-            - Adaptive 5-phase living theme engine
-            - 28-day individual biological intelligence
-            - Craving-adaptive smart nutrition sync (Veg / Eggetarian / Non-Veg)
-            - Continuous period flow banding & calendar rhythm
-            - Clinical AI companion with offline fallbacks
-            - 100% on-device SQLite database with zero telemetry
+            ### ✨ Highlights & What's New
+            - **🧠 Longitudinal Pattern Engine**: Discovers recurring personal hormonal rhythms (Late-Luteal Energy Troughs, Estrogen Dopamine Peaks, Premenstrual Sensitivity, Prostaglandin Spikes, Craving Waves) from historical check-in logs.
+            - **💡 Intimate Personal AI Memory**: Prompts reason directly with your documented cycle history with zero generic robot clichés.
+            - **🛡️ Rate Limiting & Financial Shield**: Client-side 25 request/day quota with local persistent caching.
+            - **⚡ Zero Black Screen Native Stability**: Completely fixed Android native AOT launch instability across all Android OEMs.
+            - **🔒 100% Offline & Private**: Zero telemetry, zero analytics, zero cloud tracking — all sensitive health data stays strictly on your device.
