@@ -92,6 +92,7 @@ class _DailyPrescriptionCardState
     final cycleState = ref.read(cycleStateProvider);
     final phase = ref.read(currentPhaseProvider);
     final todayLog = ref.read(todayLogProvider);
+    final patternProfile = ref.read(patternProfileProvider);
 
     final hasAnchor =
         profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
@@ -106,6 +107,7 @@ class _DailyPrescriptionCardState
       mood: todayLog?.mood,
       energyLevel: todayLog?.energyLevel,
       symptoms: todayLog?.symptoms,
+      patternProfile: patternProfile,
     );
 
     final key = _cacheKey(hasAnchor, day, phase);

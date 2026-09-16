@@ -11,6 +11,7 @@ import '../../core/models/user_profile.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/cycle_engine.dart';
+import '../../core/services/pattern_analysis_service.dart';
 import '../../shared/widgets/bottom_nav.dart';
 
 String _monthName(int m) {
@@ -33,6 +34,7 @@ class InsightsScreen extends ConsumerWidget {
     final cycleState = ref.watch(cycleStateProvider);
     final todayEntry = ref.watch(todayLogProvider);
     final currentPhase = ref.watch(currentPhaseProvider);
+    final patternProfile = ref.watch(patternProfileProvider);
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -106,7 +108,14 @@ class InsightsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
 
-                // 3. 7-Day Energy Rhythm (Actual Logs + Projected Phase Baseline)
+                // 3. Discovered Longitudinal Patterns (Smart Adaptive AI Memory)
+                _DiscoveredPatternsCard(
+                  colors: colors,
+                  patternProfile: patternProfile,
+                ),
+                const SizedBox(height: 18),
+
+                // 4. 7-Day Energy Rhythm (Actual Logs + Projected Phase Baseline)
                 _EnergyRhythmCard(
                   colors: colors,
                   logs: logs,
@@ -1995,5 +2004,349 @@ class _PeriodHistorySection extends ConsumerWidget {
         ],
       ),
     ).animate().fadeIn(delay: 260.ms, duration: 400.ms);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. DISCOVERED LONGITUDINAL PATTERNS (AI MEMORY ENGINE)
+// ─────────────────────────────────────────────────────────────────────────────
+class _DiscoveredPatternsCard extends StatelessWidget {
+  final PhaseColors colors;
+  final LongitudinalProfile patternProfile;
+
+  const _DiscoveredPatternsCard({
+    required this.colors,
+    required this.patternProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPatterns = patternProfile.patterns.isNotEmpty;
+    final totalLogs = patternProfile.totalLogsAnalyzed;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: colors.primary.withValues(alpha: 0.18),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Text('🧠', style: TextStyle(fontSize: 20)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Discovered Cycle Patterns',
+                      style: GoogleFonts.cormorantGaramond(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: colors.onSurface,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    Text(
+                      'Longitudinal Pattern Intelligence',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        color: colors.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (hasPatterns ? colors.accent : Colors.amberAccent)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: (hasPatterns ? colors.accent : Colors.amberAccent)
+                        .withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: hasPatterns ? colors.accent : Colors.amberAccent,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      hasPatterns
+                          ? '${patternProfile.patterns.length} Found'
+                          : '$totalLogs/3 Check-ins',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: hasPatterns ? colors.accent : Colors.amberAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          if (!hasPatterns) ...[
+            // Calibration / Learning State
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colors.background.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: colors.onSurface.withValues(alpha: 0.08),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text('🔬', style: TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Calibrating Personal Baseline',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Luna is building your longitudinal biomarker model. As you record symptoms, mood, and energy across your cycle, Luna automatically discovers recurring trajectories and adapts all recommendations to your biology.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _PatternPreviewBadge(
+                    icon: '📉',
+                    label: 'Late-Luteal Energy Troughs & Recovery',
+                    colors: colors,
+                  ),
+                  const SizedBox(height: 6),
+                  _PatternPreviewBadge(
+                    icon: '⚡',
+                    label: 'Estrogen Peak & Verbal Dopamine Surges',
+                    colors: colors,
+                  ),
+                  const SizedBox(height: 6),
+                  _PatternPreviewBadge(
+                    icon: '🍫',
+                    label: 'Premenstrual Micronutrient Craving Waves',
+                    colors: colors,
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // Active Discovered Patterns List
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: patternProfile.patterns.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final pattern = patternProfile.patterns[index];
+                return _PatternTile(
+                  pattern: pattern,
+                  colors: colors,
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05);
+  }
+}
+
+class _PatternPreviewBadge extends StatelessWidget {
+  final String icon;
+  final String label;
+  final PhaseColors colors;
+
+  const _PatternPreviewBadge({
+    required this.icon,
+    required this.label,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(icon, style: const TextStyle(fontSize: 13)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: colors.onSurface.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PatternTile extends StatelessWidget {
+  final DiscoveredPattern pattern;
+  final PhaseColors colors;
+
+  const _PatternTile({
+    required this.pattern,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isHighConf = pattern.confidence.contains('High');
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.background.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: (isHighConf ? colors.accent : colors.primary).withValues(alpha: 0.22),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(pattern.emoji, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  pattern.title,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (isHighConf ? colors.accent : colors.primary).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  pattern.confidence,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: isHighConf ? colors.accent : colors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            pattern.description,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              color: colors.onSurface.withValues(alpha: 0.75),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: colors.onSurface.withValues(alpha: 0.07),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('💡', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    pattern.clinicalInsight,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      color: colors.onSurface.withValues(alpha: 0.65),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (pattern.cycleDays.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 12,
+                  color: colors.accent.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'Associated: Days ${pattern.cycleDays.first}–${pattern.cycleDays.last}',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: colors.accent.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

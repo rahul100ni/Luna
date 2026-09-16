@@ -120,7 +120,9 @@ class StorageService {
     await _prefs!.setString('prescription_$key', jsonStr);
   }
 
-  // ── AI API Key ─────────────────────────────────────────────────────
+  // ── AI API Key & Budget Protection ────────────────────────────────
+  static const int maxDailyAiRequests = 25;
+
   static String? getDeepSeekApiKey() {
     return _prefs?.getString('deepseek_api_key');
   }
@@ -132,5 +134,29 @@ class StorageService {
     } else {
       await _prefs?.setString('deepseek_api_key', trimmed);
     }
+  }
+
+  static int get dailyAiRequestCount {
+    final key = 'ai_req_count_$_todayKey';
+    return _prefs?.getInt(key) ?? 0;
+  }
+
+  static bool get canMakeAiRequest {
+    return dailyAiRequestCount < maxDailyAiRequests;
+  }
+
+  static Future<void> incrementAiRequestCount() async {
+    final key = 'ai_req_count_$_todayKey';
+    final current = _prefs?.getInt(key) ?? 0;
+    await _prefs?.setInt(key, current + 1);
+  }
+
+  // ── Generic AI Response Cache ──────────────────────────────────────
+  static String? getCachedAiResponse(String cacheKey) {
+    return _prefs?.getString('ai_cache_${_todayKey}_$cacheKey');
+  }
+
+  static Future<void> cacheAiResponse(String cacheKey, String response) async {
+    await _prefs?.setString('ai_cache_${_todayKey}_$cacheKey', response);
   }
 }

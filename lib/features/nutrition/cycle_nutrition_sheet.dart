@@ -81,6 +81,7 @@ class _CycleNutritionSheetState extends ConsumerState<CycleNutritionSheet> {
     final cycleState = ref.read(cycleStateProvider);
     final todayLog = ref.read(todayLogProvider);
     final currentPhase = ref.read(currentPhaseProvider);
+    final patternProfile = ref.read(patternProfileProvider);
 
     final hasCycleAnchor =
         profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
@@ -95,6 +96,7 @@ class _CycleNutritionSheetState extends ConsumerState<CycleNutritionSheet> {
       cravingVibe: _selectedCraving,
       mood: todayLog?.mood,
       symptoms: todayLog?.symptoms,
+      patternProfile: patternProfile,
     );
 
     _loadingTimer?.cancel();

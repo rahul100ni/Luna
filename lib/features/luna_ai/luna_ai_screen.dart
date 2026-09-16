@@ -85,6 +85,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final profile = ref.read(profileProvider);
     final cycleState = ref.read(cycleStateProvider);
     final todayEntry = ref.read(todayLogProvider);
+    final patternProfile = ref.read(patternProfileProvider);
     if (profile == null || cycleState == null) {
       setState(() => _loading = false);
       return;
@@ -107,6 +108,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         mood: _selectedMood ?? todayEntry?.mood,
         energyLevel: todayEntry?.energyLevel,
         symptoms: allSymptoms,
+        patternProfile: patternProfile,
       );
     } else {
       response = await DeepSeekService.getMoodResponse(
@@ -118,6 +120,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         mood: _selectedMood!,
         energyLevel: todayEntry?.energyLevel,
         symptoms: allSymptoms,
+        patternProfile: patternProfile,
       );
     }
 
@@ -168,6 +171,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final profile = ref.read(profileProvider);
     final cycleState = ref.read(cycleStateProvider);
     final todayEntry = ref.read(todayLogProvider);
+    final patternProfile = ref.read(patternProfileProvider);
     if (profile == null || cycleState == null) {
       setState(() => _chatLoading = false);
       return;
@@ -187,6 +191,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       mood: _selectedMood ?? todayEntry?.mood,
       energyLevel: todayEntry?.energyLevel,
       symptoms: allSymptoms,
+      patternProfile: patternProfile,
       messages: _chatHistory
           .map((m) => {
                 'role': m.isUser ? 'user' : 'assistant',
@@ -220,6 +225,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final colors = ref.watch(phaseColorsProvider);
     final profile = ref.watch(profileProvider);
     final cycleState = ref.watch(cycleStateProvider);
+    final patternProfile = ref.watch(patternProfileProvider);
 
     // Chat mode — full-screen chat UI
     if (_chatMode) {
@@ -337,6 +343,35 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                               style: GoogleFonts.dmSans(
                                   fontSize: 13, color: colors.onSurface.withValues(alpha: 0.5), height: 1.5),
                             ),
+                            if (patternProfile.hasSufficientData) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: colors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: colors.primary.withValues(alpha: 0.35),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('🧠', style: TextStyle(fontSize: 12)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Neural Memory Active · ${patternProfile.totalLogsAnalyzed} check-ins',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: colors.accent,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ]),
                         ).animate().fadeIn(duration: 500.ms),
 

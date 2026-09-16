@@ -51,3 +51,12 @@ app.*.map.json
 # Release APK packages
 release/
 *.apk
+
+# Environment secrets and API keys
+.env
+*.env
+*.env.*
+*.key
+key.properties
+*secret*
+

@@ -4,6 +4,7 @@ import '../models/log_entry.dart';
 import '../services/storage_service.dart';
 import '../services/cycle_engine.dart';
 import '../services/notification_service.dart';
+import '../services/pattern_analysis_service.dart';
 import '../constants/phase_constants.dart';
 
 // ── Profile Provider ─────────────────────────────────────────────────────────
@@ -110,4 +111,23 @@ final todayLogProvider = Provider<LogEntry?>((ref) {
   } catch (_) {
     return null;
   }
+});
+
+// ── Longitudinal Pattern Intelligence Provider ────────────────────────────────
+final patternProfileProvider = Provider<LongitudinalProfile>((ref) {
+  final logs = ref.watch(logEntriesProvider);
+  final profile = ref.watch(profileProvider);
+  if (profile == null) {
+    return PatternAnalysisService.analyze(
+      logs: logs,
+      profile: UserProfile(
+        id: 'default',
+        name: 'You',
+        averageCycleLength: 28,
+        averagePeriodLength: 5,
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+  return PatternAnalysisService.analyze(logs: logs, profile: profile);
 });

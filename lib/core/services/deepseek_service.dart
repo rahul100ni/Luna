@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../constants/phase_constants.dart';
 import '../models/log_entry.dart';
 import 'storage_service.dart';
+import 'pattern_analysis_service.dart';
 
 class DeepSeekService {
   static String? _inMemoryApiKey;
@@ -36,6 +37,7 @@ class DeepSeekService {
     int? energyLevel,
     List<String>? symptoms,
     String? additionalContext,
+    LongitudinalProfile? patternProfile,
     bool isChatMode = false,
   }) {
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
@@ -74,6 +76,13 @@ class DeepSeekService {
       buffer.writeln("- User Stated: \"$additionalContext\"");
     }
 
+    if (patternProfile != null && patternProfile.hasSufficientData) {
+      buffer.writeln();
+      buffer.writeln("=================================================");
+      buffer.writeln(patternProfile.aiContextDigest);
+      buffer.writeln("=================================================");
+    }
+
     buffer.writeln();
     buffer.writeln("CRITICAL REASONING & RESPONSE GUIDELINES:");
     buffer.writeln(
@@ -90,6 +99,8 @@ class DeepSeekService {
         "   - One physical/somatic reset (targeted movement, acupressure point, cool compress for headaches, diaphragmatic breathing, posture adjustment)");
     buffer.writeln(
         "4. TONE: Warm, intelligent, conversational, grounded. No toxic positivity ('you're just showing up, that's enough') — treat her like an intelligent adult.");
+    buffer.writeln(
+        "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, directly reference her documented cycles! Acknowledge how her energy/mood today relates to her recurring trajectory. Never sound like an impersonal stranger.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -123,6 +134,7 @@ class DeepSeekService {
     int? energyLevel,
     List<String>? symptoms,
     String? additionalContext,
+    LongitudinalProfile? patternProfile,
   }) async {
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
@@ -134,10 +146,11 @@ class DeepSeekService {
       energyLevel: energyLevel,
       symptoms: symptoms,
       additionalContext: additionalContext,
+      patternProfile: patternProfile,
       isChatMode: false,
     );
 
-    if (!hasApiKey) {
+    if (!hasApiKey || !StorageService.canMakeAiRequest) {
       return LunaResponse.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -145,6 +158,22 @@ class DeepSeekService {
         mood: mood,
         symptoms: symptoms,
       );
+    }
+
+    final cacheKey = 'mood_${dayOfCycle}_${phase.index}_${mood.index}_${symptoms?.join(',') ?? ''}';
+    final cached = StorageService.getCachedAiResponse(cacheKey);
+    if (cached != null) {
+      try {
+        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        return LunaResponse(
+          validation: parsed['validation'] as String? ?? '',
+          science: parsed['science'] as String? ?? '',
+          actions: (parsed['actions'] as List<dynamic>? ?? [])
+              .map((e) => e as String)
+              .toList(),
+          closing: parsed['closing'] as String? ?? '',
+        );
+      } catch (_) {}
     }
 
     try {
@@ -161,15 +190,20 @@ class DeepSeekService {
             {'role': 'user', 'content': "How should I navigate how I feel right now?"},
           ],
           'response_format': {'type': 'json_object'},
-          'max_tokens': 600,
+          'max_tokens': 450,
           'temperature': 0.7,
         }),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-        final content = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(content) as Map<String, dynamic>;
+        final content = utf8.decode(response.bodyBytes);
+        final data = jsonDecode(content) as Map<String, dynamic>;
+        final messageContent = data['choices'][0]['message']['content'] as String;
+        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+
+        await StorageService.incrementAiRequestCount();
+        await StorageService.cacheAiResponse(cacheKey, messageContent);
+
         return LunaResponse(
           validation: parsed['validation'] as String? ?? '',
           science: parsed['science'] as String? ?? '',
@@ -209,6 +243,7 @@ class DeepSeekService {
     MoodLevel? mood,
     int? energyLevel,
     List<String>? symptoms,
+    LongitudinalProfile? patternProfile,
   }) async {
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
@@ -220,10 +255,11 @@ class DeepSeekService {
       energyLevel: energyLevel,
       symptoms: symptoms,
       additionalContext: userMessage,
+      patternProfile: patternProfile,
       isChatMode: false,
     );
 
-    if (!hasApiKey) {
+    if (!hasApiKey || !StorageService.canMakeAiRequest) {
       return LunaResponse.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -231,6 +267,22 @@ class DeepSeekService {
         mood: mood,
         symptoms: symptoms,
       );
+    }
+
+    final cacheKey = 'freetext_${dayOfCycle}_${phase.index}_${userMessage.hashCode}';
+    final cached = StorageService.getCachedAiResponse(cacheKey);
+    if (cached != null) {
+      try {
+        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        return LunaResponse(
+          validation: parsed['validation'] as String? ?? '',
+          science: parsed['science'] as String? ?? '',
+          actions: (parsed['actions'] as List<dynamic>? ?? [])
+              .map((e) => e as String)
+              .toList(),
+          closing: parsed['closing'] as String? ?? '',
+        );
+      } catch (_) {}
     }
 
     try {
@@ -253,9 +305,14 @@ class DeepSeekService {
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-        final content = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(content) as Map<String, dynamic>;
+        final content = utf8.decode(response.bodyBytes);
+        final data = jsonDecode(content) as Map<String, dynamic>;
+        final messageContent = data['choices'][0]['message']['content'] as String;
+        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+
+        await StorageService.incrementAiRequestCount();
+        await StorageService.cacheAiResponse(cacheKey, messageContent);
+
         return LunaResponse(
           validation: parsed['validation'] as String? ?? '',
           science: parsed['science'] as String? ?? '',
@@ -295,6 +352,7 @@ class DeepSeekService {
     MoodLevel? mood,
     int? energyLevel,
     List<String>? symptoms,
+    LongitudinalProfile? patternProfile,
   }) async {
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
@@ -305,11 +363,16 @@ class DeepSeekService {
       mood: mood,
       energyLevel: energyLevel,
       symptoms: symptoms,
+      patternProfile: patternProfile,
       isChatMode: true,
     );
 
-    if (!hasApiKey) {
-      return 'I hear you, and your body is giving you clear signals right now. I am operating in offline mode — add an API key in Settings for full real-time conversational reasoning, or ask about your cycle phase! 💜';
+    if (!hasApiKey || !StorageService.canMakeAiRequest) {
+      if (!hasApiKey) {
+        return 'I hear you, and your body is giving you clear signals right now. I am operating in offline mode — add an API key in Settings for full real-time conversational reasoning, or ask about your cycle phase! 💜';
+      } else {
+        return 'I hear you, love! To protect your daily balance, we have reached the daily AI conversation limit (25 requests). Luna is recharging her neural engine for tomorrow — honor your rest today! 💜';
+      }
     }
 
     try {
@@ -325,12 +388,13 @@ class DeepSeekService {
             {'role': 'system', 'content': systemPrompt},
             ...messages,
           ],
-          'max_tokens': 300,
+          'max_tokens': 350,
           'temperature': 0.7,
         }),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
+        await StorageService.incrementAiRequestCount();
         final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
         return data['choices'][0]['message']['content'] as String? ??
             'I hear you, and your body is giving you clear signals right now. Let\'s take this step by step. 💜';
@@ -351,6 +415,7 @@ class DeepSeekService {
     MoodLevel? mood,
     int? energyLevel,
     List<String>? symptoms,
+    LongitudinalProfile? patternProfile,
   }) async {
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
@@ -361,9 +426,19 @@ class DeepSeekService {
       mood: mood,
       energyLevel: energyLevel,
       symptoms: symptoms,
+      patternProfile: patternProfile,
     );
 
-    if (!hasApiKey) {
+    final cacheKey = 'daily_rx_${dayOfCycle}_${phase.index}_${mood?.index ?? -1}_${energyLevel ?? -1}';
+    final cached = StorageService.getCachedDailyPrescription(cacheKey);
+    if (cached != null) {
+      try {
+        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        return DailyPrescription.fromMap(parsed);
+      } catch (_) {}
+    }
+
+    if (!hasApiKey || !StorageService.canMakeAiRequest) {
       return DailyPrescription.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -405,9 +480,14 @@ Return ONLY a valid JSON object matching this schema:
       ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-        final content = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(content) as Map<String, dynamic>;
+        final content = utf8.decode(response.bodyBytes);
+        final data = jsonDecode(content) as Map<String, dynamic>;
+        final messageContent = data['choices'][0]['message']['content'] as String;
+        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+
+        await StorageService.incrementAiRequestCount();
+        await StorageService.cacheDailyPrescription(cacheKey, messageContent);
+
         return DailyPrescription.fromMap(parsed);
       }
     } catch (_) {}
@@ -432,6 +512,7 @@ Return ONLY a valid JSON object matching this schema:
     required String cravingVibe, // 'fast_food', 'warm_soupy', 'fresh_salad', 'sweet_treat', 'home_cooked', 'quick_snack'
     MoodLevel? mood,
     List<String>? symptoms,
+    LongitudinalProfile? patternProfile,
   }) async {
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
     final dietLabel = dietType == 'veg'
@@ -449,6 +530,10 @@ Return ONLY a valid JSON object matching this schema:
       'quick_snack': 'Quick & lazy snack (< 5 minutes prep)',
     }[cravingVibe] ?? cravingVibe;
 
+    final patternDigest = (patternProfile != null && patternProfile.hasSufficientData)
+        ? "\nLONGITUDINAL PATTERN MEMORY:\n${patternProfile.aiContextDigest}\n"
+        : "";
+
     final systemPrompt = '''
 You are Luna's hormonal nutrition and functional medicine doctor for $userName.
 She is asking: "What should I eat today?"
@@ -460,7 +545,7 @@ USER BIOLOGICAL CONTEXT:
 - Cycle Status: ${hasCycleAnchor && dayOfCycle > 0 ? "Day $dayOfCycle of $cycleLength-day cycle (${phaseInfo.name} Phase)" : "Active Cycle Blueprint (General Circadian & Hormone Balance)"}
 ${symptoms != null && symptoms.isNotEmpty ? "- Current Symptoms: ${symptoms.join(', ')}" : ""}
 ${mood != null ? "- Current Mood: ${mood.label}" : ""}
-
+$patternDigest
 CRITICAL INSTRUCTIONS:
 1. "phaseContext": 1 sharp sentence on her digestive and metabolic state today (e.g. luteal insulin sensitivity drops and resting calorie burn climbs; menstrual iron loss and prostaglandin inflammation; follicular estrogen glycogen loading).
 2. "cravingTranslation": 1 empathetic sentence validating her craving and explaining how we adapt it to satisfy her hormones.
@@ -488,7 +573,16 @@ Return ONLY a JSON object:
 }
 ''';
 
-    if (!hasApiKey) {
+    final cacheKey = 'nutrition_${dayOfCycle}_${phase.index}_${dietType}_${cravingVibe}_${symptoms?.join(',') ?? ''}';
+    final cached = StorageService.getCachedAiResponse(cacheKey);
+    if (cached != null) {
+      try {
+        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        return NutritionPrescription.fromMap(parsed);
+      } catch (_) {}
+    }
+
+    if (!hasApiKey || !StorageService.canMakeAiRequest) {
       return NutritionPrescription.smartFallback(
         dietType: dietType,
         cravingVibe: cravingVibe,
@@ -517,9 +611,14 @@ Return ONLY a JSON object:
       ).timeout(const Duration(seconds: 14));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-        final content = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(content) as Map<String, dynamic>;
+        final content = utf8.decode(response.bodyBytes);
+        final data = jsonDecode(content) as Map<String, dynamic>;
+        final messageContent = data['choices'][0]['message']['content'] as String;
+        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+
+        await StorageService.incrementAiRequestCount();
+        await StorageService.cacheAiResponse(cacheKey, messageContent);
+
         return NutritionPrescription.fromMap(parsed);
       }
     } catch (_) {}
