@@ -1,4 +1,4 @@
-﻿# Setting Up Luna
+# Setting Up Luna
 
 ## Step 1: Install Flutter SDK
 1. Go to https://docs.flutter.dev/get-started/install/windows/mobile
@@ -30,7 +30,7 @@ Your APK will be at:
 ## Firebase Setup (Optional - for account sync)
 1. Go to https://console.firebase.google.com
 2. Create a new project called "Luna"
-3. Add an Android app with package name: com.lunaapp.luna_app
+3. Add an Android app with package name: app.vakya.luna
 4. Download google-services.json and place it in: android/app/google-services.json
 5. Follow FlutterFire CLI setup: https://firebase.flutter.dev/docs/overview
 
