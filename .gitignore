@@ -59,4 +59,4 @@ release/
 *.key
 key.properties
 *secret*
-
+gradle-daemon-jvm.properties

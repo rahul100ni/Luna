@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.lunaapp.luna_app"
     compileSdk = flutter.compileSdkVersion
+    ndkVersion = "30.0.16248370"
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true

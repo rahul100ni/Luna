@@ -99,11 +99,10 @@ void main() {
       expect(profile.patterns, isEmpty);
     });
 
-    test('Discovers late-luteal energy trough from historical data', () {
+    test('Fewer than 7 logs stays in calibration mode with no premature patterns', () {
       final now = DateTime.now();
       final anchor = now.subtract(const Duration(days: 28));
       final logs = <LogEntry>[
-        // Follicular logs (high energy)
         LogEntry(
           id: 'l1',
           date: anchor.add(const Duration(days: 8)),
@@ -113,25 +112,10 @@ void main() {
         ),
         LogEntry(
           id: 'l2',
-          date: anchor.add(const Duration(days: 10)),
-          mood: MoodLevel.good,
-          energyLevel: 4,
-          symptoms: [],
-        ),
-        // Late luteal logs (low energy trough)
-        LogEntry(
-          id: 'l3',
           date: anchor.add(const Duration(days: 24)),
           mood: MoodLevel.struggling,
           energyLevel: 1,
-          symptoms: ['Fatigue', 'Brain fog'],
-        ),
-        LogEntry(
-          id: 'l4',
-          date: anchor.add(const Duration(days: 25)),
-          mood: MoodLevel.low,
-          energyLevel: 2,
-          symptoms: ['Fatigue', 'Anxious'],
+          symptoms: ['Fatigue'],
         ),
       ];
 
@@ -147,7 +131,83 @@ void main() {
         ),
       );
 
-      expect(profile.totalLogsAnalyzed, equals(4));
+      expect(profile.totalLogsAnalyzed, equals(2));
+      expect(profile.hasSufficientData, isFalse);
+      expect(profile.patterns, isEmpty);
+      expect(profile.calibrationProgress, closeTo(2 / 7, 0.01));
+    });
+
+    test('Discovers late-luteal energy trough when >= 7 logs recorded across phases', () {
+      final now = DateTime.now();
+      final anchor = now.subtract(const Duration(days: 28));
+      final logs = <LogEntry>[
+        // 3 Follicular logs (high energy)
+        LogEntry(
+          id: 'l1',
+          date: anchor.add(const Duration(days: 6)),
+          mood: MoodLevel.good,
+          energyLevel: 4,
+          symptoms: [],
+        ),
+        LogEntry(
+          id: 'l2',
+          date: anchor.add(const Duration(days: 8)),
+          mood: MoodLevel.thriving,
+          energyLevel: 5,
+          symptoms: [],
+        ),
+        LogEntry(
+          id: 'l3',
+          date: anchor.add(const Duration(days: 10)),
+          mood: MoodLevel.good,
+          energyLevel: 4,
+          symptoms: [],
+        ),
+        // 1 Ovulatory log
+        LogEntry(
+          id: 'l4',
+          date: anchor.add(const Duration(days: 13)),
+          mood: MoodLevel.thriving,
+          energyLevel: 4,
+          symptoms: [],
+        ),
+        // 3 Late luteal logs (pronounced energy trough)
+        LogEntry(
+          id: 'l5',
+          date: anchor.add(const Duration(days: 24)),
+          mood: MoodLevel.struggling,
+          energyLevel: 1,
+          symptoms: ['Fatigue', 'Brain fog'],
+        ),
+        LogEntry(
+          id: 'l6',
+          date: anchor.add(const Duration(days: 25)),
+          mood: MoodLevel.low,
+          energyLevel: 2,
+          symptoms: ['Fatigue', 'Anxious'],
+        ),
+        LogEntry(
+          id: 'l7',
+          date: anchor.add(const Duration(days: 26)),
+          mood: MoodLevel.low,
+          energyLevel: 2,
+          symptoms: ['Fatigue'],
+        ),
+      ];
+
+      final profile = PatternAnalysisService.analyze(
+        logs: logs,
+        profile: UserProfile(
+          id: 'u1',
+          name: 'LunaUser',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: anchor,
+          createdAt: anchor,
+        ),
+      );
+
+      expect(profile.totalLogsAnalyzed, equals(7));
       expect(profile.hasSufficientData, isTrue);
       expect(profile.patterns.any((p) => p.id == 'luteal_energy_trough'), isTrue);
       expect(profile.aiContextDigest, contains('Late-Luteal Energy Trough'));

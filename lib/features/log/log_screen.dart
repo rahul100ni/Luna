@@ -8,6 +8,7 @@ import '../../core/constants/phase_constants.dart';
 import '../../core/models/log_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/cycle_engine.dart';
 import '../../core/services/cycle_refinement_service.dart';
 
 class LogScreen extends ConsumerStatefulWidget {
@@ -20,18 +21,24 @@ class LogScreen extends ConsumerStatefulWidget {
 class _LogScreenState extends ConsumerState<LogScreen> {
   MoodLevel _mood = MoodLevel.decent;
   bool _moodSelected = false;
-  bool _periodStarted = false;
-  bool _periodAlreadyLoggedToday = false; // hides the toggle if already done
-  String? _existingEntryId; // if re-logging today, update instead of insert
-  final List<String> _symptoms = [];
-  bool _showMore = false;
   bool _saved = false;
+  String? _existingEntryId;
+
+  // Energy level — adult slider (1 to 5, nullable if untouched)
+  int? _energy;
 
   // Optional deeper fields
-  int _energy = 3;
   FlowLevel? _flow;
   CrampLevel? _cramps;
+  SleepQuality? _sleep;
   final _notesController = TextEditingController();
+
+  // Period start state
+  bool _periodStarted = false;
+  bool _periodAlreadyLoggedToday = false;
+
+  // Symptoms
+  final List<String> _symptoms = [];
 
   static const List<Map<String, String>> _quickSymptoms = [
     {'e': '💧', 'l': 'Bloating'},
@@ -44,16 +51,22 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     {'e': '😤', 'l': 'Irritable'},
     {'e': '🤢', 'l': 'Nausea'},
     {'e': '💪', 'l': 'Tender'},
-    {'e': '🔥', 'l': 'Hot'},
+    {'e': '🔥', 'l': 'Hot flashes'},
     {'e': '🌟', 'l': 'Feeling good'},
   ];
 
   @override
   void initState() {
     super.initState();
-    // Pre-populate from today's existing entry (if any)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final todayEntry = ref.read(logEntriesProvider.notifier).todayEntry;
+      final profile = ref.read(profileProvider);
+      final now = DateTime.now();
+      final isAnchoredToday = profile?.lastPeriodStart != null &&
+          profile!.lastPeriodStart!.year == now.year &&
+          profile.lastPeriodStart!.month == now.month &&
+          profile.lastPeriodStart!.day == now.day;
+
       if (todayEntry != null) {
         setState(() {
           _existingEntryId = todayEntry.id;
@@ -62,14 +75,19 @@ class _LogScreenState extends ConsumerState<LogScreen> {
           _energy = todayEntry.energyLevel;
           _flow = todayEntry.flow;
           _cramps = todayEntry.cramps;
+          _sleep = todayEntry.sleepQuality;
           _symptoms.clear();
           _symptoms.addAll(todayEntry.symptoms);
           if (todayEntry.notes != null) {
             _notesController.text = todayEntry.notes!;
           }
-          // If period was already logged today, hide the toggle
-          _periodAlreadyLoggedToday = todayEntry.periodStarted == true;
+          _periodAlreadyLoggedToday = todayEntry.periodStarted || isAnchoredToday;
           _periodStarted = _periodAlreadyLoggedToday;
+        });
+      } else if (isAnchoredToday) {
+        setState(() {
+          _periodAlreadyLoggedToday = true;
+          _periodStarted = true;
         });
       }
     });
@@ -81,8 +99,37 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     super.dispose();
   }
 
+  String _getEnergyLabel(int? level) {
+    switch (level) {
+      case 1:
+        return 'Drained · Depleted';
+      case 2:
+        return 'Low · Slow rhythm';
+      case 3:
+        return 'Balanced · Steady';
+      case 4:
+        return 'High · Energized';
+      case 5:
+        return 'Peak · Radiant';
+      default:
+        return 'Slide to record';
+    }
+  }
+
   Future<void> _save() async {
-    // Reuse today's entry ID if we already have one — no duplicate entries
+    if (!_moodSelected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Tap how you\'re feeling first 💜'),
+          backgroundColor: const Color(0xFF2A1F3D),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     final entryId = _existingEntryId ?? const Uuid().v4();
     final entry = LogEntry(
       id: entryId,
@@ -91,25 +138,28 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       energyLevel: _energy,
       flow: _flow,
       cramps: _cramps,
+      sleepQuality: _sleep,
       symptoms: _symptoms,
       notes: _notesController.text.isEmpty ? null : _notesController.text,
       periodStarted: _periodStarted,
     );
     await ref.read(logEntriesProvider.notifier).addEntry(entry);
-    // If period started, immediately update cycle — the whole app reacts via Riverpod
+
+    // Update cycle anchor when period started is marked
     if (_periodStarted) {
       await ref.read(profileProvider.notifier).updateLastPeriod(DateTime.now());
-    }
-    // Refine cycle length based on logged data
-    if (_periodStarted) {
       final entries = ref.read(logEntriesProvider);
-      final profile = ref.read(profileProvider);
-      if (profile != null) {
+      final freshProfile = ref.read(profileProvider);
+      if (freshProfile != null) {
         final msg = await CycleRefinementService.checkAndRefine(
-          profile: profile,
+          profile: freshProfile,
           allEntries: entries,
-          onUpdateCycle: (v) => ref.read(profileProvider.notifier).saveProfile(profile.copyWith(averageCycleLength: v)),
-          onUpdatePeriod: (v) => ref.read(profileProvider.notifier).saveProfile(profile.copyWith(averagePeriodLength: v)),
+          onUpdateCycle: (v) => ref
+              .read(profileProvider.notifier)
+              .saveProfile(freshProfile.copyWith(averageCycleLength: v)),
+          onUpdatePeriod: (v) => ref
+              .read(profileProvider.notifier)
+              .saveProfile(freshProfile.copyWith(averagePeriodLength: v)),
         );
         if (msg != null && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -124,11 +174,285 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         }
       }
     }
+
     setState(() => _saved = true);
     await Future.delayed(const Duration(milliseconds: 1400));
     if (mounted) {
-      if (context.canPop()) { context.pop(); } else { context.go('/home'); }
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/home');
+      }
     }
+  }
+
+  void _openDetailSheet(PhaseColors colors) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              top: 24,
+              left: 24,
+              right: 24,
+            ),
+            decoration: BoxDecoration(
+              color: Color.lerp(colors.background, colors.surface, 0.5),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border.all(
+                color: colors.onSurface.withValues(alpha: 0.07),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.onSurface.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+
+                Text(
+                  'A little more?',
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: colors.onSurface,
+                  ),
+                ),
+                Text(
+                  'Only what you want to share. Nothing is saved unless you select it.',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    color: colors.onSurface.withValues(alpha: 0.4),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 22),
+
+                // ── Flow ──────────────────────────────────────────────
+                _SheetSectionLabel(label: 'Flow', colors: colors),
+                const SizedBox(height: 10),
+                Row(
+                  children: FlowLevel.values.map((f) {
+                    final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
+                    final sel = _flow == f;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setSheetState(() => _flow = sel ? null : f);
+                          setState(() => _flow = sel ? null : f);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: sel
+                                ? colors.primary.withValues(alpha: 0.22)
+                                : colors.background.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: sel
+                                  ? colors.primary
+                                  : colors.onSurface.withValues(alpha: 0.1),
+                              width: sel ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              labels[f.index],
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                                color: sel
+                                    ? colors.accent
+                                    : colors.onSurface.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Sleep ─────────────────────────────────────────────
+                _SheetSectionLabel(label: 'Sleep last night', colors: colors),
+                const SizedBox(height: 10),
+                Row(
+                  children: SleepQuality.values.map((s) {
+                    final sel = _sleep == s;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setSheetState(() => _sleep = sel ? null : s);
+                          setState(() => _sleep = sel ? null : s);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: sel
+                                ? colors.primary.withValues(alpha: 0.22)
+                                : colors.background.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: sel
+                                  ? colors.primary
+                                  : colors.onSurface.withValues(alpha: 0.1),
+                              width: sel ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              s.label,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                                color: sel
+                                    ? colors.accent
+                                    : colors.onSurface.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Cramps ───────────────────────────────────────────
+                _SheetSectionLabel(label: 'Cramps', colors: colors),
+                const SizedBox(height: 10),
+                Row(
+                  children: CrampLevel.values.map((c) {
+                    final labels = ['None', 'Mild', 'Moderate', 'Severe'];
+                    final emojis = ['😌', '😐', '😣', '😭'];
+                    final sel = _cramps == c;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setSheetState(() => _cramps = sel ? null : c);
+                          setState(() => _cramps = sel ? null : c);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: sel
+                                ? colors.primary.withValues(alpha: 0.22)
+                                : colors.background.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: sel
+                                  ? colors.primary
+                                  : colors.onSurface.withValues(alpha: 0.1),
+                              width: sel ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(emojis[c.index], style: const TextStyle(fontSize: 16)),
+                              const SizedBox(height: 3),
+                              Text(
+                                labels[c.index],
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 10,
+                                  color: sel
+                                      ? colors.accent
+                                      : colors.onSurface.withValues(alpha: 0.45),
+                                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Notes ────────────────────────────────────────────
+                _SheetSectionLabel(label: 'Anything specific?', colors: colors),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _notesController,
+                  maxLines: 2,
+                  style: GoogleFonts.dmSans(fontSize: 14, color: colors.onSurface),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: colors.background.withValues(alpha: 0.5),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: colors.accent, width: 1.5)),
+                    hintText: 'Notes, observations, anything...',
+                    hintStyle:
+                        TextStyle(color: colors.onSurface.withValues(alpha: 0.3), fontSize: 13),
+                    contentPadding: const EdgeInsets.all(14),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Done button
+                GestureDetector(
+                  onTap: () => Navigator.of(ctx).pop(),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [colors.primary, colors.secondary]),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colors.primary.withValues(alpha: 0.3),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Done',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -136,7 +460,27 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     final colors = ref.watch(phaseColorsProvider);
     final cycleState = ref.watch(cycleStateProvider);
     final profile = ref.watch(profileProvider);
-    final hasCycleAnchor = profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
+    final hasCycleAnchor =
+        profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
+
+    final lastPeriod = profile?.lastPeriodStart;
+    final now = DateTime.now();
+    final isAnchoredToday = lastPeriod != null &&
+        lastPeriod.year == now.year &&
+        lastPeriod.month == now.month &&
+        lastPeriod.day == now.day;
+    final daysSinceAnchor =
+        lastPeriod != null ? now.calendarDaysDifference(lastPeriod) : null;
+    final periodLength = profile?.averagePeriodLength ?? 5;
+    final isInActivePeriod =
+        daysSinceAnchor != null && daysSinceAnchor > 0 && daysSinceAnchor < periodLength;
+
+    // Inline detail badge for summary
+    final List<String> detailSet = [
+      if (_flow != null) ['Spotting', 'Light', 'Medium', 'Heavy'][_flow!.index],
+      if (_sleep != null) _sleep!.label,
+      if (_cramps != null) ['No cramps', 'Mild cramps', 'Moderate cramps', 'Severe cramps'][_cramps!.index],
+    ];
 
     if (_saved) {
       return Scaffold(
@@ -144,15 +488,21 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         body: Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('💜', style: TextStyle(fontSize: 80))
-                .animate().scale(curve: Curves.elasticOut),
+                .animate()
+                .scale(curve: Curves.elasticOut),
             const SizedBox(height: 20),
-            Text('Logged 🌙',
-                style: GoogleFonts.cormorantGaramond(
-                    fontSize: 30, fontWeight: FontWeight.w700, color: colors.onSurface)),
+            Text(
+              'Logged 🌙',
+              style: GoogleFonts.cormorantGaramond(
+                  fontSize: 30, fontWeight: FontWeight.w700, color: colors.onSurface),
+            ),
             const SizedBox(height: 6),
-            Text('You\'re showing up for yourself. That counts.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.dmSans(fontSize: 14, color: colors.onSurface.withValues(alpha: 0.45))),
+            Text(
+              'You\'re showing up for yourself. That counts.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                  fontSize: 14, color: colors.onSurface.withValues(alpha: 0.45)),
+            ),
           ]),
         ),
       );
@@ -162,13 +512,19 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       backgroundColor: colors.background,
       body: Stack(
         children: [
+          // Ambient glow
           Positioned(
-            top: -80, right: -60,
+            top: -80,
+            right: -60,
             child: Container(
-              width: 240, height: 240,
+              width: 260,
+              height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [colors.primary.withValues(alpha: 0.14), Colors.transparent]),
+                gradient: RadialGradient(colors: [
+                  colors.primary.withValues(alpha: 0.12),
+                  Colors.transparent,
+                ]),
               ),
             ),
           ),
@@ -176,400 +532,578 @@ class _LogScreenState extends ConsumerState<LogScreen> {
           SafeArea(
             child: Column(
               children: [
-                // Header
+                // ── Header ──────────────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Row(
                     children: [
+                      // Phase context pill
+                      if (hasCycleAnchor && cycleState != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+                          ),
+                          child: Text(
+                            'Day ${cycleState.dayOfCycle} · ${cycleState.phaseInfo.name}',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: colors.accent,
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: colors.surface.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Today\'s check-in',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                      const Spacer(),
                       IconButton(
-                        icon: Icon(Icons.close, color: colors.onSurface.withValues(alpha: 0.4), size: 22),
+                        icon: Icon(Icons.close_rounded,
+                            color: colors.onSurface.withValues(alpha: 0.35), size: 20),
                         onPressed: () {
-                          if (context.canPop()) { context.pop(); } else { context.go('/home'); }
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go('/home');
+                          }
                         },
                       ),
-                      const Spacer(),
-                      Column(children: [
-                        Text('Today\'s check-in',
-                            style: GoogleFonts.cormorantGaramond(
-                                fontSize: 20, fontWeight: FontWeight.w700, color: colors.onSurface)),
-                        if (cycleState != null)
-                          Text(
-                            hasCycleAnchor
-                                ? 'Day ${cycleState.dayOfCycle} · ${cycleState.phaseInfo.name}'
-                                : 'Cycle Blueprint · ${profile?.averageCycleLength ?? 28}-day model',
-                            style: GoogleFonts.dmSans(
-                                fontSize: 11, color: colors.onSurface.withValues(alpha: 0.4)),
-                          ),
-                      ]),
-                      const Spacer(),
-                      const SizedBox(width: 48),
                     ],
                   ),
                 ),
 
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 32),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ── MOOD — big, centre, one tap ────────────────────────
+                        // ── Heading ────────────────────────────────────
                         Text(
-                          'How\'s today feeling?',
+                          'How are you\ntoday?',
                           style: GoogleFonts.cormorantGaramond(
-                            fontSize: 24, fontWeight: FontWeight.w700, color: colors.onSurface),
+                            fontSize: 36,
+                            fontWeight: FontWeight.w700,
+                            color: colors.onSurface,
+                            height: 1.1,
+                          ),
                         ).animate().fadeIn(),
                         const SizedBox(height: 4),
-                        Text('Just tap one.',
-                            style: GoogleFonts.dmSans(fontSize: 13, color: colors.onSurface.withValues(alpha: 0.4)))
-                            .animate().fadeIn(delay: 50.ms),
-                        const SizedBox(height: 16),
-
-                        // Selected mood label shown above
-                        if (_moodSelected)
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: Container(
-                              key: ValueKey(_mood),
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: colors.primary.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '${_mood.emoji} ${_mood.label}',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 13, fontWeight: FontWeight.w600, color: colors.accent),
-                              ),
-                            ),
+                        Text(
+                          _moodSelected
+                              ? '${_mood.emoji}  ${_mood.label}'
+                              : 'Tap one',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            color: _moodSelected
+                                ? colors.accent
+                                : colors.onSurface.withValues(alpha: 0.35),
+                            fontWeight: _moodSelected ? FontWeight.w600 : FontWeight.w400,
                           ),
+                        ).animate().fadeIn(delay: 50.ms),
 
+                        const SizedBox(height: 18),
+
+                        // ── Mood orbs ─────────────────────────────────
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: MoodLevel.values.map((m) {
                             final sel = _mood == m && _moodSelected;
                             return GestureDetector(
-                              onTap: () => setState(() { _mood = m; _moodSelected = true; }),
+                              onTap: () => setState(() {
+                                _mood = m;
+                                _moodSelected = true;
+                              }),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
-                                width: 52,
-                                height: 52,
+                                width: sel ? 54 : 48,
+                                height: sel ? 54 : 48,
                                 decoration: BoxDecoration(
-                                  color: sel ? colors.primary.withValues(alpha: 0.22) : colors.surface.withValues(alpha: 0.7),
+                                  color: sel
+                                      ? colors.primary.withValues(alpha: 0.2)
+                                      : colors.surface.withValues(alpha: 0.6),
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: sel ? colors.primary : colors.onSurface.withValues(alpha: 0.06),
+                                    color: sel
+                                        ? colors.primary
+                                        : colors.onSurface.withValues(alpha: 0.07),
                                     width: sel ? 2 : 1,
                                   ),
+                                  boxShadow: sel
+                                      ? [
+                                          BoxShadow(
+                                            color: colors.primary.withValues(alpha: 0.3),
+                                            blurRadius: 14,
+                                            spreadRadius: 2,
+                                          )
+                                        ]
+                                      : [],
                                 ),
                                 child: Center(
-                                  child: Text(m.emoji, style: TextStyle(fontSize: sel ? 26 : 22)),
+                                  child: Text(m.emoji,
+                                      style: TextStyle(fontSize: sel ? 26 : 22)),
                                 ),
                               ),
                             );
                           }).toList(),
-                        ).animate().fadeIn(delay: 100.ms),
+                        ).animate().fadeIn(delay: 80.ms),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 24),
 
-                        // ── PERIOD TOGGLE ───────────────────────────────────────
-                        if (_periodAlreadyLoggedToday)
-                          // Already logged — show locked confirmed banner
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            decoration: BoxDecoration(
-                              color: colors.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
-                            ),
-                            child: Row(children: [
-                              const Text('🩸', style: TextStyle(fontSize: 20)),
-                              const SizedBox(width: 12),
-                              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text(
-                                  'Period started today ✓',
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 14, fontWeight: FontWeight.w600,
-                                    color: colors.accent),
-                                ),
-                                Text(
-                                  'Cycle day 1 — app updated',
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 11, color: colors.onSurface.withValues(alpha: 0.4)),
-                                ),
-                              ]),
-                            ]),
-                          ).animate().fadeIn()
-                        else
-                          GestureDetector(
-                            onTap: () => setState(() => _periodStarted = !_periodStarted),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              decoration: BoxDecoration(
-                                color: _periodStarted ? colors.primary.withValues(alpha: 0.18) : colors.surface.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: _periodStarted ? colors.primary : colors.onSurface.withValues(alpha: 0.06),
-                                  width: _periodStarted ? 1.5 : 1,
-                                ),
+                        // ── Energy Level (Adult Interactive Slider) ───
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'ENERGY LEVEL',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: colors.onSurface.withValues(alpha: 0.35),
+                                letterSpacing: 1.2,
                               ),
-                              child: Row(children: [
-                                const Text('🩸', style: TextStyle(fontSize: 20)),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Period started today',
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 14, fontWeight: FontWeight.w500,
-                                    color: colors.onSurface.withValues(alpha: 0.85)),
-                                ),
-                                const Spacer(),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 22, height: 22,
-                                  decoration: BoxDecoration(
-                                    color: _periodStarted ? colors.primary : Colors.transparent,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: _periodStarted ? colors.primary : colors.onSurface.withValues(alpha: 0.2),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: _periodStarted
-                                      ? const Icon(Icons.check, size: 14, color: Colors.white)
-                                      : null,
-                                ),
-                              ]),
                             ),
-                          ).animate().fadeIn(delay: 150.ms),
-
-                        const SizedBox(height: 22),
-
-                        // ── SYMPTOMS — quick chips ─────────────────────────────
-                        Text(
-                          'Anything going on?',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13, fontWeight: FontWeight.w600,
-                            color: colors.onSurface.withValues(alpha: 0.5), letterSpacing: 0.3),
-                        ).animate().fadeIn(delay: 180.ms),
+                            Row(
+                              children: [
+                                Text(
+                                  _getEnergyLabel(_energy),
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 12,
+                                    fontWeight: _energy != null
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: _energy != null
+                                        ? colors.accent
+                                        : colors.onSurface.withValues(alpha: 0.35),
+                                  ),
+                                ),
+                                if (_energy != null) ...[
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _energy = null),
+                                    child: Icon(Icons.close_rounded,
+                                        size: 14,
+                                        color: colors.onSurface.withValues(alpha: 0.35)),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ).animate().fadeIn(delay: 100.ms),
                         const SizedBox(height: 10),
 
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: colors.surface.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: _energy != null
+                                  ? colors.primary.withValues(alpha: 0.3)
+                                  : colors.onSurface.withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  trackHeight: 6,
+                                  activeTrackColor: colors.accent,
+                                  inactiveTrackColor: colors.background.withValues(alpha: 0.6),
+                                  thumbColor: colors.accent,
+                                  overlayColor: colors.accent.withValues(alpha: 0.2),
+                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+                                  tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2.5),
+                                  activeTickMarkColor: Colors.white.withValues(alpha: 0.6),
+                                  inactiveTickMarkColor: colors.onSurface.withValues(alpha: 0.15),
+                                ),
+                                child: Slider(
+                                  value: (_energy ?? 3).toDouble(),
+                                  min: 1,
+                                  max: 5,
+                                  divisions: 4,
+                                  onChanged: (val) {
+                                    setState(() => _energy = val.round());
+                                  },
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('1 · Drained',
+                                        style: GoogleFonts.dmSans(
+                                            fontSize: 10,
+                                            color: colors.onSurface.withValues(alpha: 0.35))),
+                                    Text('3 · Balanced',
+                                        style: GoogleFonts.dmSans(
+                                            fontSize: 10,
+                                            color: colors.onSurface.withValues(alpha: 0.35))),
+                                    Text('5 · Peak',
+                                        style: GoogleFonts.dmSans(
+                                            fontSize: 10,
+                                            color: colors.onSurface.withValues(alpha: 0.35))),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ).animate().fadeIn(delay: 120.ms),
+
+                        const SizedBox(height: 22),
+
+                        // ── Period Status & Start Card ─────────────────
+                        // Thoughtful & context-aware:
+                        // 1. If period started today -> Confirmed state
+                        // 2. If currently in active period -> In-progress state
+                        // 3. Otherwise -> Clean, welcoming toggle to mark start
+                        Builder(builder: (_) {
+                          if (_periodStarted || isAnchoredToday) {
+                            return GestureDetector(
+                              onTap: () => setState(() => _periodStarted = !_periodStarted),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD94F6E).withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: const Color(0xFFD94F6E).withValues(alpha: 0.5),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Text('🩸', style: TextStyle(fontSize: 18)),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Period started today ✓',
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w700,
+                                              color: const Color(0xFFFF8FA3),
+                                            ),
+                                          ),
+                                          Text(
+                                            'Cycle Day 1 · All phases recalibrated to today',
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 11,
+                                              color: colors.onSurface.withValues(alpha: 0.45),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFD94F6E),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.check, size: 14, color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          } else if (isInActivePeriod) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD94F6E).withValues(alpha: 0.09),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: const Color(0xFFD94F6E).withValues(alpha: 0.25),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text('🩸', style: TextStyle(fontSize: 18)),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Period · Day ${daysSinceAnchor + 1}',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFFFF8FA3),
+                                          ),
+                                        ),
+                                        Text(
+                                          'Active menstrual phase',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 11,
+                                            color: colors.onSurface.withValues(alpha: 0.45),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _periodStarted = true),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFD94F6E).withValues(alpha: 0.18),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        'Reset to today',
+                                        style: GoogleFonts.dmSans(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFFFF8FA3),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          } else {
+                            // Cycle is ongoing / awaiting next period: Welcoming toggle
+                            return GestureDetector(
+                              onTap: () => setState(() => _periodStarted = !_periodStarted),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: colors.surface.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: colors.onSurface.withValues(alpha: 0.08),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Text('🩸', style: TextStyle(fontSize: 18)),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Period started today?',
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: colors.onSurface.withValues(alpha: 0.85),
+                                            ),
+                                          ),
+                                          Text(
+                                            'Tap to record Day 1 of your new cycle',
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 11,
+                                              color: colors.onSurface.withValues(alpha: 0.4),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: colors.onSurface.withValues(alpha: 0.25),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                        }).animate().fadeIn(delay: 140.ms),
+
+                        const SizedBox(height: 24),
+
+                        // ── Symptoms ──────────────────────────────────
+                        Text(
+                          'WHAT\'S GOING ON',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: colors.onSurface.withValues(alpha: 0.35),
+                            letterSpacing: 1.2,
+                          ),
+                        ).animate().fadeIn(delay: 160.ms),
+                        const SizedBox(height: 12),
+
                         Wrap(
-                          spacing: 8, runSpacing: 8,
+                          spacing: 8,
+                          runSpacing: 8,
                           children: _quickSymptoms.map((s) {
                             final key = '${s['e']} ${s['l']}';
                             final sel = _symptoms.contains(key);
                             return GestureDetector(
                               onTap: () => setState(() {
-                                if (sel) { _symptoms.remove(key); } else { _symptoms.add(key); }
+                                if (sel) {
+                                  _symptoms.remove(key);
+                                } else {
+                                  _symptoms.add(key);
+                                }
                               }),
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                duration: const Duration(milliseconds: 160),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 9),
                                 decoration: BoxDecoration(
-                                  color: sel ? colors.primary.withValues(alpha: 0.22) : colors.surface.withValues(alpha: 0.7),
-                                  borderRadius: BorderRadius.circular(16),
+                                  color: sel
+                                      ? colors.primary.withValues(alpha: 0.18)
+                                      : colors.surface.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: sel ? colors.primary : colors.onSurface.withValues(alpha: 0.06),
+                                    color: sel
+                                        ? colors.primary
+                                        : colors.onSurface.withValues(alpha: 0.07),
                                     width: sel ? 1.5 : 1,
                                   ),
                                 ),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  Text(s['e']!, style: const TextStyle(fontSize: 14)),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    s['l']!,
-                                    style: GoogleFonts.dmSans(
-                                      fontSize: 12,
-                                      color: sel ? colors.accent : colors.onSurface.withValues(alpha: 0.6),
-                                      fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(s['e']!, style: const TextStyle(fontSize: 13)),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      s['l']!,
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 12,
+                                        color: sel
+                                            ? colors.accent
+                                            : colors.onSurface.withValues(alpha: 0.6),
+                                        fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+                                      ),
                                     ),
-                                  ),
-                                ]),
+                                  ],
+                                ),
                               ),
                             );
                           }).toList(),
-                        ).animate().fadeIn(delay: 200.ms),
+                        ).animate().fadeIn(delay: 180.ms),
 
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
 
-                        // ── MORE DETAIL (optional, collapsed) ─────────────────
+                        // ── Detail sheet trigger ──────────────────────
                         GestureDetector(
-                          onTap: () => setState(() => _showMore = !_showMore),
+                          onTap: () => _openDetailSheet(colors),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
                             decoration: BoxDecoration(
                               color: colors.surface.withValues(alpha: 0.5),
                               borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(children: [
-                              Icon(
-                                _showMore ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                color: colors.onSurface.withValues(alpha: 0.4), size: 18),
-                              const SizedBox(width: 8),
-                              Text(
-                                _showMore ? 'Less detail' : 'Add flow, energy & note (optional)',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 12, color: colors.onSurface.withValues(alpha: 0.4)),
+                              border: Border.all(
+                                color: detailSet.isNotEmpty
+                                    ? colors.primary.withValues(alpha: 0.35)
+                                    : colors.onSurface.withValues(alpha: 0.07),
                               ),
-                            ]),
-                          ),
-                        ).animate().fadeIn(delay: 220.ms),
-
-                        if (_showMore) ...[
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.all(18),
-                            decoration: BoxDecoration(
-                              color: colors.surface.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(color: colors.onSurface.withValues(alpha: 0.05)),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               children: [
-                                // Energy ⚡
-                                _DetailLabel(emoji: '⚡', label: 'Energy today', colors: colors),
-                                const SizedBox(height: 10),
-                                Row(children: List.generate(5, (i) {
-                                  final filled = i < _energy;
-                                  return GestureDetector(
-                                    onTap: () => setState(() => _energy = i + 1),
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 180),
-                                        width: 44, height: 44,
-                                        decoration: BoxDecoration(
-                                          color: filled ? colors.primary.withValues(alpha: 0.22) : colors.background.withValues(alpha: 0.5),
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: filled ? colors.primary : colors.onSurface.withValues(alpha: 0.06), width: filled ? 1.5 : 1),
-                                        ),
-                                        child: Center(child: Text('⚡', style: TextStyle(fontSize: filled ? 20 : 16, color: filled ? null : Colors.white.withValues(alpha: 0.25)))),
-                                      ),
+                                Icon(
+                                  detailSet.isNotEmpty
+                                      ? Icons.check_circle_outline_rounded
+                                      : Icons.add_circle_outline_rounded,
+                                  size: 16,
+                                  color: detailSet.isNotEmpty
+                                      ? colors.accent
+                                      : colors.onSurface.withValues(alpha: 0.3),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    detailSet.isNotEmpty
+                                        ? detailSet.join(' · ')
+                                        : 'Add flow, sleep & more (optional)',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 12,
+                                      color: detailSet.isNotEmpty
+                                          ? colors.accent
+                                          : colors.onSurface.withValues(alpha: 0.35),
+                                      fontWeight: detailSet.isNotEmpty
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
                                     ),
-                                  );
-                                })),
-
-                                const SizedBox(height: 18),
-                                Container(height: 1, color: colors.onSurface.withValues(alpha: 0.05)),
-                                const SizedBox(height: 16),
-
-                                // Flow 🩸
-                                _DetailLabel(emoji: '🩸', label: 'Flow', colors: colors),
-                                const SizedBox(height: 10),
-                                Row(
-                                  children: FlowLevel.values.map((f) {
-                                    final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
-                                    final sel = _flow == f;
-                                    return Expanded(
-                                      child: GestureDetector(
-                                        onTap: () => setState(() => _flow = sel ? null : f),
-                                        child: AnimatedContainer(
-                                          duration: const Duration(milliseconds: 180),
-                                          margin: const EdgeInsets.only(right: 6),
-                                          padding: const EdgeInsets.symmetric(vertical: 10),
-                                          decoration: BoxDecoration(
-                                            color: sel ? colors.primary.withValues(alpha: 0.22) : colors.background.withValues(alpha: 0.5),
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: sel ? colors.primary : Colors.transparent, width: 1.5),
-                                          ),
-                                          child: Center(child: Text(labels[f.index],
-                                              style: GoogleFonts.dmSans(fontSize: 11, color: sel ? colors.accent : colors.onSurface.withValues(alpha: 0.55), fontWeight: sel ? FontWeight.w700 : FontWeight.w400))),
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-
-                                const SizedBox(height: 18),
-                                Container(height: 1, color: colors.onSurface.withValues(alpha: 0.05)),
-                                const SizedBox(height: 16),
-
-                                // Cramps
-                                _DetailLabel(emoji: '😣', label: 'Cramps', colors: colors),
-                                const SizedBox(height: 10),
-                                Row(
-                                  children: CrampLevel.values.map((c) {
-                                    final labels = ['None', 'Mild', 'Moderate', 'Severe'];
-                                    final emojis = ['😌', '😐', '😣', '😭'];
-                                    final sel = _cramps == c;
-                                    return Expanded(
-                                      child: GestureDetector(
-                                        onTap: () => setState(() => _cramps = sel ? null : c),
-                                        child: AnimatedContainer(
-                                          duration: const Duration(milliseconds: 180),
-                                          margin: const EdgeInsets.only(right: 6),
-                                          padding: const EdgeInsets.symmetric(vertical: 10),
-                                          decoration: BoxDecoration(
-                                            color: sel ? colors.primary.withValues(alpha: 0.22) : colors.background.withValues(alpha: 0.5),
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: sel ? colors.primary : Colors.transparent, width: 1.5),
-                                          ),
-                                          child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                            Text(emojis[c.index], style: const TextStyle(fontSize: 16)),
-                                            const SizedBox(height: 3),
-                                            Text(labels[c.index],
-                                                style: GoogleFonts.dmSans(fontSize: 10, color: sel ? colors.accent : colors.onSurface.withValues(alpha: 0.45))),
-                                          ]),
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-
-                                const SizedBox(height: 18),
-                                Container(height: 1, color: colors.onSurface.withValues(alpha: 0.05)),
-                                const SizedBox(height: 16),
-
-                                // Notes
-                                _DetailLabel(emoji: '✏️', label: 'Anything on your mind', colors: colors),
-                                const SizedBox(height: 10),
-                                TextField(
-                                  controller: _notesController,
-                                  maxLines: 3,
-                                  style: GoogleFonts.dmSans(fontSize: 14, color: colors.onSurface),
-                                  decoration: InputDecoration(
-                                    filled: true, fillColor: colors.background.withValues(alpha: 0.5),
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                                    focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                        borderSide: BorderSide(color: colors.accent, width: 1.5)),
-                                    hintText: 'Whatever\'s on your mind...',
-                                    hintStyle: TextStyle(color: colors.onSurface.withValues(alpha: 0.3), fontSize: 13),
-                                    contentPadding: const EdgeInsets.all(14),
                                   ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 16,
+                                  color: colors.onSurface.withValues(alpha: 0.2),
                                 ),
                               ],
                             ),
                           ),
-                        ],
+                        ).animate().fadeIn(delay: 200.ms),
 
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 28),
 
-                        // ── SAVE ────────────────────────────────────────────────
+                        // ── Save ─────────────────────────────────────
                         GestureDetector(
                           onTap: _save,
-                          child: Container(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(colors: [colors.primary, colors.secondary]),
+                              gradient: _moodSelected
+                                  ? LinearGradient(colors: [colors.primary, colors.secondary])
+                                  : LinearGradient(colors: [
+                                      colors.onSurface.withValues(alpha: 0.1),
+                                      colors.onSurface.withValues(alpha: 0.07),
+                                    ]),
                               borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: colors.primary.withValues(alpha: 0.35),
-                                  blurRadius: 20, offset: const Offset(0, 8)),
-                              ],
+                              boxShadow: _moodSelected
+                                  ? [
+                                      BoxShadow(
+                                        color: colors.primary.withValues(alpha: 0.35),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ]
+                                  : [],
                             ),
                             child: Center(
-                              child: Text('Save today 💜',
-                                  style: GoogleFonts.dmSans(
-                                      fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+                              child: Text(
+                                _moodSelected ? 'Save today 💜' : 'Tap a mood first 💜',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: _moodSelected
+                                      ? Colors.white
+                                      : colors.onSurface.withValues(alpha: 0.3),
+                                ),
+                              ),
                             ),
                           ),
-                        ).animate().fadeIn(delay: 250.ms),
+                        ).animate().fadeIn(delay: 220.ms),
                       ],
                     ),
                   ),
@@ -583,23 +1117,21 @@ class _LogScreenState extends ConsumerState<LogScreen> {
   }
 }
 
-class _DetailLabel extends StatelessWidget {
-  final String emoji;
+class _SheetSectionLabel extends StatelessWidget {
   final String label;
   final PhaseColors colors;
-  const _DetailLabel({required this.emoji, required this.label, required this.colors});
+  const _SheetSectionLabel({required this.label, required this.colors});
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      Text(emoji, style: const TextStyle(fontSize: 14)),
-      const SizedBox(width: 7),
-      Text(
-        label,
-        style: GoogleFonts.dmSans(
-          fontSize: 12, fontWeight: FontWeight.w600,
-          color: colors.onSurface.withValues(alpha: 0.5)),
+    return Text(
+      label.toUpperCase(),
+      style: GoogleFonts.dmSans(
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        color: colors.onSurface.withValues(alpha: 0.4),
+        letterSpacing: 1.1,
       ),
-    ]);
+    );
   }
 }

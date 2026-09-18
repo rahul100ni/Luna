@@ -108,14 +108,7 @@ class InsightsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
 
-                // 3. Discovered Longitudinal Patterns (Smart Adaptive AI Memory)
-                _DiscoveredPatternsCard(
-                  colors: colors,
-                  patternProfile: patternProfile,
-                ),
-                const SizedBox(height: 18),
-
-                // 4. 7-Day Energy Rhythm (Actual Logs + Projected Phase Baseline)
+                // 3. 7-Day Energy Rhythm (Actual Logs + Projected Phase Baseline)
                 _EnergyRhythmCard(
                   colors: colors,
                   logs: logs,
@@ -149,7 +142,14 @@ class InsightsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
 
-                // 7. Cycle & Period History
+                // 7. Discovered Longitudinal Patterns (Deep Biomarker Intelligence - Progressive Disclosure)
+                _DiscoveredPatternsCard(
+                  colors: colors,
+                  patternProfile: patternProfile,
+                ),
+                const SizedBox(height: 18),
+
+                // 8. Cycle & Period History
                 _PeriodHistorySection(
                   colors: colors,
                   logs: logs,
@@ -844,7 +844,8 @@ class _TodayPulseCard extends ConsumerWidget {
                           ),
                           const SizedBox(width: 6),
                           ...List.generate(5, (i) {
-                            final filled = i < todayEntry!.energyLevel;
+                            final energy = todayEntry!.energyLevel ?? 3;
+                            final filled = i < energy;
                             return Padding(
                               padding: const EdgeInsets.only(right: 2),
                               child: Icon(
@@ -909,7 +910,7 @@ class _TodayPulseCard extends ConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _getBiologicalTakeaway(currentPhase, todayEntry!.mood, todayEntry!.energyLevel),
+                      _getBiologicalTakeaway(currentPhase, todayEntry!.mood, todayEntry!.energyLevel ?? 3),
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         color: colors.onSurface.withValues(alpha: 0.75),
@@ -1093,8 +1094,8 @@ class _EnergyRhythmCard extends StatelessWidget {
                   }
                 }
 
-                final hasLog = matchingLog != null;
-                final displayEnergy = hasLog ? matchingLog.energyLevel : baselineEnergy;
+                final hasLog = matchingLog != null && matchingLog.energyLevel != null;
+                final displayEnergy = hasLog ? matchingLog.energyLevel! : baselineEnergy;
                 final barHeight = (displayEnergy / 5.0) * 64.0;
 
                 return Expanded(
@@ -2008,7 +2009,7 @@ class _PeriodHistorySection extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. DISCOVERED LONGITUDINAL PATTERNS (AI MEMORY ENGINE)
+// 7. DISCOVERED LONGITUDINAL PATTERNS (DEEP BIOMARKER INTELLIGENCE)
 // ─────────────────────────────────────────────────────────────────────────────
 class _DiscoveredPatternsCard extends StatelessWidget {
   final PhaseColors colors;
@@ -2023,15 +2024,16 @@ class _DiscoveredPatternsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasPatterns = patternProfile.patterns.isNotEmpty;
     final totalLogs = patternProfile.totalLogsAnalyzed;
+    final progress = (totalLogs / 7).clamp(0.0, 1.0);
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: colors.surface.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: colors.primary.withValues(alpha: 0.18),
-          width: 1,
+          color: colors.onSurface.withValues(alpha: 0.06),
         ),
       ),
       child: Column(
@@ -2042,14 +2044,14 @@ class _DiscoveredPatternsCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.18),
+                  color: (hasPatterns ? colors.accent : colors.primary).withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Center(
-                  child: Text('🧠', style: TextStyle(fontSize: 20)),
+                  child: Text('🧬', style: TextStyle(fontSize: 18)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2058,7 +2060,7 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Discovered Cycle Patterns',
+                      'Cycle Pattern Intelligence',
                       style: GoogleFonts.cormorantGaramond(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -2067,7 +2069,9 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Longitudinal Pattern Intelligence',
+                      hasPatterns
+                          ? 'Longitudinal biomarker discoveries'
+                          : 'Personal baseline calibration',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         color: colors.onSurface.withValues(alpha: 0.45),
@@ -2079,12 +2083,12 @@ class _DiscoveredPatternsCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: (hasPatterns ? colors.accent : Colors.amberAccent)
+                  color: (hasPatterns ? colors.accent : colors.primary)
                       .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: (hasPatterns ? colors.accent : Colors.amberAccent)
-                        .withValues(alpha: 0.3),
+                    color: (hasPatterns ? colors.accent : colors.primary)
+                        .withValues(alpha: 0.25),
                     width: 1,
                   ),
                 ),
@@ -2096,18 +2100,18 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                       height: 6,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: hasPatterns ? colors.accent : Colors.amberAccent,
+                        color: hasPatterns ? colors.accent : colors.primary,
                       ),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       hasPatterns
-                          ? '${patternProfile.patterns.length} Found'
-                          : '$totalLogs/3 Check-ins',
+                          ? '${patternProfile.patterns.length} Identified'
+                          : '$totalLogs/7 Check-ins',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: hasPatterns ? colors.accent : Colors.amberAccent,
+                        color: hasPatterns ? colors.accent : colors.primary,
                       ),
                     ),
                   ],
@@ -2118,14 +2122,14 @@ class _DiscoveredPatternsCard extends StatelessWidget {
           const SizedBox(height: 16),
 
           if (!hasPatterns) ...[
-            // Calibration / Learning State
+            // Calibration / Learning State (Calm, dignified, honest)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colors.background.withValues(alpha: 0.5),
+                color: colors.background.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: colors.onSurface.withValues(alpha: 0.08),
+                  color: colors.onSurface.withValues(alpha: 0.05),
                 ),
               ),
               child: Column(
@@ -2133,10 +2137,10 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Text('🔬', style: TextStyle(fontSize: 16)),
+                      const Text('🔬', style: TextStyle(fontSize: 14)),
                       const SizedBox(width: 8),
                       Text(
-                        'Calibrating Personal Baseline',
+                        'Calibrating Your Biological Baseline',
                         style: GoogleFonts.dmSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -2147,44 +2151,97 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Luna is building your longitudinal biomarker model. As you record symptoms, mood, and energy across your cycle, Luna automatically discovers recurring trajectories and adapts all recommendations to your biology.',
+                    totalLogs == 0
+                        ? 'Luna observes your mood, energy, and symptoms across multiple cycle phases before confirming personal patterns, ensuring clinical integrity without premature assumptions.'
+                        : 'Luna requires at least 7 daily check-ins across different phases of your cycle to detect genuine hormonal patterns rather than guessing from isolated days.',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
                       color: colors.onSurface.withValues(alpha: 0.6),
                       height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _PatternPreviewBadge(
-                    icon: '📉',
-                    label: 'Late-Luteal Energy Troughs & Recovery',
-                    colors: colors,
+                  const SizedBox(height: 14),
+
+                  // Progress Track
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      height: 6,
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: colors.onSurface.withValues(alpha: 0.08),
+                        valueColor: AlwaysStoppedAnimation<Color>(colors.accent),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  _PatternPreviewBadge(
-                    icon: '⚡',
-                    label: 'Estrogen Peak & Verbal Dopamine Surges',
-                    colors: colors,
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '$totalLogs of 7 check-ins collected',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: colors.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      Text(
+                        totalLogs < 7
+                            ? '${7 - totalLogs} more to unlock patterns'
+                            : 'Analyzing multi-cycle trends',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colors.accent,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  _PatternPreviewBadge(
-                    icon: '🍫',
-                    label: 'Premenstrual Micronutrient Craving Waves',
-                    colors: colors,
+
+                  const SizedBox(height: 14),
+                  Text(
+                    'Biomarkers under continuous observation:',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: colors.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _PatternPreviewBadge(icon: '📉', label: 'Luteal energy dips', colors: colors),
+                      _PatternPreviewBadge(icon: '⚡', label: 'Estrogen stamina peaks', colors: colors),
+                      _PatternPreviewBadge(icon: '💜', label: 'Premenstrual mood resilience', colors: colors),
+                      _PatternPreviewBadge(icon: '🩸', label: 'Prostaglandin cramp curves', colors: colors),
+                    ],
                   ),
                 ],
               ),
             ),
           ] else ...[
-            // Active Discovered Patterns List
+            // Active Discovered Patterns List with Progressive Disclosure
+            Text(
+              'Recurring hormonal tendencies identified from your logged cycle data. Tap any pattern for deep endocrine breakdown.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: colors.onSurface.withValues(alpha: 0.55),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 14),
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: patternProfile.patterns.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              separatorBuilder: (context, index) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final pattern = patternProfile.patterns[index];
                 return _PatternTile(
+                  key: ValueKey(pattern.id),
                   pattern: pattern,
                   colors: colors,
                 );
@@ -2210,55 +2267,85 @@ class _PatternPreviewBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(icon, style: const TextStyle(fontSize: 13)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: colors.onSurface.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.onSurface.withValues(alpha: 0.05)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 6),
+          Text(
             label,
             style: GoogleFonts.dmSans(
               fontSize: 11,
               fontWeight: FontWeight.w500,
-              color: colors.onSurface.withValues(alpha: 0.5),
+              color: colors.onSurface.withValues(alpha: 0.6),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _PatternTile extends StatelessWidget {
+class _PatternTile extends StatefulWidget {
   final DiscoveredPattern pattern;
   final PhaseColors colors;
 
   const _PatternTile({
+    super.key,
     required this.pattern,
     required this.colors,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final isHighConf = pattern.confidence.contains('High');
+  State<_PatternTile> createState() => _PatternTileState();
+}
 
-    return Container(
+class _PatternTileState extends State<_PatternTile> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final pattern = widget.pattern;
+    final colors = widget.colors;
+    final isConfirmed = pattern.confidence.contains('Confirmed') || pattern.confidence.contains('High');
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colors.background.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: (isHighConf ? colors.accent : colors.primary).withValues(alpha: 0.22),
+          color: (isConfirmed ? colors.accent : colors.primary).withValues(alpha: _isExpanded ? 0.35 : 0.18),
           width: 1,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Row 1: Emoji, Title, Confidence Badge
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(pattern.emoji, style: const TextStyle(fontSize: 20)),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.surface.withValues(alpha: 0.8),
+                ),
+                child: Center(
+                  child: Text(pattern.emoji, style: const TextStyle(fontSize: 18)),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -2273,7 +2360,7 @@ class _PatternTile extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: (isHighConf ? colors.accent : colors.primary).withValues(alpha: 0.15),
+                  color: (isConfirmed ? colors.accent : colors.primary).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -2281,70 +2368,131 @@ class _PatternTile extends StatelessWidget {
                   style: GoogleFonts.dmSans(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: isHighConf ? colors.accent : colors.primary,
+                    color: isConfirmed ? colors.accent : colors.primary,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
+
+          // Brief Observation (Clean 1-liner accessible to all users)
           Text(
             pattern.description,
             style: GoogleFonts.dmSans(
               fontSize: 12,
-              color: colors.onSurface.withValues(alpha: 0.75),
+              color: colors.onSurface.withValues(alpha: 0.8),
               height: 1.45,
             ),
           ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: colors.surface.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: colors.onSurface.withValues(alpha: 0.07),
+          const SizedBox(height: 12),
+
+          // Footer Row: Cycle Days & Expandable Deep Science Button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (pattern.cycleDays.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: 12,
+                      color: colors.onSurface.withValues(alpha: 0.45),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Days ${pattern.cycleDays.first}–${pattern.cycleDays.last}',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: colors.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                const SizedBox.shrink(),
+
+              // Deep Science Toggle (Opt-in for those who want to dive deep!)
+              InkWell(
+                onTap: () => setState(() => _isExpanded = !_isExpanded),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _isExpanded ? 'Hide breakdown' : 'Hormonal breakdown',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colors.accent,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        size: 14,
+                        color: colors.accent,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Collapsible Deep Endocrine Breakdown
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity, height: 0),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colors.surface.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: colors.accent.withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text('🧬', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Endocrine Mechanism',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: colors.accent,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      pattern.clinicalInsight,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        color: colors.onSurface.withValues(alpha: 0.75),
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('💡', style: TextStyle(fontSize: 12)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    pattern.clinicalInsight,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11,
-                      color: colors.onSurface.withValues(alpha: 0.65),
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            crossFadeState: _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 200),
           ),
-          if (pattern.cycleDays.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  Icons.schedule_rounded,
-                  size: 12,
-                  color: colors.accent.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  'Associated: Days ${pattern.cycleDays.first}–${pattern.cycleDays.last}',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: colors.accent.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );

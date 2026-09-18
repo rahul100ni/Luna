@@ -48,7 +48,10 @@ class LongitudinalProfile {
     required this.aiContextDigest,
   });
 
-  bool get hasSufficientData => totalLogsAnalyzed >= 3;
+  bool get hasSufficientData => totalLogsAnalyzed >= 7;
+  bool get hasPatterns => patterns.isNotEmpty;
+  int get calibrationTarget => 7;
+  double get calibrationProgress => (totalLogsAnalyzed / 7).clamp(0.0, 1.0);
 }
 
 class PatternAnalysisService {
@@ -77,19 +80,31 @@ class PatternAnalysisService {
     final cycleDayLogs = <int, List<LogEntry>>{};
 
     double energySum = 0;
+    int energyCount = 0;
     for (final log in logs) {
-      energySum += log.energyLevel;
+      if (log.energyLevel != null) {
+        energySum += log.energyLevel!;
+        energyCount++;
+      }
       final phase = CycleEngine.phaseForDate(log.date, profile);
       phaseLogs[phase]?.add(log);
 
       // Estimate cycle day if anchor exists
       if (profile.lastPeriodStart != null) {
-        final day = (log.date.difference(profile.lastPeriodStart!).inDays % cycleLength) + 1;
+        final inDays =
+            log.date.calendarDaysDifference(profile.lastPeriodStart!);
+        // Bug 8 fix: skip logs that predate the anchor — they have no valid
+        // cycle day. Also use a Dart-safe positive modulo so day is always
+        // in range [1..cycleLength], regardless of Dart's signed % behavior.
+        if (inDays < 0) continue;
+        final day =
+            ((inDays % cycleLength) + cycleLength) % cycleLength + 1;
         cycleDayLogs.putIfAbsent(day, () => []).add(log);
       }
     }
 
-    final averageEnergy = totalLogs > 0 ? energySum / totalLogs : 3.0;
+
+    final averageEnergy = energyCount > 0 ? energySum / energyCount : 3.0;
 
     // 2. Compute phase energy averages
     final phaseEnergyAverages = <CyclePhase, double>{};
@@ -97,8 +112,13 @@ class PatternAnalysisService {
       if (entry.value.isEmpty) {
         phaseEnergyAverages[entry.key] = 3.0;
       } else {
-        final sum = entry.value.fold<int>(0, (prev, e) => prev + e.energyLevel);
-        phaseEnergyAverages[entry.key] = sum / entry.value.length;
+        final energyLogs = entry.value.where((e) => e.energyLevel != null).toList();
+        if (energyLogs.isEmpty) {
+          phaseEnergyAverages[entry.key] = 3.0;
+        } else {
+          final sum = energyLogs.fold<int>(0, (prev, e) => prev + e.energyLevel!);
+          phaseEnergyAverages[entry.key] = sum / energyLogs.length;
+        }
       }
     }
 
@@ -126,107 +146,108 @@ class PatternAnalysisService {
     // 5. Discover distinct personal patterns
     final patterns = <DiscoveredPattern>[];
 
-    // Pattern A: Luteal Energy Crash
-    final lateLutealEnergy = phaseEnergyAverages[CyclePhase.lateLuteal] ?? 3.0;
-    final follicularEnergy = phaseEnergyAverages[CyclePhase.follicular] ?? 3.0;
-    if (lateLutealEnergy < 2.6 || (follicularEnergy - lateLutealEnergy) >= 1.0) {
-      patterns.add(DiscoveredPattern(
-        id: 'luteal_energy_trough',
-        title: 'Late-Luteal Energy Trough',
-        category: 'Energy',
-        emoji: '📉',
-        description: 'Your stamina drops sharply in the late luteal phase (avg ${lateLutealEnergy.toStringAsFixed(1)}/5 vs ${follicularEnergy.toStringAsFixed(1)}/5 in follicular).',
-        clinicalInsight: 'Rising progesterone and falling estrogen elevate core body temperature and alter GABA receptors. This is a physiological call for restorative pacing, not a personal flaw.',
-        confidence: totalLogs >= 10 ? 'High Confidence' : 'Emerging',
-        cycleDays: [cycleLength - 6, cycleLength - 5, cycleLength - 4, cycleLength - 3, cycleLength - 2, cycleLength - 1],
-        associatedPhase: CyclePhase.lateLuteal,
-      ));
-    }
-
-    // Pattern B: Estrogen Dopamine Surge
-    final ovulatoryEnergy = phaseEnergyAverages[CyclePhase.ovulatory] ?? 3.0;
-    if (follicularEnergy >= 3.6 || ovulatoryEnergy >= 3.8) {
-      patterns.add(DiscoveredPattern(
-        id: 'estrogen_dopamine_peak',
-        title: 'Estrogen Peak Acceleration',
-        category: 'Energy',
-        emoji: '⚡',
-        description: 'You experience a pronounced physical and cognitive peak across Days 10–14 (avg ${ovulatoryEnergy.toStringAsFixed(1)}/5 energy).',
-        clinicalInsight: 'Estrogen sensitizes dopamine D2 receptors in the prefrontal cortex, enhancing focus, verbal memory, and metabolic efficiency.',
-        confidence: totalLogs >= 8 ? 'High Confidence' : 'Emerging',
-        cycleDays: [10, 11, 12, 13, 14],
-        associatedPhase: CyclePhase.ovulatory,
-      ));
-    }
-
-    // Pattern C: Late Luteal Mood Sensitivity
     final lateLutealLogs = phaseLogs[CyclePhase.lateLuteal] ?? [];
-    final sensitiveMoodLogs = lateLutealLogs.where(
-      (l) => l.mood == MoodLevel.struggling || l.mood == MoodLevel.low,
-    ).length;
-    if (lateLutealLogs.isNotEmpty && (sensitiveMoodLogs / lateLutealLogs.length) >= 0.4) {
-      patterns.add(DiscoveredPattern(
-        id: 'pms_mood_vulnerability',
-        title: 'Premenstrual Emotional Sensitivity',
-        category: 'Mood',
-        emoji: '💜',
-        description: 'A noticeable shift toward emotional tenderness or anxiety appears in late luteal (${(sensitiveMoodLogs / lateLutealLogs.length * 100).toInt()}% of your luteal logs).',
-        clinicalInsight: 'The acute drop in allopregnanolone triggers heightened amygdala reactivity. Protecting boundaries and avoiding stimulants 4 days pre-bleed is profoundly protective.',
-        confidence: lateLutealLogs.length >= 4 ? 'High Confidence' : 'Emerging',
-        cycleDays: [cycleLength - 4, cycleLength - 3, cycleLength - 2, cycleLength - 1],
-        associatedPhase: CyclePhase.lateLuteal,
-      ));
-    }
-
-    // Pattern D: Cramp Velocity Pattern
+    final follicularLogs = phaseLogs[CyclePhase.follicular] ?? [];
+    final ovulatoryLogs = phaseLogs[CyclePhase.ovulatory] ?? [];
     final menstrualLogs = phaseLogs[CyclePhase.menstrual] ?? [];
-    final crampLogs = menstrualLogs.where(
-      (l) => l.cramps == CrampLevel.moderate || l.cramps == CrampLevel.severe,
-    ).length;
-    if (menstrualLogs.isNotEmpty && crampLogs > 0) {
-      patterns.add(DiscoveredPattern(
-        id: 'cramp_velocity',
-        title: 'Early-Bleed Prostaglandin Spike',
-        category: 'Symptoms',
-        emoji: '🩸',
-        description: 'Cramp intensity clusters strongly on Days 1–2 of bleeding before tapering off rapidly.',
-        clinicalInsight: 'Uterine contractions driven by PGF2-alpha prostaglandins peak within the first 36 hours. Early warmth and magnesium glycinate before flow begins minimizes prostaglandin accumulation.',
-        confidence: menstrualLogs.length >= 3 ? 'High Confidence' : 'Emerging',
-        cycleDays: [1, 2],
-        associatedPhase: CyclePhase.menstrual,
-      ));
-    }
 
-    // Pattern E: Sugar & Craving Marker
-    final cravingCount = logs.where(
-      (l) => l.symptoms.any((s) => s.toLowerCase().contains('crav') || s.toLowerCase().contains('sweet') || s.toLowerCase().contains('chocolate')),
-    ).length;
-    if (cravingCount >= 2) {
-      patterns.add(DiscoveredPattern(
-        id: 'magnesium_sugar_craving',
-        title: 'Luteal Micronutrient Craving Signal',
-        category: 'Nutrition',
-        emoji: '🍫',
-        description: 'Sugar and chocolate cravings consistently emerge 24–72 hours before your period begins.',
-        clinicalInsight: 'Metabolic demand rises ~150–300 kcal/day in late luteal while cellular magnesium drops. Your cravings are intelligent biological signals for calories and magnesium.',
-        confidence: cravingCount >= 4 ? 'High Confidence' : 'Emerging',
-        cycleDays: [cycleLength - 3, cycleLength - 2, cycleLength - 1],
-        associatedPhase: CyclePhase.lateLuteal,
-      ));
-    }
+    // Enforce rigorous threshold: Luna requires at least 7 logs across the cycle
+    // and multiple phase-specific data points before declaring personal patterns.
+    if (totalLogs >= 7) {
+      final lateLutealEnergyLogs = lateLutealLogs.where((e) => e.energyLevel != null).toList();
+      final follicularEnergyLogs = follicularLogs.where((e) => e.energyLevel != null).toList();
+      final ovulatoryEnergyLogs = ovulatoryLogs.where((e) => e.energyLevel != null).toList();
+      final lateLutealEnergy = phaseEnergyAverages[CyclePhase.lateLuteal] ?? 3.0;
+      final follicularEnergy = phaseEnergyAverages[CyclePhase.follicular] ?? 3.0;
+      final ovulatoryEnergy = phaseEnergyAverages[CyclePhase.ovulatory] ?? 3.0;
 
-    // If few patterns found due to low logs, add formative baseline pattern
-    if (patterns.isEmpty) {
-      patterns.add(DiscoveredPattern(
-        id: 'baseline_profiling',
-        title: 'Personal Baseline Formation',
-        category: 'Rhythm',
-        emoji: '🌱',
-        description: 'Luna is currently mapping your unique cycle baseline across $totalLogs logged data points.',
-        clinicalInsight: 'Keep logging your daily mood, energy, and symptoms. By cycle 2, Luna automatically identifies recurring symptom clusters and personal energy curves.',
-        confidence: 'Forming',
-        cycleDays: const [],
-      ));
+      // Pattern A: Luteal Energy Crash (requires >= 3 late luteal & >= 2 follicular logs)
+      if (lateLutealEnergyLogs.length >= 3 && follicularEnergyLogs.length >= 2) {
+        if (lateLutealEnergy <= 2.4 || (follicularEnergy - lateLutealEnergy) >= 1.0) {
+          patterns.add(DiscoveredPattern(
+            id: 'luteal_energy_trough',
+            title: 'Late-Luteal Energy Trough',
+            category: 'Energy',
+            emoji: '📉',
+            description: 'Your stamina drops in the late luteal phase (avg ${lateLutealEnergy.toStringAsFixed(1)}/5 vs ${follicularEnergy.toStringAsFixed(1)}/5 in follicular).',
+            clinicalInsight: 'Rising progesterone and falling estrogen elevate basal body temperature and alter GABA receptors. This physiological shift calls for restorative pacing rather than pushing through.',
+            confidence: lateLutealEnergyLogs.length >= 5 || estimatedCycles >= 2 ? 'Confirmed' : 'Emerging',
+            cycleDays: [cycleLength - 5, cycleLength - 4, cycleLength - 3, cycleLength - 2, cycleLength - 1],
+            associatedPhase: CyclePhase.lateLuteal,
+          ));
+        }
+      }
+
+      // Pattern B: Estrogen Dopamine Surge (requires >= 2 follicular & >= 2 ovulatory logs)
+      if (follicularEnergyLogs.length >= 2 && ovulatoryEnergyLogs.length >= 2) {
+        if (follicularEnergy >= 3.8 || ovulatoryEnergy >= 3.8) {
+          patterns.add(DiscoveredPattern(
+            id: 'estrogen_dopamine_peak',
+            title: 'Estrogen Peak Acceleration',
+            category: 'Energy',
+            emoji: '⚡',
+            description: 'Pronounced stamina and focus across Days 10–14 (avg ${ovulatoryEnergy.toStringAsFixed(1)}/5 energy).',
+            clinicalInsight: 'Estrogen sensitizes dopamine D2 receptors in the prefrontal cortex, enhancing focus, verbal memory, and metabolic efficiency.',
+            confidence: (follicularEnergyLogs.length + ovulatoryEnergyLogs.length) >= 6 ? 'Confirmed' : 'Emerging',
+            cycleDays: [10, 11, 12, 13, 14],
+            associatedPhase: CyclePhase.ovulatory,
+          ));
+        }
+      }
+
+      // Pattern C: Late Luteal Mood Sensitivity (requires >= 3 late luteal logs & >= 2 sensitive logs)
+      final sensitiveMoodLogs = lateLutealLogs.where(
+        (l) => l.mood == MoodLevel.struggling || l.mood == MoodLevel.low,
+      ).length;
+      if (lateLutealLogs.length >= 3 && sensitiveMoodLogs >= 2 && (sensitiveMoodLogs / lateLutealLogs.length) >= 0.5) {
+        patterns.add(DiscoveredPattern(
+          id: 'pms_mood_vulnerability',
+          title: 'Premenstrual Emotional Sensitivity',
+          category: 'Mood',
+          emoji: '💜',
+          description: 'A recurring shift toward emotional tenderness in late luteal ($sensitiveMoodLogs of ${lateLutealLogs.length} late luteal check-ins).',
+          clinicalInsight: 'The acute drop in allopregnanolone alters GABA-A receptor plasticity, heightening emotional processing. Protecting boundaries and avoiding stimulants 4 days pre-bleed is profoundly protective.',
+          confidence: lateLutealLogs.length >= 5 ? 'Confirmed' : 'Emerging',
+          cycleDays: [cycleLength - 4, cycleLength - 3, cycleLength - 2, cycleLength - 1],
+          associatedPhase: CyclePhase.lateLuteal,
+        ));
+      }
+
+      // Pattern D: Cramp Velocity Pattern (requires >= 3 menstrual logs & >= 2 cramp logs)
+      final crampLogs = menstrualLogs.where(
+        (l) => l.cramps == CrampLevel.moderate || l.cramps == CrampLevel.severe,
+      ).length;
+      if (menstrualLogs.length >= 3 && crampLogs >= 2) {
+        patterns.add(DiscoveredPattern(
+          id: 'cramp_velocity',
+          title: 'Early-Bleed Prostaglandin Spike',
+          category: 'Symptoms',
+          emoji: '🩸',
+          description: 'Uterine cramping clusters predictably during Days 1–2 of bleeding before tapering off.',
+          clinicalInsight: 'Uterine contractions driven by PGF2-alpha prostaglandins peak within the first 36 hours. Early warmth and magnesium glycinate before flow begins minimizes prostaglandin accumulation.',
+          confidence: menstrualLogs.length >= 5 ? 'Confirmed' : 'Emerging',
+          cycleDays: [1, 2],
+          associatedPhase: CyclePhase.menstrual,
+        ));
+      }
+
+      // Pattern E: Sugar & Craving Marker (requires >= 10 total logs & >= 2 luteal cravings)
+      final lutealCravingLogs = lateLutealLogs.where(
+        (l) => l.symptoms.any((s) => s.toLowerCase().contains('crav') || s.toLowerCase().contains('sweet') || s.toLowerCase().contains('choc')),
+      ).length;
+      if (totalLogs >= 10 && lutealCravingLogs >= 2) {
+        patterns.add(DiscoveredPattern(
+          id: 'magnesium_sugar_craving',
+          title: 'Luteal Micronutrient Craving Signal',
+          category: 'Nutrition',
+          emoji: '🍫',
+          description: 'Carbohydrate and chocolate cravings consistently emerge 24–72 hours prior to your period.',
+          clinicalInsight: 'Metabolic demand rises ~150–300 kcal/day in late luteal while cellular magnesium drops. Your cravings are intelligent biological signals for calories and magnesium.',
+          confidence: lutealCravingLogs >= 4 ? 'Confirmed' : 'Emerging',
+          cycleDays: [cycleLength - 3, cycleLength - 2, cycleLength - 1],
+          associatedPhase: CyclePhase.lateLuteal,
+        ));
+      }
     }
 
     // 6. Build AI Context Digest for DeepSeek System Prompt
@@ -246,8 +267,12 @@ class PatternAnalysisService {
     }
 
     digestBuffer.writeln('- Verified Personal Behavioral & Physiological Patterns:');
-    for (final p in patterns) {
-      digestBuffer.writeln('  * [${p.category}] ${p.title} (${p.confidence}): ${p.description}');
+    if (patterns.isEmpty) {
+      digestBuffer.writeln('  * Baseline calibration in progress ($totalLogs/7 check-ins). No recurring hormonal deviations confirmed yet. Provide observant, supportive guidance without assuming unverified patterns.');
+    } else {
+      for (final p in patterns) {
+        digestBuffer.writeln('  * [${p.category}] ${p.title} (${p.confidence}): ${p.description}');
+      }
     }
 
     digestBuffer.writeln();

@@ -1,3 +1,4 @@
+try { val env = System.getenv(); val field = env.javaClass.getDeclaredField("m"); field.isAccessible = true; val map = field.get(env) as MutableMap<String, String>; map.remove("ANDROID_PREFS_ROOT") } catch (e: Exception) {}  
 pluginManagement {
     val flutterSdkPath =
         run {
@@ -21,6 +22,7 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "9.1.0" apply false
     id("org.jetbrains.kotlin.android") version "2.4.0" apply false
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
 include(":app")

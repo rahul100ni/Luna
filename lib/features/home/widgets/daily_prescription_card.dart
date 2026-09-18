@@ -80,13 +80,8 @@ class _DailyPrescriptionCardState
     _fetchPrescription(background: true);
   }
 
-  Future<void> _fetchPrescription({bool background = false}) async {
+  Future<void> _fetchPrescription({bool background = false, bool forceRefresh = false}) async {
     if (_isFetching) return;
-
-    if (!background) {
-      setState(() => _isFetching = true);
-      _spinController.repeat();
-    }
 
     final profile = ref.read(profileProvider);
     final cycleState = ref.read(cycleStateProvider);
@@ -97,6 +92,28 @@ class _DailyPrescriptionCardState
     final hasAnchor =
         profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
     final day = cycleState?.dayOfCycle ?? 0;
+    final key = _cacheKey(hasAnchor, day, phase);
+
+    // Bug 5 fix: always check cache first — even on manual Refresh tap —
+    // unless the user explicitly force-refreshes. This prevents burning API
+    // quota on every tap when the prescription is already fresh today.
+    if (!forceRefresh) {
+      final cached = StorageService.getCachedDailyPrescription(key);
+      if (cached != null) {
+        try {
+          final map = jsonDecode(cached) as Map<String, dynamic>;
+          if (mounted) {
+            setState(() => _prescription = DailyPrescription.fromMap(map));
+          }
+          return;
+        } catch (_) {}
+      }
+    }
+
+    if (!background) {
+      setState(() => _isFetching = true);
+      _spinController.repeat();
+    }
 
     final result = await DeepSeekService.getDailyPrescription(
       userName: profile?.name ?? 'Beautiful',
@@ -110,7 +127,6 @@ class _DailyPrescriptionCardState
       patternProfile: patternProfile,
     );
 
-    final key = _cacheKey(hasAnchor, day, phase);
     await StorageService.cacheDailyPrescription(key, jsonEncode(result.toMap()));
 
     if (mounted) {
@@ -122,6 +138,7 @@ class _DailyPrescriptionCardState
       });
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +185,7 @@ class _DailyPrescriptionCardState
               ),
               const Spacer(),
               GestureDetector(
-                onTap: () => _fetchPrescription(background: false),
+                onTap: () => _fetchPrescription(background: false, forceRefresh: true),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(

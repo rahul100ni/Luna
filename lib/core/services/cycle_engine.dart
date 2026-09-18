@@ -1,6 +1,15 @@
 import '../constants/phase_constants.dart';
 import '../models/user_profile.dart';
 
+extension CalendarDays on DateTime {
+  /// Safely computes the number of calendar days between two dates, ignoring time and daylight savings issues.
+  int calendarDaysDifference(DateTime other) {
+    final a = DateTime.utc(year, month, day);
+    final b = DateTime.utc(other.year, other.month, other.day);
+    return a.difference(b).inDays;
+  }
+}
+
 class CycleState {
   final int dayOfCycle;
   final CyclePhase phase;
@@ -37,12 +46,12 @@ class CycleEngine {
     }
 
     final now = DateTime.now();
-    final dayOfCycle = now.difference(lastPeriod).inDays + 1;
+    final dayOfCycle = now.calendarDaysDifference(lastPeriod) + 1;
     final phase = PhaseConstants.phaseFromDay(dayOfCycle, profile.averageCycleLength);
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
 
     final nextPeriodDate = lastPeriod.add(Duration(days: profile.averageCycleLength));
-    final daysUntilNextPeriod = nextPeriodDate.difference(now).inDays;
+    final daysUntilNextPeriod = nextPeriodDate.calendarDaysDifference(now);
 
     // Days until phase changes
     int daysUntilPhaseChange = 1;
@@ -70,7 +79,7 @@ class CycleEngine {
   static CyclePhase phaseForDate(DateTime date, UserProfile profile) {
     final lastPeriod = profile.lastPeriodStart;
     if (lastPeriod == null) return CyclePhase.follicular;
-    final dayOfCycle = date.difference(lastPeriod).inDays + 1;
+    final dayOfCycle = date.calendarDaysDifference(lastPeriod) + 1;
     int adjustedDay;
     if (dayOfCycle > 0) {
       final rem = dayOfCycle % profile.averageCycleLength;
@@ -87,7 +96,7 @@ class CycleEngine {
   static CycleState? calculateForDate(UserProfile profile, DateTime date) {
     final lastPeriod = profile.lastPeriodStart;
     if (lastPeriod == null) return null;
-    final dayOfCycle = date.difference(lastPeriod).inDays + 1;
+    final dayOfCycle = date.calendarDaysDifference(lastPeriod) + 1;
     int effectiveDay;
     if (dayOfCycle > 0) {
       final rem = dayOfCycle % profile.averageCycleLength;
@@ -105,7 +114,7 @@ class CycleEngine {
       phase: phase,
       phaseInfo: phaseInfo,
       nextPeriodDate: nextPeriodDate,
-      daysUntilNextPeriod: nextPeriodDate.difference(date).inDays,
+      daysUntilNextPeriod: nextPeriodDate.calendarDaysDifference(date),
       daysUntilPhaseChange: 1,
     );
   }

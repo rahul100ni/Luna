@@ -7,16 +7,12 @@ import '../../core/constants/phase_constants.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/notification_service.dart';
-import '../../core/services/deepseek_service.dart';
+import '../../core/services/storage_service.dart';
 import 'version_manager_screen.dart';
 
-// ── Keys for notification SharedPreferences ───────────────────────────────────
-const _kNotifDailyCheckin = 'notif_daily_checkin';
-const _kNotifPeriodSoon = 'notif_period_soon';
-const _kNotifPhaseChange = 'notif_phase_change';
-const _kNotifPms = 'notif_pms';
-const _kNotifDailyHour = 'notif_daily_hour';
-const _kNotifDailyMinute = 'notif_daily_minute';
+// Notification preference keys — imported from notification_service.dart (single source of truth)
+// kNotifDailyCheckin, kNotifPeriodSoon, kNotifPhaseChange, kNotifPms,
+// kNotifDailyHour, kNotifDailyMinute are top-level constants in notification_service.dart
 
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -423,137 +419,69 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // ── 5b. DeepSeek API Key Configuration ─────────────────────────────────────
-  void _showApiKeySheet(PhaseColors colors) {
-    final currentKey = DeepSeekService.apiKey;
-    final controller = TextEditingController(text: currentKey);
-    bool obscure = true;
-
-    showModalBottomSheet(
+  // ── 6. Reset All Data (two-step confirmation) ────────────────────────────────
+  void _showResetConfirmation(PhaseColors colors) {
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+      builder: (_) => AlertDialog(
+        backgroundColor: colors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Reset everything?',
+          style: GoogleFonts.cormorantGaramond(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: colors.onSurface,
           ),
-          child: _BottomSheetContainer(
-            colors: colors,
-            child: StatefulBuilder(
-              builder: (ctx, setSheetState) {
-                final hasKey = currentKey.isNotEmpty;
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SheetTitle(label: 'DeepSeek AI Configuration', colors: colors),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Luna includes a comprehensive offline clinical reasoning engine that operates 100% locally and privately without internet.\n\nOptionally add your personal DeepSeek API key to enable live online conversational reasoning.',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        color: colors.onSurface.withValues(alpha: 0.65),
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: controller,
-                      obscureText: obscure,
-                      style: GoogleFonts.dmSans(
-                        color: colors.onSurface,
-                        fontSize: 14,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'sk-...',
-                        hintStyle: GoogleFonts.dmSans(
-                          color: colors.onSurface.withValues(alpha: 0.35),
-                        ),
-                        filled: true,
-                        fillColor: colors.background,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            obscure ? Icons.visibility_off : Icons.visibility,
-                            color: colors.onSurface.withValues(alpha: 0.4),
-                          ),
-                          onPressed: () => setSheetState(() => obscure = !obscure),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        if (hasKey) ...[
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: colors.primary,
-                                side: BorderSide(
-                                  color: colors.primary.withValues(alpha: 0.4),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                              ),
-                              onPressed: () {
-                                DeepSeekService.setApiKey('');
-                                if (ctx.mounted) Navigator.of(ctx).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('API key removed. Running in offline mode.'),
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                'Remove Key',
-                                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                        ],
-                        Expanded(
-                          child: _SheetSaveButton(
-                            colors: colors,
-                            onTap: () {
-                              final key = controller.text.trim();
-                              DeepSeekService.setApiKey(key);
-                              if (ctx.mounted) Navigator.of(ctx).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    key.isEmpty
-                                        ? 'Switched to offline clinical intelligence mode.'
-                                        : 'Personal API key saved securely on device.',
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
+        ),
+        content: Text(
+          'This will permanently delete your profile, all logged check-ins, and your AI patterns.\n\nThis action cannot be undone.',
+          style: GoogleFonts.dmSans(
+            fontSize: 14,
+            color: colors.onSurface.withValues(alpha: 0.7),
+            height: 1.6,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.dmSans(
+                color: colors.onSurface.withValues(alpha: 0.5),
+              ),
             ),
           ),
-        );
-      },
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              // 1. Cancel all scheduled notifications
+              await NotificationService.cancelAll();
+              // 2. Wipe all data — profile, logs, cache, API key, settings
+              await StorageService.clearAllData();
+              // 3. Clear chat session
+              await StorageService.clearLastChatSession();
+              // 4. Clear Riverpod provider state
+              ref.read(profileProvider.notifier).clear();
+              ref.read(logEntriesProvider.notifier).refresh();
+              // 5. Navigate to onboarding
+              if (mounted) context.go('/onboarding');
+            },
+            child: Text(
+              'Reset Luna',
+              style: GoogleFonts.dmSans(
+                color: const Color(0xFFD94F6E),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // ── 6. About Luna dialog ─────────────────────────────────────────────────────
+  // ── 7. About Luna dialog ─────────────────────────────────────────────────────
+
   void _showAboutDialog(PhaseColors colors) {
     showDialog(
       context: context,
@@ -738,14 +666,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             colors: colors,
             onTap: () => _showNotificationSheet(colors),
           ),
-          // ── AI & Intelligence section ─────────────────────────────────────
-          _SectionHeader(label: 'AI & Intelligence', colors: colors),
-          _SettingsTile(
-            icon: Icons.psychology_outlined,
-            label: 'DeepSeek API Key (Optional)',
-            colors: colors,
-            onTap: () => _showApiKeySheet(colors),
-          ),
           const SizedBox(height: 20),
 
           // ── About section ─────────────────────────────────────────────────
@@ -755,6 +675,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: 'About Luna',
             colors: colors,
             onTap: () => _showAboutDialog(colors),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Data & Privacy section ─────────────────────────────────────────
+          _SectionHeader(label: 'Data & Privacy', colors: colors),
+          _SettingsTile(
+            icon: Icons.delete_sweep_outlined,
+            label: 'Reset all data',
+            sublabel: 'Wipe profile, logs, and start fresh',
+            colors: colors,
+            isDestructive: true,
+            onTap: () => _showResetConfirmation(colors),
           ),
           const SizedBox(height: 40),
 
@@ -828,12 +760,12 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _dailyCheckin = prefs.getBool(_kNotifDailyCheckin) ?? true;
-      _periodSoon = prefs.getBool(_kNotifPeriodSoon) ?? true;
-      _phaseChange = prefs.getBool(_kNotifPhaseChange) ?? true;
-      _pms = prefs.getBool(_kNotifPms) ?? true;
-      final hour = prefs.getInt(_kNotifDailyHour) ?? 20;
-      final minute = prefs.getInt(_kNotifDailyMinute) ?? 0;
+      _dailyCheckin = prefs.getBool(kNotifDailyCheckin) ?? true;
+      _periodSoon = prefs.getBool(kNotifPeriodSoon) ?? true;
+      _phaseChange = prefs.getBool(kNotifPhaseChange) ?? true;
+      _pms = prefs.getBool(kNotifPms) ?? true;
+      final hour = prefs.getInt(kNotifDailyHour) ?? 20;
+      final minute = prefs.getInt(kNotifDailyMinute) ?? 0;
       _dailyTime = TimeOfDay(hour: hour, minute: minute);
     });
   }
@@ -869,8 +801,8 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
     if (picked != null && mounted) {
       setState(() => _dailyTime = picked);
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_kNotifDailyHour, picked.hour);
-      await prefs.setInt(_kNotifDailyMinute, picked.minute);
+      await prefs.setInt(kNotifDailyHour, picked.hour);
+      await prefs.setInt(kNotifDailyMinute, picked.minute);
       await _rescheduleNotifications();
     }
   }
@@ -901,7 +833,7 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
             value: _dailyCheckin,
             onChanged: (v) {
               setState(() => _dailyCheckin = v);
-              _setPref(_kNotifDailyCheckin, v);
+              _setPref(kNotifDailyCheckin, v);
             },
             trailing: _dailyCheckin
                 ? GestureDetector(
@@ -932,7 +864,7 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
             value: _periodSoon,
             onChanged: (v) {
               setState(() => _periodSoon = v);
-              _setPref(_kNotifPeriodSoon, v);
+              _setPref(kNotifPeriodSoon, v);
             },
           ),
 
@@ -942,7 +874,7 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
             value: _phaseChange,
             onChanged: (v) {
               setState(() => _phaseChange = v);
-              _setPref(_kNotifPhaseChange, v);
+              _setPref(kNotifPhaseChange, v);
             },
           ),
 
@@ -952,7 +884,7 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
             value: _pms,
             onChanged: (v) {
               setState(() => _pms = v);
-              _setPref(_kNotifPms, v);
+              _setPref(kNotifPms, v);
             },
           ),
 
@@ -1263,46 +1195,86 @@ class _SectionHeader extends StatelessWidget {
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String? sublabel;
   final PhaseColors colors;
   final VoidCallback onTap;
+  final bool isDestructive;
 
   const _SettingsTile({
     required this.icon,
     required this.label,
     required this.colors,
     required this.onTap,
+    this.sublabel,
+    this.isDestructive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    const dangerColor = Color(0xFFD94F6E);
+    final iconColor = isDestructive
+        ? dangerColor.withValues(alpha: 0.8)
+        : colors.onSurface.withValues(alpha: 0.6);
+    final labelColor = isDestructive
+        ? dangerColor
+        : colors.onSurface.withValues(alpha: 0.85);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          color: colors.surface,
+          color: isDestructive
+              ? dangerColor.withValues(alpha: 0.06)
+              : colors.surface,
           borderRadius: BorderRadius.circular(16),
+          border: isDestructive
+              ? Border.all(color: dangerColor.withValues(alpha: 0.15))
+              : null,
         ),
         child: Row(
           children: [
-            Icon(icon, color: colors.onSurface.withValues(alpha: 0.6), size: 20),
+            Icon(icon, color: iconColor, size: 20),
             const SizedBox(width: 14),
-            Text(
-              label,
-              style: GoogleFonts.dmSans(
-                fontSize: 15,
-                color: colors.onSurface.withValues(alpha: 0.85),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 15,
+                      color: labelColor,
+                      fontWeight: isDestructive
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                  if (sublabel != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      sublabel!,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: isDestructive
+                            ? dangerColor.withValues(alpha: 0.55)
+                            : colors.onSurface.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            const Spacer(),
             Icon(Icons.chevron_right,
-                color: colors.onSurface.withValues(alpha: 0.3), size: 18),
+                color: isDestructive
+                    ? dangerColor.withValues(alpha: 0.4)
+                    : colors.onSurface.withValues(alpha: 0.3),
+                size: 18),
           ],
         ),
       ),
     );
   }
 }
-
-

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'core/services/storage_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/cycle_engine.dart';
+import 'core/services/deepseek_service.dart';
 import 'core/providers/theme_provider.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -33,6 +34,8 @@ void main() async {
   // Init storage service
   try {
     await StorageService.init();
+    // Silently pull remote API key in background
+    DeepSeekService.syncApiKeyFromRemote();
   } catch (e) {
     debugPrint('StorageService init error: $e');
   }

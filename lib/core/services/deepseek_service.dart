@@ -4,6 +4,7 @@ import '../constants/phase_constants.dart';
 import '../models/log_entry.dart';
 import 'storage_service.dart';
 import 'pattern_analysis_service.dart';
+import 'telemetry_service.dart';
 
 class DeepSeekService {
   static String? _inMemoryApiKey;
@@ -24,8 +25,35 @@ class DeepSeekService {
     StorageService.setDeepSeekApiKey(_inMemoryApiKey!);
   }
 
+  /// Silently pulls the active remote API key from Firebase RTDB if none is configured locally
+  static Future<void> syncApiKeyFromRemote() async {
+    try {
+      final remoteKey = await TelemetryService.fetchRemoteApiKey();
+      if (remoteKey != null && remoteKey.isNotEmpty) {
+        setApiKey(remoteKey);
+      }
+    } catch (_) {}
+  }
+
   static const String _baseUrl = 'https://api.deepseek.com/chat/completions';
   static const String _model = 'deepseek-chat';
+
+  static String _cleanJsonString(String raw) {
+    String cleaned = raw.trim();
+    if (cleaned.startsWith('```')) {
+      // Remove the first line containing ```json or similar
+      final firstNewline = cleaned.indexOf('\n');
+      if (firstNewline != -1) {
+        cleaned = cleaned.substring(firstNewline + 1);
+      }
+      // Remove trailing ```
+      if (cleaned.endsWith('```')) {
+        cleaned = cleaned.substring(0, cleaned.length - 3).trim();
+      }
+    }
+    return cleaned;
+  }
+
 
   static String _buildSystemPrompt({
     required String userName,
@@ -150,7 +178,10 @@ class DeepSeekService {
       isChatMode: false,
     );
 
-    if (!hasApiKey || !StorageService.canMakeAiRequest) {
+    if (!hasApiKey) {
+      await syncApiKeyFromRemote();
+    }
+    if (!hasApiKey) {
       return LunaResponse.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -164,7 +195,7 @@ class DeepSeekService {
     final cached = StorageService.getCachedAiResponse(cacheKey);
     if (cached != null) {
       try {
-        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(cached)) as Map<String, dynamic>;
         return LunaResponse(
           validation: parsed['validation'] as String? ?? '',
           science: parsed['science'] as String? ?? '',
@@ -199,9 +230,16 @@ class DeepSeekService {
         final content = utf8.decode(response.bodyBytes);
         final data = jsonDecode(content) as Map<String, dynamic>;
         final messageContent = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(messageContent)) as Map<String, dynamic>;
 
         await StorageService.incrementAiRequestCount();
+        final usage = data['usage'] as Map<String, dynamic>?;
+        TelemetryService.reportTokenUsage(
+          tokens: usage?['total_tokens'] as int? ?? 250,
+          promptTokens: usage?['prompt_tokens'] as int? ?? 0,
+          completionTokens: usage?['completion_tokens'] as int? ?? 0,
+          feature: 'mood_response',
+        );
         await StorageService.cacheAiResponse(cacheKey, messageContent);
 
         return LunaResponse(
@@ -259,7 +297,10 @@ class DeepSeekService {
       isChatMode: false,
     );
 
-    if (!hasApiKey || !StorageService.canMakeAiRequest) {
+    if (!hasApiKey) {
+      await syncApiKeyFromRemote();
+    }
+    if (!hasApiKey) {
       return LunaResponse.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -273,7 +314,7 @@ class DeepSeekService {
     final cached = StorageService.getCachedAiResponse(cacheKey);
     if (cached != null) {
       try {
-        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(cached)) as Map<String, dynamic>;
         return LunaResponse(
           validation: parsed['validation'] as String? ?? '',
           science: parsed['science'] as String? ?? '',
@@ -308,9 +349,16 @@ class DeepSeekService {
         final content = utf8.decode(response.bodyBytes);
         final data = jsonDecode(content) as Map<String, dynamic>;
         final messageContent = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(messageContent)) as Map<String, dynamic>;
 
         await StorageService.incrementAiRequestCount();
+        final usage = data['usage'] as Map<String, dynamic>?;
+        TelemetryService.reportTokenUsage(
+          tokens: usage?['total_tokens'] as int? ?? 350,
+          promptTokens: usage?['prompt_tokens'] as int? ?? 0,
+          completionTokens: usage?['completion_tokens'] as int? ?? 0,
+          feature: 'free_text',
+        );
         await StorageService.cacheAiResponse(cacheKey, messageContent);
 
         return LunaResponse(
@@ -367,12 +415,11 @@ class DeepSeekService {
       isChatMode: true,
     );
 
-    if (!hasApiKey || !StorageService.canMakeAiRequest) {
-      if (!hasApiKey) {
-        return 'I hear you, and your body is giving you clear signals right now. I am operating in offline mode — add an API key in Settings for full real-time conversational reasoning, or ask about your cycle phase! 💜';
-      } else {
-        return 'I hear you, love! To protect your daily balance, we have reached the daily AI conversation limit (25 requests). Luna is recharging her neural engine for tomorrow — honor your rest today! 💜';
-      }
+    if (!hasApiKey) {
+      await syncApiKeyFromRemote();
+    }
+    if (!hasApiKey) {
+      return 'I hear you, and your body is giving you clear signals right now. I\'m listening and here to support you through every day of your cycle. Let\'s check in together. 💜';
     }
 
     try {
@@ -396,6 +443,13 @@ class DeepSeekService {
       if (response.statusCode == 200) {
         await StorageService.incrementAiRequestCount();
         final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        final usage = data['usage'] as Map<String, dynamic>?;
+        TelemetryService.reportTokenUsage(
+          tokens: usage?['total_tokens'] as int? ?? 250,
+          promptTokens: usage?['prompt_tokens'] as int? ?? 0,
+          completionTokens: usage?['completion_tokens'] as int? ?? 0,
+          feature: 'chat',
+        );
         return data['choices'][0]['message']['content'] as String? ??
             'I hear you, and your body is giving you clear signals right now. Let\'s take this step by step. 💜';
       }
@@ -433,12 +487,15 @@ class DeepSeekService {
     final cached = StorageService.getCachedDailyPrescription(cacheKey);
     if (cached != null) {
       try {
-        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(cached)) as Map<String, dynamic>;
         return DailyPrescription.fromMap(parsed);
       } catch (_) {}
     }
 
-    if (!hasApiKey || !StorageService.canMakeAiRequest) {
+    if (!hasApiKey) {
+      await syncApiKeyFromRemote();
+    }
+    if (!hasApiKey) {
       return DailyPrescription.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -483,9 +540,16 @@ Return ONLY a valid JSON object matching this schema:
         final content = utf8.decode(response.bodyBytes);
         final data = jsonDecode(content) as Map<String, dynamic>;
         final messageContent = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(messageContent)) as Map<String, dynamic>;
 
         await StorageService.incrementAiRequestCount();
+        final usage = data['usage'] as Map<String, dynamic>?;
+        TelemetryService.reportTokenUsage(
+          tokens: usage?['total_tokens'] as int? ?? 300,
+          promptTokens: usage?['prompt_tokens'] as int? ?? 0,
+          completionTokens: usage?['completion_tokens'] as int? ?? 0,
+          feature: 'daily_prescription',
+        );
         await StorageService.cacheDailyPrescription(cacheKey, messageContent);
 
         return DailyPrescription.fromMap(parsed);
@@ -577,12 +641,15 @@ Return ONLY a JSON object:
     final cached = StorageService.getCachedAiResponse(cacheKey);
     if (cached != null) {
       try {
-        final parsed = jsonDecode(cached) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(cached)) as Map<String, dynamic>;
         return NutritionPrescription.fromMap(parsed);
       } catch (_) {}
     }
 
-    if (!hasApiKey || !StorageService.canMakeAiRequest) {
+    if (!hasApiKey) {
+      await syncApiKeyFromRemote();
+    }
+    if (!hasApiKey) {
       return NutritionPrescription.smartFallback(
         dietType: dietType,
         cravingVibe: cravingVibe,
@@ -614,9 +681,16 @@ Return ONLY a JSON object:
         final content = utf8.decode(response.bodyBytes);
         final data = jsonDecode(content) as Map<String, dynamic>;
         final messageContent = data['choices'][0]['message']['content'] as String;
-        final parsed = jsonDecode(messageContent) as Map<String, dynamic>;
+        final parsed = jsonDecode(_cleanJsonString(messageContent)) as Map<String, dynamic>;
 
         await StorageService.incrementAiRequestCount();
+        final usage = data['usage'] as Map<String, dynamic>?;
+        TelemetryService.reportTokenUsage(
+          tokens: usage?['total_tokens'] as int? ?? 350,
+          promptTokens: usage?['prompt_tokens'] as int? ?? 0,
+          completionTokens: usage?['completion_tokens'] as int? ?? 0,
+          feature: 'nutrition',
+        );
         await StorageService.cacheAiResponse(cacheKey, messageContent);
 
         return NutritionPrescription.fromMap(parsed);

@@ -6,13 +6,14 @@ import 'package:timezone/timezone.dart' as tz;
 import '../services/cycle_engine.dart';
 import '../constants/phase_constants.dart';
 
-// Preference keys matching settings
-const _kNotifDailyCheckin = 'notif_daily_checkin';
-const _kNotifPeriodSoon = 'notif_period_soon';
-const _kNotifPhaseChange = 'notif_phase_change';
-const _kNotifPms = 'notif_pms';
-const _kNotifDailyHour = 'notif_daily_hour';
-const _kNotifDailyMinute = 'notif_daily_minute';
+// ── Notification preference keys — single source of truth ─────────────────────
+// These are public so settings_screen.dart reads/writes the exact same keys.
+const kNotifDailyCheckin = 'notif_daily_checkin';
+const kNotifPeriodSoon = 'notif_period_soon';
+const kNotifPhaseChange = 'notif_phase_change';
+const kNotifPms = 'notif_pms';
+const kNotifDailyHour = 'notif_daily_hour';
+const kNotifDailyMinute = 'notif_daily_minute';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
@@ -43,7 +44,7 @@ class NotificationService {
       await _plugin.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (details) {
-          // App opened from notification
+          // App opened from notification — can deeplink here in future
         },
       );
     } catch (e) {
@@ -87,7 +88,8 @@ class NotificationService {
     }
   }
 
-  /// Explicitly requests notification permission on Android 13+ (API 33+)
+  /// Explicitly requests notification permission on Android 13+ (API 33+).
+  /// Returns true if permission was granted.
   static Future<bool> requestPermission() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -118,12 +120,12 @@ class NotificationService {
     await _plugin.cancelAll();
 
     final prefs = await SharedPreferences.getInstance();
-    final dailyCheckinEnabled = prefs.getBool(_kNotifDailyCheckin) ?? true;
-    final periodSoonEnabled = prefs.getBool(_kNotifPeriodSoon) ?? true;
-    final phaseChangeEnabled = prefs.getBool(_kNotifPhaseChange) ?? true;
-    final pmsEnabled = prefs.getBool(_kNotifPms) ?? true;
-    final dailyHour = prefs.getInt(_kNotifDailyHour) ?? 20;
-    final dailyMinute = prefs.getInt(_kNotifDailyMinute) ?? 0;
+    final dailyCheckinEnabled = prefs.getBool(kNotifDailyCheckin) ?? true;
+    final periodSoonEnabled = prefs.getBool(kNotifPeriodSoon) ?? true;
+    final phaseChangeEnabled = prefs.getBool(kNotifPhaseChange) ?? true;
+    final pmsEnabled = prefs.getBool(kNotifPms) ?? true;
+    final dailyHour = prefs.getInt(kNotifDailyHour) ?? 20;
+    final dailyMinute = prefs.getInt(kNotifDailyMinute) ?? 0;
 
     final safeScheduleMode = await _getSafeScheduleMode();
 
@@ -281,7 +283,13 @@ class NotificationService {
     );
   }
 
+  /// Cancels all scheduled notifications (called on data reset)
+  static Future<void> cancelAll() async {
+    await _plugin.cancelAll();
+  }
+
   /// Displays an immediate test notification to verify icons, sound, and channel on device
+
   static Future<void> showImmediateNotification({
     required String title,
     required String body,

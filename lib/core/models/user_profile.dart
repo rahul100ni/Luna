@@ -5,8 +5,6 @@ class UserProfile {
   final int averagePeriodLength;
   final DateTime? lastPeriodStart;
   final DateTime createdAt;
-  final bool isFirebaseUser;
-  final String? email;
 
   const UserProfile({
     required this.id,
@@ -15,8 +13,6 @@ class UserProfile {
     required this.averagePeriodLength,
     this.lastPeriodStart,
     required this.createdAt,
-    this.isFirebaseUser = false,
-    this.email,
   });
 
   UserProfile copyWith({
@@ -25,18 +21,15 @@ class UserProfile {
     int? averagePeriodLength,
     DateTime? lastPeriodStart,
     bool clearLastPeriod = false,
-    bool? isFirebaseUser,
-    String? email,
   }) =>
       UserProfile(
         id: id,
         name: name ?? this.name,
         averageCycleLength: averageCycleLength ?? this.averageCycleLength,
         averagePeriodLength: averagePeriodLength ?? this.averagePeriodLength,
-        lastPeriodStart: clearLastPeriod ? null : (lastPeriodStart ?? this.lastPeriodStart),
+        lastPeriodStart:
+            clearLastPeriod ? null : (lastPeriodStart ?? this.lastPeriodStart),
         createdAt: createdAt,
-        isFirebaseUser: isFirebaseUser ?? this.isFirebaseUser,
-        email: email ?? this.email,
       );
 
   Map<String, dynamic> toMap() => {
@@ -46,8 +39,6 @@ class UserProfile {
         'averagePeriodLength': averagePeriodLength,
         'lastPeriodStart': lastPeriodStart?.toIso8601String(),
         'createdAt': createdAt.toIso8601String(),
-        'isFirebaseUser': isFirebaseUser,
-        'email': email,
       };
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -59,7 +50,5 @@ class UserProfile {
             ? DateTime.parse(map['lastPeriodStart'] as String)
             : null,
         createdAt: DateTime.parse(map['createdAt'] as String),
-        isFirebaseUser: map['isFirebaseUser'] as bool? ?? false,
-        email: map['email'] as String?,
       );
 }

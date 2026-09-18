@@ -7,6 +7,7 @@ import '../../core/models/log_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/deepseek_service.dart';
+import '../../core/services/storage_service.dart';
 
 class LunaAiScreen extends ConsumerStatefulWidget {
   const LunaAiScreen({super.key});
@@ -52,6 +53,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
+    // Bug 10 fix: restore last chat session from persistence
+    _loadChatHistory();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final todayEntry = ref.read(todayLogProvider);
       if (todayEntry != null && mounted) {
@@ -61,6 +65,24 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         });
       }
     });
+  }
+
+  void _loadChatHistory() {
+    final raw = StorageService.getLastChatSession();
+    if (raw.isNotEmpty) {
+      try {
+        setState(() {
+          _chatHistory = raw.map(_ChatMessage.fromMap).toList();
+          // If there's a persisted chat history, jump straight to chat mode
+          if (_chatHistory.isNotEmpty) _chatMode = true;
+        });
+      } catch (_) {}
+    }
+  }
+
+  void _persistChatHistory() {
+    StorageService.saveLastChatSession(
+        _chatHistory.map((m) => m.toMap()).toList());
   }
 
   @override
@@ -75,6 +97,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   Future<void> _checkIn() async {
     if (_selectedMood == null && _textController.text.trim().isEmpty) return;
     if (_loading) return;
+
+    // Clear previous session when user starts a fresh check-in
+    await StorageService.clearLastChatSession();
+    setState(() {
+      _chatHistory = [];
+    });
 
     final userText = _textController.text.trim();
     setState(() {
@@ -151,6 +179,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       _chatMode = true;
     });
 
+    // Persist the initial conversation seed
+    _persistChatHistory();
+
     _scrollToBottom();
   }
 
@@ -205,8 +236,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           _ChatMessage(text: response, isUser: false, time: DateTime.now()));
       _chatLoading = false;
     });
+    // Persist after each new Luna response
+    _persistChatHistory();
     _scrollToBottom();
   }
+
+
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1198,5 +1233,18 @@ class _ChatMessage {
   final String text;
   final bool isUser;
   final DateTime time;
+
   const _ChatMessage({required this.text, required this.isUser, required this.time});
+
+  Map<String, dynamic> toMap() => {
+        'text': text,
+        'isUser': isUser,
+        'time': time.toIso8601String(),
+      };
+
+  factory _ChatMessage.fromMap(Map<String, dynamic> map) => _ChatMessage(
+        text: map['text'] as String,
+        isUser: map['isUser'] as bool,
+        time: DateTime.parse(map['time'] as String),
+      );
 }

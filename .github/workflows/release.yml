@@ -2,6 +2,9 @@ name: Release Luna APK
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -49,8 +52,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Luna v1.0.0 — The Science-First Cycle Intelligence Companion
+          tag_name: ${{ github.ref_name }}
+          name: Luna ${{ github.ref_name }} — The Science-First Cycle Intelligence Companion
           files: release-assets/*.apk
           generate_release_notes: false
           body: |

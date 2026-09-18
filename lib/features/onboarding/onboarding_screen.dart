@@ -8,7 +8,9 @@ import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/providers/cycle_provider.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/services/storage_service.dart';
+
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -63,8 +65,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (_cycleLengthUnknown) await prefs.setBool('cycle_length_unknown', true);
     if (_periodLengthUnknown) await prefs.setBool('period_length_unknown', true);
+    // Bug 7 fix: request notification permission on Android 13+ before routing
+    // to home — this is the ideal UX moment; user just completed setup and will
+    // understand why Luna is asking for permission.
+    await NotificationService.requestPermission();
     if (mounted) context.go('/home');
   }
+
 
   @override
   Widget build(BuildContext context) {

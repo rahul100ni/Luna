@@ -737,7 +737,12 @@ class _SelectedDayCard extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          'Energy ${entry.energyLevel}/5 ${entry.symptoms.isNotEmpty ? "· ${entry.symptoms.take(2).join(', ')}" : ""}',
+                          [
+                            if (entry.sleepQuality != null)
+                              'Sleep ${entry.sleepQuality!.label}',
+                            if (entry.symptoms.isNotEmpty)
+                              entry.symptoms.take(2).join(', '),
+                          ].where((s) => s.isNotEmpty).join(' · '),
                           style: GoogleFonts.dmSans(
                             fontSize: 10.5,
                             color: colors.onSurface.withValues(alpha: 0.55),
@@ -808,60 +813,133 @@ class _SelectedDayCard extends ConsumerWidget {
 
           const SizedBox(height: 14),
 
-          // Interactive Actions Row (Mark period start OR Log check-in)
-          Row(
-            children: [
-              // Set as Period Start Date
-              Expanded(
-                child: GestureDetector(
-                  onTap: () async {
-                    await ref.read(profileProvider.notifier).updateLastPeriod(selectedDay);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: const Color(0xFFD94F6E),
-                          behavior: SnackBarBehavior.floating,
-                          content: Text(
-                            'Cycle anchored to ${DateFormat("d MMMM").format(selectedDay)} 🩸',
-                            style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+          // ── Period anchor button ──────────────────────────────────
+          // If selected day is the anchor: shows confirmed status
+          // If within the period bleeding days: shows active period day
+          // Otherwise: allows user to mark that date as period start
+          Consumer(builder: (ctx, ref, _) {
+            final profile = ref.watch(profileProvider);
+            final anchor = profile?.lastPeriodStart;
+            final isSameDay = anchor != null &&
+                anchor.year == selectedDay.year &&
+                anchor.month == selectedDay.month &&
+                anchor.day == selectedDay.day;
+
+            final daysDiff = anchor != null
+                ? selectedDay.calendarDaysDifference(anchor)
+                : null;
+            final periodLen = profile?.averagePeriodLength ?? 5;
+            final isInPeriodDays = daysDiff != null && daysDiff > 0 && daysDiff < periodLen;
+
+            return Column(
+              children: [
+                if (isSameDay) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD94F6E).withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(14),
+                      color: const Color(0xFFD94F6E).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.35)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text('🩸', style: TextStyle(fontSize: 12)),
-                        const SizedBox(width: 6),
+                        const Text('🩸', style: TextStyle(fontSize: 14)),
+                        const SizedBox(width: 8),
                         Text(
-                          'Period Started',
+                          'Period start date for this cycle ✓',
                           style: GoogleFonts.dmSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
                             color: const Color(0xFFFF8FA3),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ),
+                  const SizedBox(height: 10),
+                ] else if (isInPeriodDays) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD94F6E).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('🩸', style: TextStyle(fontSize: 14)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Period · Day ${daysDiff + 1} of cycle',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFFF8FA3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ] else ...[
+                  GestureDetector(
+                    onTap: () async {
+                      await ref
+                          .read(profileProvider.notifier)
+                          .updateLastPeriod(selectedDay);
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            backgroundColor: const Color(0xFFD94F6E),
+                            behavior: SnackBarBehavior.floating,
+                            content: Text(
+                              'Cycle anchored to ${DateFormat("d MMMM").format(selectedDay)} 🩸',
+                              style: GoogleFonts.dmSans(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD94F6E).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: const Color(0xFFD94F6E).withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('🩸', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Mark as Period Start',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFFF8FA3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
 
-              const SizedBox(width: 10),
-
-              // Log Check-in for this day
-              Expanded(
-                child: GestureDetector(
+                // Log Check-in for this day
+                GestureDetector(
                   onTap: () => context.push('/log'),
                   child: Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: colors.primary.withValues(alpha: 0.2),
@@ -885,9 +963,9 @@ class _SelectedDayCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+          }),
         ],
       ),
     );

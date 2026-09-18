@@ -1,21 +1,25 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/phase_constants.dart';
+import '../../core/services/deepseek_service.dart';
+import '../../core/services/telemetry_service.dart';
 
-// ── Firebase Realtime Database REST endpoint ──────────────────────────────────
-const _dbBase = 'https://luna-8ce40-default-rtdb.asia-southeast1.firebasedatabase.app/luna/versions';
+// ── Firebase Realtime Database REST endpoints ────────────────────────────────
+const _dbBase =
+    'https://luna-8ce40-default-rtdb.asia-southeast1.firebasedatabase.app/luna/versions';
 
 class VersionManagerScreen extends StatefulWidget {
   final PhaseColors colors;
   final VoidCallback onClose;
-  const VersionManagerScreen({super.key, required this.colors, required this.onClose});
+  const VersionManagerScreen(
+      {super.key, required this.colors, required this.onClose});
 
   @override
   State<VersionManagerScreen> createState() => _VersionManagerScreenState();
@@ -27,38 +31,128 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
   bool _timedOut = false;
   String? _error;
 
-  // Admin mode (unlocked by tapping ❓ 5×)
+  // Admin Mode state (unlocked by tapping title 5 times)
   bool _isAdmin = false;
-  int _helpTapCount = 0;
-  bool _showHelp = false;
+  int _tapCount = 0;
+  DateTime? _lastTapTime;
+
+  // Telemetry state
+  TokenMetrics _metrics = TokenMetrics.empty();
+  bool _loadingMetrics = false;
+
+  // Remote API Key state
+  final _apiKeyCtrl = TextEditingController();
+  bool _loadingApiKey = false;
+  bool _obscureKey = true;
+
+  // Add Version Form state
+  bool _showAddForm = false;
+  final _verCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _urlCtrl = TextEditingController();
+  bool _publishing = false;
 
   // Download state
   bool _isDownloading = false;
   String _downloadingId = '';
   double _downloadProgress = 0;
 
-  // Admin form
-  final _verCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _urlCtrl = TextEditingController();
-
   @override
   void initState() {
     super.initState();
     _fetchVersions();
+    _apiKeyCtrl.text = DeepSeekService.apiKey;
   }
 
   @override
   void dispose() {
+    _apiKeyCtrl.dispose();
     _verCtrl.dispose();
     _descCtrl.dispose();
     _urlCtrl.dispose();
     super.dispose();
   }
 
+  // ── Secret 5-Tap Admin Unlock ─────────────────────────────────────────────
+  void _onTitleTap() {
+    final now = DateTime.now();
+    if (_lastTapTime == null || now.difference(_lastTapTime!).inSeconds > 2) {
+      _tapCount = 1;
+    } else {
+      _tapCount++;
+    }
+    _lastTapTime = now;
+
+    if (_tapCount >= 5) {
+      _tapCount = 0;
+      HapticFeedback.heavyImpact();
+      setState(() => _isAdmin = !_isAdmin);
+      _showSnack(_isAdmin ? 'Admin Mode Unlocked 🛠️' : 'Admin Mode Closed');
+      if (_isAdmin) {
+        _fetchTelemetry();
+        _fetchRemoteKey();
+      }
+    } else if (_tapCount >= 3) {
+      HapticFeedback.selectionClick();
+    }
+  }
+
+  // ── Fetch Telemetry Metrics ───────────────────────────────────────────────
+  Future<void> _fetchTelemetry() async {
+    setState(() => _loadingMetrics = true);
+    final metrics = await TelemetryService.fetchTokenMetrics();
+    if (mounted) {
+      setState(() {
+        _metrics = metrics;
+        _loadingMetrics = false;
+      });
+    }
+  }
+
+  // ── Fetch Remote API Key ──────────────────────────────────────────────────
+  Future<void> _fetchRemoteKey() async {
+    setState(() => _loadingApiKey = true);
+    final key = await TelemetryService.fetchRemoteApiKey();
+    if (mounted) {
+      setState(() {
+        if (key != null && key.isNotEmpty) {
+          _apiKeyCtrl.text = key;
+        } else {
+          _apiKeyCtrl.text = DeepSeekService.apiKey;
+        }
+        _loadingApiKey = false;
+      });
+    }
+  }
+
+  // ── Save Remote API Key ───────────────────────────────────────────────────
+  Future<void> _saveRemoteKey() async {
+    final key = _apiKeyCtrl.text.trim();
+    if (key.isEmpty) {
+      _showSnack('Please enter a valid key');
+      return;
+    }
+
+    setState(() => _loadingApiKey = true);
+    // Always save locally immediately so AI works on this device right away
+    DeepSeekService.setApiKey(key);
+
+    final success = await TelemetryService.updateRemoteApiKey(key);
+    if (success) {
+      _showSnack('API key active & synced to all devices ✓');
+    } else {
+      _showSnack('API key saved locally on this device ✓');
+    }
+    if (mounted) setState(() => _loadingApiKey = false);
+  }
+
   // ── Fetch versions from Firebase REST API ─────────────────────────────────
   Future<void> _fetchVersions() async {
-    setState(() { _loading = true; _timedOut = false; _error = null; });
+    setState(() {
+      _loading = true;
+      _timedOut = false;
+      _error = null;
+    });
     try {
       final res = await http
           .get(Uri.parse('$_dbBase.json'))
@@ -69,7 +163,10 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       if (res.statusCode == 200) {
         final body = json.decode(res.body);
         if (body == null) {
-          setState(() { _versions = []; _loading = false; });
+          setState(() {
+            _versions = [];
+            _loading = false;
+          });
           return;
         }
         final data = Map<String, dynamic>.from(body as Map);
@@ -83,10 +180,38 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
             date: v['date'] as String? ?? '',
           );
         }).toList();
-        list.sort((a, b) => b.date.compareTo(a.date)); // newest first
-        setState(() { _versions = list; _loading = false; });
+
+        // Sort semantically (e.g., v1.1.0 > v1.0.9)
+        list.sort((a, b) {
+          final RegExp semverRegExp = RegExp(r'v?(\d+)\.(\d+)\.(\d+)');
+          final matchA = semverRegExp.firstMatch(a.version);
+          final matchB = semverRegExp.firstMatch(b.version);
+
+          if (matchA != null && matchB != null) {
+            final aMajor = int.parse(matchA.group(1)!);
+            final aMinor = int.parse(matchA.group(2)!);
+            final aPatch = int.parse(matchA.group(3)!);
+
+            final bMajor = int.parse(matchB.group(1)!);
+            final bMinor = int.parse(matchB.group(2)!);
+            final bPatch = int.parse(matchB.group(3)!);
+
+            if (aMajor != bMajor) return bMajor.compareTo(aMajor);
+            if (aMinor != bMinor) return bMinor.compareTo(aMinor);
+            if (aPatch != bPatch) return bPatch.compareTo(aPatch);
+          }
+          return b.date.compareTo(a.date);
+        });
+
+        setState(() {
+          _versions = list;
+          _loading = false;
+        });
       } else {
-        setState(() { _error = 'Server error ${res.statusCode}'; _loading = false; });
+        setState(() {
+          _error = 'Server error ${res.statusCode}';
+          _loading = false;
+        });
       }
     } catch (e) {
       if (!mounted) return;
@@ -100,41 +225,119 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
     }
   }
 
-  // ── Publish new version (admin only) ─────────────────────────────────────
+  // ── Publish new version (Admin) ───────────────────────────────────────────
   Future<void> _publishVersion() async {
-    final version = _verCtrl.text.trim();
+    final ver = _verCtrl.text.trim();
+    final desc = _descCtrl.text.trim();
     final url = _urlCtrl.text.trim();
-    if (version.isEmpty || url.isEmpty) {
-      _showSnack('Version and URL are required');
+
+    if (ver.isEmpty || url.isEmpty) {
+      _showSnack('Version and download URL are required');
       return;
     }
+
+    setState(() => _publishing = true);
     try {
-      final payload = json.encode({
-        'version': version,
-        'description': _descCtrl.text.trim(),
-        'url': url,
-        'date': DateTime.now().toIso8601String(),
-      });
-      final res = await http
-          .post(Uri.parse('$_dbBase.json'),
-              headers: {'Content-Type': 'application/json'}, body: payload)
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        _verCtrl.clear(); _descCtrl.clear(); _urlCtrl.clear();
-        _showSnack('Published ✓');
-        _fetchVersions();
+      final id = 'v_${DateTime.now().millisecondsSinceEpoch}';
+      final res = await http.put(
+        Uri.parse('$_dbBase/$id.json'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'version': ver,
+          'description': desc,
+          'url': url,
+          'date': DateTime.now().toIso8601String(),
+        }),
+      );
+
+      if (res.statusCode == 200) {
+        _verCtrl.clear();
+        _descCtrl.clear();
+        _urlCtrl.clear();
+        setState(() => _showAddForm = false);
+        _showSnack('$ver published successfully! 🎉');
+        await _fetchVersions();
       } else {
-        _showSnack('Error ${res.statusCode}');
+        _showSnack('Failed to publish: HTTP ${res.statusCode}');
       }
     } catch (e) {
-      _showSnack('Failed: ${e.toString().split('\n').first}');
+      _showSnack('Publish error: ${e.toString().split('\n').first}');
+    } finally {
+      if (mounted) setState(() => _publishing = false);
     }
   }
 
-  // ── Delete version (admin only) ───────────────────────────────────────────
-  Future<void> _deleteVersion(String id) async {
-    await http.delete(Uri.parse('$_dbBase/$id.json'));
-    _fetchVersions();
+  // ── Edit version (Admin) ──────────────────────────────────────────────────
+  Future<void> _editVersion(
+      _VersionEntry entry, String newVer, String newDesc, String newUrl) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$_dbBase/${entry.id}.json'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'version': newVer,
+          'description': newDesc,
+          'url': newUrl,
+        }),
+      );
+
+      if (res.statusCode == 200) {
+        _showSnack('Version updated ✓');
+        await _fetchVersions();
+      } else {
+        _showSnack('Failed to update: ${res.statusCode}');
+      }
+    } catch (e) {
+      _showSnack('Error updating: $e');
+    }
+  }
+
+  // ── Delete version (Admin) ────────────────────────────────────────────────
+  Future<void> _deleteVersion(_VersionEntry entry) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: widget.colors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text('Delete ${entry.version}?',
+            style: GoogleFonts.cormorantGaramond(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: widget.colors.onSurface)),
+        content: Text('This will remove it from Firebase permanently.',
+            style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: widget.colors.onSurface.withValues(alpha: 0.6))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel',
+                style: GoogleFonts.dmSans(
+                    color: widget.colors.onSurface.withValues(alpha: 0.4))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Delete',
+                style: GoogleFonts.dmSans(
+                    color: Colors.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final res = await http.delete(Uri.parse('$_dbBase/${entry.id}.json'));
+      if (res.statusCode == 200) {
+        _showSnack('${entry.version} deleted');
+        await _fetchVersions();
+      } else {
+        _showSnack('Failed to delete: ${res.statusCode}');
+      }
+    } catch (e) {
+      _showSnack('Delete error: $e');
+    }
   }
 
   // ── Download + install APK ────────────────────────────────────────────────
@@ -149,11 +352,16 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       }
     }
 
-    setState(() { _isDownloading = true; _downloadingId = ver.id; _downloadProgress = 0; });
+    setState(() {
+      _isDownloading = true;
+      _downloadingId = ver.id;
+      _downloadProgress = 0;
+    });
 
     try {
       final dir = await getTemporaryDirectory();
-      final safeName = 'Luna_${ver.version.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.apk';
+      final safeName =
+          'Luna_${ver.version.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.apk';
       final file = File('${dir.path}/$safeName');
 
       final request = http.Request('GET', Uri.parse(ver.url));
@@ -172,23 +380,21 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       await sink.close();
 
       if (mounted) {
-        setState(() { _isDownloading = false; _downloadProgress = 0; });
-        await OpenFilex.open(file.path, type: 'application/vnd.android.package-archive');
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = 0;
+        });
+        await OpenFilex.open(file.path,
+            type: 'application/vnd.android.package-archive');
       }
     } catch (e) {
       if (mounted) {
-        setState(() { _isDownloading = false; _downloadProgress = 0; });
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = 0;
+        });
         _showSnack('Download failed: ${e.toString().split('\n').first}');
       }
-    }
-  }
-
-  void _onHelpTap() {
-    final n = _helpTapCount + 1;
-    if (n >= 5) {
-      setState(() { _isAdmin = true; _helpTapCount = 0; _showHelp = false; });
-    } else {
-      setState(() { _helpTapCount = n; _showHelp = !_showHelp; });
     }
   }
 
@@ -204,7 +410,6 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final c = widget.colors;
@@ -219,95 +424,67 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
               padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
               child: Row(children: [
                 IconButton(
-                  icon: Icon(Icons.arrow_back_ios_rounded, size: 18,
-                      color: c.onSurface.withValues(alpha: 0.45)),
+                  icon: Icon(Icons.arrow_back_ios_rounded,
+                      size: 18, color: c.onSurface.withValues(alpha: 0.45)),
                   onPressed: widget.onClose,
                 ),
                 const Spacer(),
-                Column(children: [
-                  Text('Luna Updates',
-                      style: GoogleFonts.cormorantGaramond(
-                        fontSize: 22, fontWeight: FontWeight.w700, color: c.onSurface)),
-                  Text('tap a version to install',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 10, color: c.onSurface.withValues(alpha: 0.3))),
-                ]),
-                const Spacer(),
                 GestureDetector(
-                  onTap: _onHelpTap,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Icon(Icons.help_outline_rounded, size: 20,
-                        color: c.onSurface.withValues(alpha: 0.2)),
-                  ),
+                  onTap: _onTitleTap,
+                  child: Column(children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Luna Updates',
+                            style: GoogleFonts.cormorantGaramond(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: c.onSurface)),
+                        if (_isAdmin) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.amber.withValues(alpha: 0.4)),
+                            ),
+                            child: Text('ADMIN',
+                                style: GoogleFonts.dmSans(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.amber)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Text(
+                        _isAdmin
+                            ? 'Admin console active'
+                            : 'tap a version to install',
+                        style: GoogleFonts.dmSans(
+                            fontSize: 10,
+                            color: _isAdmin
+                                ? Colors.amber.withValues(alpha: 0.7)
+                                : c.onSurface.withValues(alpha: 0.3))),
+                  ]),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(Icons.refresh_rounded,
+                      size: 20, color: c.onSurface.withValues(alpha: 0.4)),
+                  onPressed: () {
+                    _fetchVersions();
+                    if (_isAdmin) {
+                      _fetchTelemetry();
+                      _fetchRemoteKey();
+                    }
+                  },
                 ),
               ]),
             ),
-
-            // ── Help banner ───────────────────────────────────────────────
-            if (_showHelp)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: c.surface.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    'View and install Luna updates.\nTap a version card to download and install — no cables, no computer needed.',
-                    style: GoogleFonts.dmSans(
-                        fontSize: 12, color: c.onSurface.withValues(alpha: 0.5), height: 1.5)),
-                ),
-              ).animate().fadeIn(),
-
-            // ── Admin: Publish panel ──────────────────────────────────────
-            if (_isAdmin)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: c.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: c.primary.withValues(alpha: 0.25)),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(Icons.rocket_launch_rounded, size: 14, color: c.accent),
-                      const SizedBox(width: 6),
-                      Text('Publish new version',
-                          style: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w700, color: c.accent)),
-                    ]),
-                    const SizedBox(height: 12),
-                    _AdminField(ctrl: _verCtrl, hint: 'Version  (e.g. v1.1.0)', colors: c),
-                    const SizedBox(height: 8),
-                    _AdminField(ctrl: _descCtrl, hint: "What's new in this version", colors: c),
-                    const SizedBox(height: 8),
-                    _AdminField(
-                        ctrl: _urlCtrl,
-                        hint: 'Direct APK URL (Google Drive / Dropbox)',
-                        colors: c),
-                    const SizedBox(height: 12),
-                    GestureDetector(
-                      onTap: _publishVersion,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [c.primary, c.secondary]),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Center(
-                          child: Text('Publish 🚀',
-                              style: GoogleFonts.dmSans(
-                                  fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
-                        ),
-                      ),
-                    ),
-                  ]),
-                ),
-              ).animate().fadeIn(),
 
             // ── Download progress banner ──────────────────────────────────
             if (_isDownloading)
@@ -318,23 +495,29 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                   decoration: BoxDecoration(
                     color: c.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: c.primary.withValues(alpha: 0.25)),
+                    border:
+                        Border.all(color: c.primary.withValues(alpha: 0.25)),
                   ),
                   child: Column(children: [
                     Row(children: [
                       SizedBox(
-                        width: 16, height: 16,
+                        width: 16,
+                        height: 16,
                         child: CircularProgressIndicator(
-                          value: _downloadProgress > 0 ? _downloadProgress : null,
-                          strokeWidth: 2, color: c.accent),
+                            value:
+                                _downloadProgress > 0 ? _downloadProgress : null,
+                            strokeWidth: 2,
+                            color: c.accent),
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        _downloadProgress > 0
-                            ? 'Downloading ${(_downloadProgress * 100).toStringAsFixed(0)}%  —  hang tight'
-                            : 'Downloading...',
-                        style: GoogleFonts.dmSans(
-                            fontSize: 13, fontWeight: FontWeight.w500, color: c.onSurface)),
+                          _downloadProgress > 0
+                              ? 'Downloading ${(_downloadProgress * 100).toStringAsFixed(0)}%  —  hang tight'
+                              : 'Downloading...',
+                          style: GoogleFonts.dmSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: c.onSurface)),
                     ]),
                     if (_downloadProgress > 0) ...[
                       const SizedBox(height: 10),
@@ -352,83 +535,510 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                 ),
               ),
 
-            // ── Versions list ─────────────────────────────────────────────
+            // ── Main Content Area ─────────────────────────────────────────
             Expanded(
-              child: _loading
-                  ? Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        SizedBox(
-                            width: 24, height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: c.accent)),
-                        const SizedBox(height: 14),
-                        Text('Checking for updates...',
-                            style: GoogleFonts.dmSans(
-                                fontSize: 12, color: c.onSurface.withValues(alpha: 0.35))),
-                      ]))
-                  : _timedOut
-                      ? _EmptyState(
-                          emoji: '📵',
-                          title: 'No internet connection',
-                          subtitle: 'Connect to Wi-Fi or mobile data to fetch updates',
-                          colors: c,
-                          onRetry: _fetchVersions)
-                      : _error != null
-                          ? _EmptyState(
-                              emoji: '⚠️',
-                              title: 'Something went wrong',
-                              subtitle: _error!,
-                              colors: c,
-                              onRetry: _fetchVersions)
-                          : _versions.isEmpty
-                              ? _EmptyState(
-                                  emoji: '🌙',
-                                  title: 'No updates yet',
-                                  subtitle: "You're on the latest build",
-                                  colors: c)
-                               : ListView.separated(
-                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 60),
-                                  itemCount: _versions.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                                  itemBuilder: (_, i) => _VersionCard(
-                                    ver: _versions[i],
-                                    colors: c,
-                                    isAdmin: _isAdmin,
-                                    isDownloading: _isDownloading && _downloadingId == _versions[i].id,
-                                    downloadProgress:
-                                        _downloadingId == _versions[i].id ? _downloadProgress : 0,
-                                    isLatest: i == 0,
-                                    onInstall: () => _downloadAndInstall(_versions[i]),
-                                    onDelete: () => _deleteVersion(_versions[i].id),
-                                    onEdit: (updated) => _editVersion(_versions[i].id, updated),
-                                  ),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 60),
+                children: [
+                  // ── ADMIN SECTION ─────────────────────────────────────────
+                  if (_isAdmin) ...[
+                    // 1. AI Token Consumption Telemetry
+                    _AdminTelemetryCard(
+                      metrics: _metrics,
+                      loading: _loadingMetrics,
+                      colors: c,
+                      onRefresh: _fetchTelemetry,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 2. Active Remote API Key Management
+                    _AdminApiKeyCard(
+                      ctrl: _apiKeyCtrl,
+                      loading: _loadingApiKey,
+                      obscure: _obscureKey,
+                      colors: c,
+                      onToggleObscure: () =>
+                          setState(() => _obscureKey = !_obscureKey),
+                      onSave: _saveRemoteKey,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 3. Add Version Trigger
+                    GestureDetector(
+                      onTap: () => setState(() => _showAddForm = !_showAddForm),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: c.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: c.primary.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                                _showAddForm
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.add_rounded,
+                                size: 18,
+                                color: c.accent),
+                            const SizedBox(width: 8),
+                            Text(
+                              _showAddForm
+                                  ? 'Close Add Build Form'
+                                  : '+ Add New Release Build',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: c.accent),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    if (_showAddForm) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: c.surface.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: c.onSurface.withValues(alpha: 0.08)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Publish New Release',
+                                style: GoogleFonts.cormorantGaramond(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: c.onSurface)),
+                            const SizedBox(height: 12),
+                            _AdminField(
+                                ctrl: _verCtrl,
+                                hint: 'Version tag (e.g. v1.0.1)',
+                                colors: c),
+                            const SizedBox(height: 8),
+                            _AdminField(
+                                ctrl: _descCtrl,
+                                hint: 'Release highlights / changelog',
+                                colors: c,
+                                maxLines: 2),
+                            const SizedBox(height: 8),
+                            _AdminField(
+                                ctrl: _urlCtrl,
+                                hint: 'Direct APK download URL',
+                                colors: c),
+                            const SizedBox(height: 14),
+                            GestureDetector(
+                              onTap: _publishing ? null : _publishVersion,
+                              child: Container(
+                                width: double.infinity,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                      colors: [c.primary, c.secondary]),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
+                                child: Center(
+                                  child: _publishing
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white))
+                                      : Text('Publish Version to Firebase 🚀',
+                                          style: GoogleFonts.dmSans(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Text('DISTRIBUTED BUILDS',
+                            style: GoogleFonts.dmSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: c.onSurface.withValues(alpha: 0.35),
+                                letterSpacing: 1.2)),
+                        const Spacer(),
+                        Text('${_versions.length} versions',
+                            style: GoogleFonts.dmSans(
+                                fontSize: 11,
+                                color: c.onSurface.withValues(alpha: 0.35))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // ── VERSIONS LIST ──────────────────────────────────────────
+                  if (_loading)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 40),
+                        child: Column(children: [
+                          SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: c.accent)),
+                          const SizedBox(height: 14),
+                          Text('Checking for updates...',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 12,
+                                  color:
+                                      c.onSurface.withValues(alpha: 0.35))),
+                        ]),
+                      ),
+                    )
+                  else if (_timedOut)
+                    _EmptyState(
+                        emoji: '📵',
+                        title: 'No internet connection',
+                        subtitle:
+                            'Connect to Wi-Fi or mobile data to fetch updates',
+                        colors: c,
+                        onRetry: _fetchVersions)
+                  else if (_error != null)
+                    _EmptyState(
+                        emoji: '⚠️',
+                        title: 'Something went wrong',
+                        subtitle: _error!,
+                        colors: c,
+                        onRetry: _fetchVersions)
+                  else if (_versions.isEmpty)
+                    _EmptyState(
+                        emoji: '🌙',
+                        title: 'No updates yet',
+                        subtitle: "You're on the latest build",
+                        colors: c)
+                  else
+                    ..._versions.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final ver = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _VersionCard(
+                          ver: ver,
+                          colors: c,
+                          isAdmin: _isAdmin,
+                          isDownloading:
+                              _isDownloading && _downloadingId == ver.id,
+                          downloadProgress: _downloadingId == ver.id
+                              ? _downloadProgress
+                              : 0,
+                          isLatest: i == 0,
+                          onInstall: () => _downloadAndInstall(ver),
+                          onEdit: (v, d, u) => _editVersion(ver, v, d, u),
+                          onDelete: () => _deleteVersion(ver),
+                        ),
+                      );
+                    }),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Future<void> _editVersion(String id, _VersionEntry updated) async {
-    try {
-      final payload = json.encode({
-        'version': updated.version,
-        'description': updated.description,
-        'url': updated.url,
-        'date': updated.date,
-      });
-      await http
-          .patch(Uri.parse('$_dbBase/$id.json'),
-              headers: {'Content-Type': 'application/json'}, body: payload)
-          .timeout(const Duration(seconds: 10));
-      _fetchVersions();
-    } catch (e) {
-      _showSnack('Update failed: ${e.toString().split('\n').first}');
-    }
+// ── Admin Telemetry Card ──────────────────────────────────────────────────────
+class _AdminTelemetryCard extends StatelessWidget {
+  final TokenMetrics metrics;
+  final bool loading;
+  final PhaseColors colors;
+  final VoidCallback onRefresh;
+
+  const _AdminTelemetryCard({
+    required this.metrics,
+    required this.loading,
+    required this.colors,
+    required this.onRefresh,
+  });
+
+  String _formatNum(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(2)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('⚡', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              Text(
+                'AI Usage & Token Consumption',
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: c.onSurface,
+                ),
+              ),
+              const Spacer(),
+              if (loading)
+                const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.amber))
+              else
+                GestureDetector(
+                  onTap: onRefresh,
+                  child: Icon(Icons.refresh_rounded,
+                      size: 16, color: Colors.amber.withValues(alpha: 0.8)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Aggregated telemetry reported from all installed devices',
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              color: c.onSurface.withValues(alpha: 0.45),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // 3 Metric Stat Pillars
+          Row(
+            children: [
+              Expanded(
+                child: _MetricTile(
+                  title: 'TODAY',
+                  value: _formatNum(metrics.todayTokens),
+                  subtitle: '${metrics.todayRequests} requests',
+                  accentColor: Colors.amber,
+                  colors: c,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MetricTile(
+                  title: 'THIS WEEK',
+                  value: _formatNum(metrics.weekTokens),
+                  subtitle: 'past 7 days',
+                  accentColor: c.accent,
+                  colors: c,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MetricTile(
+                  title: 'ALL-TIME',
+                  value: _formatNum(metrics.totalTokens),
+                  subtitle: '~\$${metrics.estimatedCostUsd.toStringAsFixed(3)}',
+                  accentColor: const Color(0xFF4CAF87),
+                  colors: c,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
-// ── Version Card ──────────────────────────────────────────────────────────────
+class _MetricTile extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final Color accentColor;
+  final PhaseColors colors;
+
+  const _MetricTile({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.accentColor,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.background.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.dmSans(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              color: accentColor,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.dmSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: colors.onSurface,
+            ),
+          ),
+          Text(
+            subtitle,
+            style: GoogleFonts.dmSans(
+              fontSize: 10,
+              color: colors.onSurface.withValues(alpha: 0.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Admin API Key Card ────────────────────────────────────────────────────────
+class _AdminApiKeyCard extends StatelessWidget {
+  final TextEditingController ctrl;
+  final bool loading;
+  final bool obscure;
+  final PhaseColors colors;
+  final VoidCallback onToggleObscure;
+  final VoidCallback onSave;
+
+  const _AdminApiKeyCard({
+    required this.ctrl,
+    required this.loading,
+    required this.obscure,
+    required this.colors,
+    required this.onToggleObscure,
+    required this.onSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🔑', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              Text('Active DeepSeek API Key',
+                  style: GoogleFonts.cormorantGaramond(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: c.onSurface)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Syncs via Firebase RTDB to all app users without exposing keys in git',
+            style: GoogleFonts.dmSans(
+                fontSize: 11, color: c.onSurface.withValues(alpha: 0.45)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctrl,
+            obscureText: obscure,
+            style: GoogleFonts.dmSans(fontSize: 13, color: c.onSurface),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: c.background.withValues(alpha: 0.6),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: c.accent, width: 1.5)),
+              hintText: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
+              hintStyle: TextStyle(
+                  fontSize: 12, color: c.onSurface.withValues(alpha: 0.3)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  obscure ? Icons.visibility_off : Icons.visibility,
+                  size: 16,
+                  color: c.onSurface.withValues(alpha: 0.4),
+                ),
+                onPressed: onToggleObscure,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: loading ? null : onSave,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: c.primary.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: c.primary.withValues(alpha: 0.4)),
+              ),
+              child: Center(
+                child: loading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text(
+                        'Sync Key to All Devices 🚀',
+                        style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: c.accent),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Version Card (with Admin Edit/Delete support) ─────────────────────────────
 class _VersionCard extends StatefulWidget {
   final _VersionEntry ver;
   final PhaseColors colors;
@@ -437,8 +1047,8 @@ class _VersionCard extends StatefulWidget {
   final double downloadProgress;
   final bool isLatest;
   final VoidCallback onInstall;
+  final Function(String ver, String desc, String url) onEdit;
   final VoidCallback onDelete;
-  final void Function(_VersionEntry updated) onEdit;
 
   const _VersionCard({
     required this.ver,
@@ -448,8 +1058,8 @@ class _VersionCard extends StatefulWidget {
     required this.downloadProgress,
     required this.isLatest,
     required this.onInstall,
-    required this.onDelete,
     required this.onEdit,
+    required this.onDelete,
   });
 
   @override
@@ -458,43 +1068,38 @@ class _VersionCard extends StatefulWidget {
 
 class _VersionCardState extends State<_VersionCard> {
   bool _editing = false;
-  late TextEditingController _eVer;
-  late TextEditingController _eDesc;
-  late TextEditingController _eUrl;
-
-  static const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  late TextEditingController _editVer;
+  late TextEditingController _editDesc;
+  late TextEditingController _editUrl;
 
   @override
   void initState() {
     super.initState();
-    _eVer = TextEditingController(text: widget.ver.version);
-    _eDesc = TextEditingController(text: widget.ver.description);
-    _eUrl = TextEditingController(text: widget.ver.url);
+    _editVer = TextEditingController(text: widget.ver.version);
+    _editDesc = TextEditingController(text: widget.ver.description);
+    _editUrl = TextEditingController(text: widget.ver.url);
   }
 
   @override
   void dispose() {
-    _eVer.dispose(); _eDesc.dispose(); _eUrl.dispose();
+    _editVer.dispose();
+    _editDesc.dispose();
+    _editUrl.dispose();
     super.dispose();
   }
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
 
   String _formatDate(String iso) {
     if (iso.isEmpty) return '';
     try {
       final d = DateTime.parse(iso);
       return '${d.day} ${_months[d.month - 1]} ${d.year}';
-    } catch (_) { return iso; }
-  }
-
-  void _saveEdit() {
-    widget.onEdit(_VersionEntry(
-      id: widget.ver.id,
-      version: _eVer.text.trim(),
-      description: _eDesc.text.trim(),
-      url: _eUrl.text.trim(),
-      date: widget.ver.date,
-    ));
-    setState(() => _editing = false);
+    } catch (_) {
+      return iso;
+    }
   }
 
   @override
@@ -502,143 +1107,199 @@ class _VersionCardState extends State<_VersionCard> {
     final c = widget.colors;
     final dateStr = _formatDate(widget.ver.date);
 
-    if (_editing) {
-      // ── Edit mode ─────────────────────────────────────────────────────
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: c.surface.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: c.primary.withValues(alpha: 0.3)),
-        ),
-        child: Column(children: [
-          _AdminField(ctrl: _eVer, hint: 'Version (e.g. v1.1.0)', colors: c),
-          const SizedBox(height: 8),
-          _AdminField(ctrl: _eDesc, hint: "What's new", colors: c),
-          const SizedBox(height: 8),
-          _AdminField(ctrl: _eUrl, hint: 'APK URL', colors: c),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: _saveEdit,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [c.primary, c.secondary]),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(child: Text('Save',
-                    style: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white))),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _editing = false),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: c.onSurface.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(child: Text('Cancel',
-                    style: GoogleFonts.dmSans(fontSize: 13, color: c.onSurface.withValues(alpha: 0.5)))),
-                ),
-              ),
-            ),
-          ]),
-        ]),
-      );
-    }
-
-    // ── View mode ──────────────────────────────────────────────────────────
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.surface.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: widget.isLatest ? c.primary.withValues(alpha: 0.3) : c.onSurface.withValues(alpha: 0.05)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          if (widget.isLatest)
-            Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: c.primary.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10)),
-              child: Text('LATEST',
-                  style: GoogleFonts.dmSans(fontSize: 9, fontWeight: FontWeight.w800, color: c.accent, letterSpacing: 1)),
-            ),
-          Text(widget.ver.version,
-              style: GoogleFonts.dmSans(fontSize: 17, fontWeight: FontWeight.w700, color: c.onSurface)),
-          const Spacer(),
-          if (dateStr.isNotEmpty)
-            Text(dateStr, style: GoogleFonts.dmSans(fontSize: 11, color: c.onSurface.withValues(alpha: 0.3))),
-          if (widget.isAdmin) ...[ 
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => setState(() => _editing = true),
-              child: Icon(Icons.edit_outlined, size: 15, color: c.accent.withValues(alpha: 0.5)),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: widget.onDelete,
-              child: Icon(Icons.delete_outline_rounded, size: 15, color: Colors.red.withValues(alpha: 0.4)),
-            ),
-          ],
-        ]),
-
-        if (widget.ver.description.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(widget.ver.description,
-              style: GoogleFonts.dmSans(fontSize: 12, color: c.onSurface.withValues(alpha: 0.4), height: 1.5)),
-        ],
-
-        const SizedBox(height: 14),
-
-        GestureDetector(
-          onTap: widget.isDownloading ? null : widget.onInstall,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 13),
-            decoration: BoxDecoration(
-              gradient: widget.isDownloading
-                  ? null
-                  : LinearGradient(colors: [c.primary.withValues(alpha: 0.85), c.secondary.withValues(alpha: 0.85)]),
-              color: widget.isDownloading ? c.primary.withValues(alpha: 0.08) : null,
-              borderRadius: BorderRadius.circular(14),
-              border: widget.isDownloading ? Border.all(color: c.primary.withValues(alpha: 0.2)) : null,
-            ),
-            child: Center(
-              child: widget.isDownloading
-                  ? Row(mainAxisSize: MainAxisSize.min, children: [
-                      SizedBox(width: 14, height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: c.accent,
-                          value: widget.downloadProgress > 0 ? widget.downloadProgress : null)),
-                      const SizedBox(width: 10),
-                      Text(
-                        widget.downloadProgress > 0
-                            ? 'Downloading ${(widget.downloadProgress * 100).toStringAsFixed(0)}%'
-                            : 'Starting...',
-                        style: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w600, color: c.accent)),
-                    ])
-                  : Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.download_rounded, size: 16, color: Colors.white),
-                      const SizedBox(width: 8),
-                      Text('Install ${widget.ver.version}',
-                          style: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                    ]),
-            ),
-          ),
+          color: widget.isLatest
+              ? c.primary.withValues(alpha: 0.3)
+              : c.onSurface.withValues(alpha: 0.05),
         ),
-      ]),
-    ).animate().fadeIn(delay: Duration(milliseconds: 50 * (widget.isLatest ? 0 : 1)));
+      ),
+      child: _editing
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Text('Edit ${widget.ver.version}',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: c.onSurface)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    onPressed: () => setState(() => _editing = false),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                _AdminField(ctrl: _editVer, hint: 'Version tag', colors: c),
+                const SizedBox(height: 6),
+                _AdminField(
+                    ctrl: _editDesc,
+                    hint: 'Description',
+                    colors: c,
+                    maxLines: 2),
+                const SizedBox(height: 6),
+                _AdminField(
+                    ctrl: _editUrl, hint: 'Download APK URL', colors: c),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          widget.onEdit(
+                            _editVer.text.trim(),
+                            _editDesc.text.trim(),
+                            _editUrl.text.trim(),
+                          );
+                          setState(() => _editing = false);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: c.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Text('Save Changes',
+                                style: GoogleFonts.dmSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  if (widget.isLatest)
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: c.primary.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Text('LATEST',
+                          style: GoogleFonts.dmSans(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: c.accent,
+                              letterSpacing: 1)),
+                    ),
+                  Text(widget.ver.version,
+                      style: GoogleFonts.dmSans(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: c.onSurface)),
+                  const Spacer(),
+                  if (dateStr.isNotEmpty)
+                    Text(dateStr,
+                        style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            color: c.onSurface.withValues(alpha: 0.3))),
+                  if (widget.isAdmin) ...[
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => setState(() => _editing = true),
+                      child: Icon(Icons.edit_outlined,
+                          size: 16, color: c.accent.withValues(alpha: 0.7)),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: widget.onDelete,
+                      child: Icon(Icons.delete_outline_rounded,
+                          size: 16, color: Colors.red.withValues(alpha: 0.6)),
+                    ),
+                  ],
+                ]),
+
+                if (widget.ver.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(widget.ver.description,
+                      style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          color: c.onSurface.withValues(alpha: 0.4),
+                          height: 1.5)),
+                ],
+
+                const SizedBox(height: 14),
+
+                GestureDetector(
+                  onTap: widget.isDownloading ? null : widget.onInstall,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    decoration: BoxDecoration(
+                      gradient: widget.isDownloading
+                          ? null
+                          : LinearGradient(colors: [
+                              c.primary.withValues(alpha: 0.85),
+                              c.secondary.withValues(alpha: 0.85)
+                            ]),
+                      color: widget.isDownloading
+                          ? c.primary.withValues(alpha: 0.08)
+                          : null,
+                      borderRadius: BorderRadius.circular(14),
+                      border: widget.isDownloading
+                          ? Border.all(color: c.primary.withValues(alpha: 0.2))
+                          : null,
+                    ),
+                    child: Center(
+                      child: widget.isDownloading
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: c.accent,
+                                        value: widget.downloadProgress > 0
+                                            ? widget.downloadProgress
+                                            : null)),
+                                const SizedBox(width: 10),
+                                Text(
+                                    widget.downloadProgress > 0
+                                        ? 'Downloading ${(widget.downloadProgress * 100).toStringAsFixed(0)}%'
+                                        : 'Starting...',
+                                    style: GoogleFonts.dmSans(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: c.accent)),
+                              ],
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.download_rounded,
+                                    size: 16, color: Colors.white),
+                                const SizedBox(width: 8),
+                                Text('Install ${widget.ver.version}',
+                                    style: GoogleFonts.dmSans(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white)),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
   }
 }
 
@@ -647,24 +1308,35 @@ class _AdminField extends StatelessWidget {
   final TextEditingController ctrl;
   final String hint;
   final PhaseColors colors;
-  const _AdminField({required this.ctrl, required this.hint, required this.colors});
+  final int maxLines;
+
+  const _AdminField({
+    required this.ctrl,
+    required this.hint,
+    required this.colors,
+    this.maxLines = 1,
+  });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: ctrl,
+      maxLines: maxLines,
       style: GoogleFonts.dmSans(fontSize: 13, color: colors.onSurface),
       decoration: InputDecoration(
         filled: true,
         fillColor: colors.background.withValues(alpha: 0.6),
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: colors.accent, width: 1.5)),
         hintText: hint,
-        hintStyle: TextStyle(fontSize: 12, color: colors.onSurface.withValues(alpha: 0.28)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        hintStyle: TextStyle(
+            fontSize: 12, color: colors.onSurface.withValues(alpha: 0.28)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
     );
   }
@@ -698,25 +1370,31 @@ class _EmptyState extends StatelessWidget {
           Text(title,
               textAlign: TextAlign.center,
               style: GoogleFonts.dmSans(
-                  fontSize: 15, fontWeight: FontWeight.w600, color: c.onSurface)),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: c.onSurface)),
           const SizedBox(height: 5),
           Text(subtitle,
               textAlign: TextAlign.center,
               style: GoogleFonts.dmSans(
-                  fontSize: 12, color: c.onSurface.withValues(alpha: 0.38), height: 1.5)),
+                  fontSize: 12,
+                  color: c.onSurface.withValues(alpha: 0.38),
+                  height: 1.5)),
           if (onRetry != null) ...[
             const SizedBox(height: 22),
             GestureDetector(
               onTap: onRetry,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
                 decoration: BoxDecoration(
                   color: c.surface.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('Try again',
                     style: GoogleFonts.dmSans(
-                        fontSize: 13, color: c.onSurface.withValues(alpha: 0.55))),
+                        fontSize: 13,
+                        color: c.onSurface.withValues(alpha: 0.55))),
               ),
             ),
           ],
