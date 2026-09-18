@@ -6,6 +6,7 @@ import 'package:luna_app/core/models/user_profile.dart';
 import 'package:luna_app/core/services/deepseek_service.dart';
 import 'package:luna_app/core/services/storage_service.dart';
 import 'package:luna_app/core/services/pattern_analysis_service.dart';
+import 'package:luna_app/core/services/telemetry_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -229,6 +230,50 @@ void main() {
 
       await StorageService.cacheAiResponse(cacheKey, '{"status":"cached"}');
       expect(StorageService.getCachedAiResponse(cacheKey), equals('{"status":"cached"}'));
+    });
+  });
+
+  group('Remote AI Persona Config Tests', () {
+    test('Default config has proper values, temperature, and negative constraints', () {
+      final config = AiPersonaConfig.defaultConfig();
+      expect(config.temperature, equals(0.65));
+      expect(config.systemInstructions, contains('Luna'));
+      expect(config.chatRules, contains('UNIFIED IDENTITY'));
+      expect(config.forbiddenPhrases, contains('same well, different bucket'));
+      expect(config.forbiddenPhrases, contains('privacy lecture aside'));
+    });
+
+    test('StorageService persists and retrieves AI Persona', () async {
+      final initial = StorageService.getAiPersona();
+      expect(initial.temperature, equals(0.65));
+
+      const updated = AiPersonaConfig(
+        systemInstructions: 'Custom test instructions',
+        chatRules: 'Custom test chat rules',
+        temperature: 0.72,
+        forbiddenPhrases: ['test phrase'],
+        version: '2.0-test',
+      );
+
+      await StorageService.saveAiPersona(updated);
+      final retrieved = StorageService.getAiPersona();
+      expect(retrieved.systemInstructions, equals('Custom test instructions'));
+      expect(retrieved.chatRules, equals('Custom test chat rules'));
+      expect(retrieved.temperature, equals(0.72));
+      expect(retrieved.version, equals('2.0-test'));
+      expect(retrieved.forbiddenPhrases, contains('test phrase'));
+    });
+
+    test('AiPersonaConfig serializes and deserializes correctly', () {
+      final original = AiPersonaConfig.defaultConfig();
+      final map = original.toMap();
+      final reconstituted = AiPersonaConfig.fromMap(map);
+
+      expect(reconstituted.systemInstructions, equals(original.systemInstructions));
+      expect(reconstituted.chatRules, equals(original.chatRules));
+      expect(reconstituted.temperature, equals(original.temperature));
+      expect(reconstituted.forbiddenPhrases, equals(original.forbiddenPhrases));
+      expect(reconstituted.version, equals(original.version));
     });
   });
 }

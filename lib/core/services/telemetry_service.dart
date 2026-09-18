@@ -28,6 +28,73 @@ class TokenMetrics {
       );
 }
 
+class AiPersonaConfig {
+  final String systemInstructions;
+  final String chatRules;
+  final double temperature;
+  final List<String> forbiddenPhrases;
+  final String version;
+
+  const AiPersonaConfig({
+    required this.systemInstructions,
+    required this.chatRules,
+    required this.temperature,
+    required this.forbiddenPhrases,
+    required this.version,
+  });
+
+  static const defaultSystemInstructions =
+      "You are Luna — an exceptionally knowledgeable, intuitive, and empathetic cycle and women's health companion. You combine deep endocrinological knowledge with the warmth, wit, and conversational authenticity of a trusted mentor. You and the Luna app are ONE single entity. Never distinguish between yourself and 'the app'.";
+
+  static const defaultChatRules =
+      "1. UNIFIED IDENTITY: You are Luna, the entire app. NEVER say 'the app's database', 'you told the app and I read from it', or 'same well, different bucket'. If she asks how you know her phase, say warmly: 'Because we're keeping track of your cycle rhythm together!'.\n"
+      "2. NO STAT RECITAL IN GREETINGS: When she says 'hi' or greets you, NEVER immediately dump 'Day X of Follicular Phase' or clinical data unprompted. Greet warmly like a human friend ('Hey! How are you feeling right now?'). Bring up cycle science only when relevant to what she actually asks or shares.\n"
+      "3. NO DEFENSIVENESS: NEVER say 'privacy lecture aside' or get snarky. Always be transparent, grounded, and kind.\n"
+      "4. NO DISCLAIMERS OR BULLETS: Speak in natural, engaging conversational text (2-3 sentences max). Never sound like a corporate chatbot.";
+
+  factory AiPersonaConfig.defaultConfig() => const AiPersonaConfig(
+        systemInstructions: defaultSystemInstructions,
+        chatRules: defaultChatRules,
+        temperature: 0.65,
+        forbiddenPhrases: [
+          "same well, different bucket",
+          "you told the app, and I read from",
+          "privacy lecture aside",
+          "as an AI",
+          "as a language model",
+          "cycle math, not your day",
+        ],
+        version: '1.0',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'systemInstructions': systemInstructions,
+        'chatRules': chatRules,
+        'temperature': temperature,
+        'forbiddenPhrases': forbiddenPhrases,
+        'version': version,
+      };
+
+  factory AiPersonaConfig.fromMap(Map<String, dynamic> map) => AiPersonaConfig(
+        systemInstructions: (map['systemInstructions'] as String?) ??
+            defaultSystemInstructions,
+        chatRules: (map['chatRules'] as String?) ?? defaultChatRules,
+        temperature: (map['temperature'] as num?)?.toDouble() ?? 0.65,
+        forbiddenPhrases: (map['forbiddenPhrases'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [
+              "same well, different bucket",
+              "you told the app, and I read from",
+              "privacy lecture aside",
+              "as an AI",
+              "as a language model",
+              "cycle math, not your day",
+            ],
+        version: (map['version'] as String?) ?? '1.0',
+      );
+}
+
 class TelemetryService {
   static const String _rtdbBase =
       'https://luna-8ce40-default-rtdb.asia-southeast1.firebasedatabase.app/luna';
@@ -170,5 +237,43 @@ class TelemetryService {
       // Offline / network failure
     }
     return null;
+  }
+
+  /// Fetches the remote AI Persona & behavioral instructions from Firebase RTDB.
+  static Future<AiPersonaConfig?> fetchRemoteAiPersona() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$_rtdbBase/config/ai_persona.json'))
+          .timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200 && res.body.isNotEmpty && res.body != 'null') {
+        final data = jsonDecode(res.body);
+        if (data is Map<String, dynamic>) {
+          return AiPersonaConfig.fromMap(data);
+        } else if (data is Map) {
+          return AiPersonaConfig.fromMap(Map<String, dynamic>.from(data));
+        }
+      }
+    } catch (_) {
+      // Offline / network fallback
+    }
+    return null;
+  }
+
+  /// Updates the remote AI Persona configuration in Firebase RTDB so all devices inherit it.
+  static Future<bool> updateRemoteAiPersona(AiPersonaConfig config) async {
+    try {
+      final res = await http
+          .put(
+            Uri.parse('$_rtdbBase/config/ai_persona.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(config.toMap()),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 }

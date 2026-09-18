@@ -34,8 +34,9 @@ void main() async {
   // Init storage service
   try {
     await StorageService.init();
-    // Silently pull remote API key in background
+    // Silently pull remote API key & AI Persona in background
     DeepSeekService.syncApiKeyFromRemote();
+    DeepSeekService.syncPersonaFromRemote();
   } catch (e) {
     debugPrint('StorageService init error: $e');
   }

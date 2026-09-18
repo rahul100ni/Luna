@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../models/log_entry.dart';
+import 'telemetry_service.dart';
 
 class StorageService {
   static Database? _db;
@@ -222,5 +223,24 @@ class StorageService {
 
   static Future<void> clearLastChatSession() async {
     await _prefs?.remove('last_chat_session');
+  }
+
+  // ── Remote AI Persona Cache ───────────────────────────────────────
+  static Future<void> saveAiPersona(AiPersonaConfig config) async {
+    await _prefs?.setString('cached_ai_persona', jsonEncode(config.toMap()));
+  }
+
+  static AiPersonaConfig getAiPersona() {
+    final jsonStr = _prefs?.getString('cached_ai_persona');
+    if (jsonStr == null) return AiPersonaConfig.defaultConfig();
+    try {
+      final map = jsonDecode(jsonStr);
+      if (map is Map<String, dynamic>) {
+        return AiPersonaConfig.fromMap(map);
+      } else if (map is Map) {
+        return AiPersonaConfig.fromMap(Map<String, dynamic>.from(map));
+      }
+    } catch (_) {}
+    return AiPersonaConfig.defaultConfig();
   }
 }

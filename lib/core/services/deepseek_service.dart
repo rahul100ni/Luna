@@ -35,6 +35,16 @@ class DeepSeekService {
     } catch (_) {}
   }
 
+  /// Silently pulls the active remote AI Persona configuration from Firebase RTDB and caches it
+  static Future<void> syncPersonaFromRemote() async {
+    try {
+      final remotePersona = await TelemetryService.fetchRemoteAiPersona();
+      if (remotePersona != null) {
+        await StorageService.saveAiPersona(remotePersona);
+      }
+    } catch (_) {}
+  }
+
   static const String _baseUrl = 'https://api.deepseek.com/chat/completions';
   static const String _model = 'deepseek-chat';
 
@@ -68,13 +78,12 @@ class DeepSeekService {
     LongitudinalProfile? patternProfile,
     bool isChatMode = false,
   }) {
+    final persona = StorageService.getAiPersona();
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
 
     final buffer = StringBuffer();
-    buffer.writeln(
-        "You are Luna — an exceptionally knowledgeable, intuitive, and empathetic cycle and women's health AI companion for $userName.");
-    buffer.writeln(
-        "You combine deep endocrinological knowledge with the warmth, wit, and conversational authenticity of a trusted health mentor.");
+    final instructions = persona.systemInstructions.replaceAll('\$userName', userName);
+    buffer.writeln(instructions);
     buffer.writeln();
     buffer.writeln("USER PROFILE & BIOLOGICAL CONTEXT:");
     buffer.writeln("- Name: $userName");
@@ -143,10 +152,17 @@ class DeepSeekService {
       buffer.writeln("}");
     } else {
       buffer.writeln();
-      buffer.writeln(
-          "Respond in natural, engaging conversational text (2-4 sentences max). Be sharp, perceptive, and directly answer her message.");
-      buffer.writeln(
-          "NO robotic bullet points, NO generic disclaimers. Speak like a real human expert friend.");
+      buffer.writeln("CONVERSATIONAL RULES & BOUNDARIES:");
+      buffer.writeln(persona.chatRules);
+      buffer.writeln();
+      buffer.writeln("NEGATIVE CONSTRAINTS & FORBIDDEN PHRASES:");
+      for (final p in persona.forbiddenPhrases) {
+        buffer.writeln("- DO NOT USE: \"$p\"");
+      }
+      buffer.writeln("- NEVER separate yourself from the app. You ARE Luna. Never refer to 'the app', 'what the app stores', or 'what you logged in your profile' as a third party.");
+      buffer.writeln("- NEVER dump cycle day, phase, or clinical hormone summaries in initial greetings like 'hi' or 'hello'. Greet naturally and casually as a friend.");
+      buffer.writeln("- NEVER get defensive about privacy or say 'privacy lecture aside'. If asked how you know something, explain with warmth: 'Because we are tracking your rhythm together!'.");
+      buffer.writeln("- Respond in natural, engaging conversational text (2-3 sentences max). Speak like a real human expert friend.");
     }
 
     return buffer.toString();
@@ -436,7 +452,7 @@ class DeepSeekService {
             ...messages,
           ],
           'max_tokens': 350,
-          'temperature': 0.7,
+          'temperature': StorageService.getAiPersona().temperature,
         }),
       ).timeout(const Duration(seconds: 15));
 

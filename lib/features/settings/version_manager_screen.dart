@@ -7,8 +7,10 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/services/deepseek_service.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/services/telemetry_service.dart';
 
 // ── Firebase Realtime Database REST endpoints ────────────────────────────────
@@ -45,6 +47,13 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
   bool _loadingApiKey = false;
   bool _obscureKey = true;
 
+  // Remote AI Persona state (Admin)
+  final _personaInstructionsCtrl = TextEditingController();
+  final _personaChatRulesCtrl = TextEditingController();
+  double _personaTemperature = 0.65;
+  bool _loadingPersona = false;
+  bool _savingPersona = false;
+
   // Add Version Form state
   bool _showAddForm = false;
   final _verCtrl = TextEditingController();
@@ -62,11 +71,17 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
     super.initState();
     _fetchVersions();
     _apiKeyCtrl.text = DeepSeekService.apiKey;
+    final initialPersona = StorageService.getAiPersona();
+    _personaInstructionsCtrl.text = initialPersona.systemInstructions;
+    _personaChatRulesCtrl.text = initialPersona.chatRules;
+    _personaTemperature = initialPersona.temperature;
   }
 
   @override
   void dispose() {
     _apiKeyCtrl.dispose();
+    _personaInstructionsCtrl.dispose();
+    _personaChatRulesCtrl.dispose();
     _verCtrl.dispose();
     _descCtrl.dispose();
     _urlCtrl.dispose();
@@ -91,6 +106,7 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       if (_isAdmin) {
         _fetchTelemetry();
         _fetchRemoteKey();
+        _fetchRemotePersona();
       }
     } else if (_tapCount >= 3) {
       HapticFeedback.selectionClick();
@@ -144,6 +160,72 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       _showSnack('API key saved locally on this device ✓');
     }
     if (mounted) setState(() => _loadingApiKey = false);
+  }
+
+  // ── Fetch Remote AI Persona ───────────────────────────────────────────────
+  Future<void> _fetchRemotePersona() async {
+    setState(() => _loadingPersona = true);
+    final persona = await TelemetryService.fetchRemoteAiPersona();
+    if (mounted) {
+      setState(() {
+        if (persona != null) {
+          _personaInstructionsCtrl.text = persona.systemInstructions;
+          _personaChatRulesCtrl.text = persona.chatRules;
+          _personaTemperature = persona.temperature;
+          StorageService.saveAiPersona(persona);
+        }
+        _loadingPersona = false;
+      });
+    }
+  }
+
+  // ── Save Remote AI Persona ────────────────────────────────────────────────
+  Future<void> _saveRemotePersona() async {
+    final instructions = _personaInstructionsCtrl.text.trim();
+    final rules = _personaChatRulesCtrl.text.trim();
+    if (instructions.isEmpty || rules.isEmpty) {
+      _showSnack('Instructions and rules cannot be empty');
+      return;
+    }
+
+    setState(() => _savingPersona = true);
+    final current = StorageService.getAiPersona();
+    final updatedConfig = AiPersonaConfig(
+      systemInstructions: instructions,
+      chatRules: rules,
+      temperature: _personaTemperature,
+      forbiddenPhrases: current.forbiddenPhrases,
+      version: '1.${DateTime.now().millisecondsSinceEpoch}',
+    );
+
+    // Save locally immediately
+    await StorageService.saveAiPersona(updatedConfig);
+
+    final success = await TelemetryService.updateRemoteAiPersona(updatedConfig);
+    if (success) {
+      _showSnack('AI Persona updated & live to all users! 🧠✨');
+    } else {
+      _showSnack('AI Persona saved locally on this device ✓');
+    }
+    if (mounted) setState(() => _savingPersona = false);
+  }
+
+  // ── Open Link in External Browser ────────────────────────────────────────
+  Future<void> _openInBrowser(String url) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      _showSnack('No URL provided');
+      return;
+    }
+    try {
+      final uri = Uri.parse(trimmed);
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      _showSnack('Could not open in browser: $e');
+    }
   }
 
   // ── Fetch versions from Firebase REST API ─────────────────────────────────
@@ -480,6 +562,7 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                     if (_isAdmin) {
                       _fetchTelemetry();
                       _fetchRemoteKey();
+                      _fetchRemotePersona();
                     }
                   },
                 ),
@@ -563,7 +646,22 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // 3. Add Version Trigger
+                    // 3. Remote AI Persona & Behaviour Management
+                    _AdminAiPersonaCard(
+                      instructionsCtrl: _personaInstructionsCtrl,
+                      chatRulesCtrl: _personaChatRulesCtrl,
+                      temperature: _personaTemperature,
+                      onTemperatureChanged: (v) =>
+                          setState(() => _personaTemperature = v),
+                      loading: _loadingPersona,
+                      saving: _savingPersona,
+                      colors: c,
+                      onRefresh: _fetchRemotePersona,
+                      onSave: _saveRemotePersona,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 4. Add Version Trigger
                     GestureDetector(
                       onTap: () => setState(() => _showAddForm = !_showAddForm),
                       child: Container(
@@ -742,6 +840,7 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                               : 0,
                           isLatest: i == 0,
                           onInstall: () => _downloadAndInstall(ver),
+                          onOpenBrowser: () => _openInBrowser(ver.url),
                           onEdit: (v, d, u) => _editVersion(ver, v, d, u),
                           onDelete: () => _deleteVersion(ver),
                         ),
@@ -1038,6 +1137,221 @@ class _AdminApiKeyCard extends StatelessWidget {
   }
 }
 
+// ── Admin AI Persona & Behaviour Card ─────────────────────────────────────────
+class _AdminAiPersonaCard extends StatefulWidget {
+  final TextEditingController instructionsCtrl;
+  final TextEditingController chatRulesCtrl;
+  final double temperature;
+  final ValueChanged<double> onTemperatureChanged;
+  final bool loading;
+  final bool saving;
+  final PhaseColors colors;
+  final VoidCallback onRefresh;
+  final VoidCallback onSave;
+
+  const _AdminAiPersonaCard({
+    required this.instructionsCtrl,
+    required this.chatRulesCtrl,
+    required this.temperature,
+    required this.onTemperatureChanged,
+    required this.loading,
+    required this.saving,
+    required this.colors,
+    required this.onRefresh,
+    required this.onSave,
+  });
+
+  @override
+  State<_AdminAiPersonaCard> createState() => _AdminAiPersonaCardState();
+}
+
+class _AdminAiPersonaCardState extends State<_AdminAiPersonaCard> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.colors;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(20),
+        border:
+            Border.all(color: const Color(0xFF9C27B0).withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🧠', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Cloud AI Persona & Behaviour',
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: c.onSurface,
+                  ),
+                ),
+              ),
+              if (widget.loading)
+                const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Color(0xFFCE93D8)))
+              else
+                GestureDetector(
+                  onTap: widget.onRefresh,
+                  child: Icon(Icons.refresh_rounded,
+                      size: 16,
+                      color: const Color(0xFFCE93D8).withValues(alpha: 0.8)),
+                ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Icon(
+                  _expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: c.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Updates AI personality, tone, & guardrails live across all app installs without rebuilding APKs',
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              color: c.onSurface.withValues(alpha: 0.45),
+            ),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 14),
+            Text(
+              'SYSTEM INSTRUCTIONS (TONE & IDENTITY)',
+              style: GoogleFonts.dmSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFFCE93D8),
+                letterSpacing: 0.8,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _AdminField(
+              ctrl: widget.instructionsCtrl,
+              hint: 'Base persona and core identity instructions',
+              colors: c,
+              maxLines: 4,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'CONVERSATIONAL RULES & BOUNDARIES',
+              style: GoogleFonts.dmSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFFCE93D8),
+                letterSpacing: 0.8,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _AdminField(
+              ctrl: widget.chatRulesCtrl,
+              hint:
+                  'Specific conversational rules, greeting behaviors, and anti-robot guardrails',
+              colors: c,
+              maxLines: 6,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text(
+                  'TEMPERATURE: ${widget.temperature.toStringAsFixed(2)}',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFCE93D8),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  widget.temperature <= 0.4
+                      ? 'Precise & Clinical'
+                      : widget.temperature <= 0.7
+                          ? 'Empathetic & Natural (Default)'
+                          : 'Creative & Spontaneous',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 10,
+                    color: c.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+            SliderTheme(
+              data: SliderThemeData(
+                activeTrackColor: const Color(0xFFAB47BC),
+                inactiveTrackColor: c.onSurface.withValues(alpha: 0.1),
+                thumbColor: const Color(0xFFCE93D8),
+                overlayColor: const Color(0xFFAB47BC).withValues(alpha: 0.2),
+                trackHeight: 2.5,
+              ),
+              child: Slider(
+                value: widget.temperature,
+                min: 0.1,
+                max: 1.0,
+                divisions: 18,
+                onChanged: widget.onTemperatureChanged,
+              ),
+            ),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: widget.saving ? null : widget.onSave,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8E24AA), Color(0xFFAB47BC)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8E24AA).withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: widget.saving
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : Text(
+                          'Sync Persona to All Devices 🧠🚀',
+                          style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 // ── Version Card (with Admin Edit/Delete support) ─────────────────────────────
 class _VersionCard extends StatefulWidget {
   final _VersionEntry ver;
@@ -1047,6 +1361,7 @@ class _VersionCard extends StatefulWidget {
   final double downloadProgress;
   final bool isLatest;
   final VoidCallback onInstall;
+  final VoidCallback onOpenBrowser;
   final Function(String ver, String desc, String url) onEdit;
   final VoidCallback onDelete;
 
@@ -1058,6 +1373,7 @@ class _VersionCard extends StatefulWidget {
     required this.downloadProgress,
     required this.isLatest,
     required this.onInstall,
+    required this.onOpenBrowser,
     required this.onEdit,
     required this.onDelete,
   });
@@ -1208,6 +1524,24 @@ class _VersionCardState extends State<_VersionCard> {
                         style: GoogleFonts.dmSans(
                             fontSize: 11,
                             color: c.onSurface.withValues(alpha: 0.3))),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: widget.onOpenBrowser,
+                    child: Tooltip(
+                      message: 'Open download in browser',
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: c.surface.withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: c.onSurface.withValues(alpha: 0.08)),
+                        ),
+                        child: Icon(Icons.open_in_browser_rounded,
+                            size: 14, color: c.accent),
+                      ),
+                    ),
+                  ),
                   if (widget.isAdmin) ...[
                     const SizedBox(width: 8),
                     GestureDetector(
@@ -1235,67 +1569,100 @@ class _VersionCardState extends State<_VersionCard> {
 
                 const SizedBox(height: 14),
 
-                GestureDetector(
-                  onTap: widget.isDownloading ? null : widget.onInstall,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    decoration: BoxDecoration(
-                      gradient: widget.isDownloading
-                          ? null
-                          : LinearGradient(colors: [
-                              c.primary.withValues(alpha: 0.85),
-                              c.secondary.withValues(alpha: 0.85)
-                            ]),
-                      color: widget.isDownloading
-                          ? c.primary.withValues(alpha: 0.08)
-                          : null,
-                      borderRadius: BorderRadius.circular(14),
-                      border: widget.isDownloading
-                          ? Border.all(color: c.primary.withValues(alpha: 0.2))
-                          : null,
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: widget.isDownloading ? null : widget.onInstall,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          decoration: BoxDecoration(
+                            gradient: widget.isDownloading
+                                ? null
+                                : LinearGradient(colors: [
+                                    c.primary.withValues(alpha: 0.85),
+                                    c.secondary.withValues(alpha: 0.85)
+                                  ]),
+                            color: widget.isDownloading
+                                ? c.primary.withValues(alpha: 0.08)
+                                : null,
+                            borderRadius: BorderRadius.circular(14),
+                            border: widget.isDownloading
+                                ? Border.all(
+                                    color: c.primary.withValues(alpha: 0.2))
+                                : null,
+                          ),
+                          child: Center(
+                            child: widget.isDownloading
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: c.accent,
+                                              value: widget.downloadProgress > 0
+                                                  ? widget.downloadProgress
+                                                  : null)),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                          widget.downloadProgress > 0
+                                              ? 'Downloading ${(widget.downloadProgress * 100).toStringAsFixed(0)}%'
+                                              : 'Starting...',
+                                          style: GoogleFonts.dmSans(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: c.accent)),
+                                    ],
+                                  )
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.download_rounded,
+                                          size: 16, color: Colors.white),
+                                      const SizedBox(width: 8),
+                                      Text('Install APK',
+                                          style: GoogleFonts.dmSans(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white)),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Center(
-                      child: widget.isDownloading
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: c.accent,
-                                        value: widget.downloadProgress > 0
-                                            ? widget.downloadProgress
-                                            : null)),
-                                const SizedBox(width: 10),
-                                Text(
-                                    widget.downloadProgress > 0
-                                        ? 'Downloading ${(widget.downloadProgress * 100).toStringAsFixed(0)}%'
-                                        : 'Starting...',
-                                    style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: c.accent)),
-                              ],
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.download_rounded,
-                                    size: 16, color: Colors.white),
-                                const SizedBox(width: 8),
-                                Text('Install ${widget.ver.version}',
-                                    style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white)),
-                              ],
-                            ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: widget.onOpenBrowser,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 13),
+                        decoration: BoxDecoration(
+                          color: c.surface.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: c.onSurface.withValues(alpha: 0.12)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.open_in_new_rounded,
+                                size: 15, color: c.accent),
+                            const SizedBox(width: 6),
+                            Text('Browser',
+                                style: GoogleFonts.dmSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: c.onSurface)),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
