@@ -57,20 +57,23 @@ jobs:
           files: release-assets/*.apk
           generate_release_notes: false
           body: |
-            ## 🌙 Luna v1.0.0 — Official Production Release
+            ## 🌙 Luna ${{ github.ref_name }} — Official Production Release
 
-            Welcome to the official **Luna v1.0.0** release — an offline-first, private cycle intelligence companion equipped with deep longitudinal biomarker pattern recognition.
+            Welcome to the official **Luna ${{ github.ref_name }}** production release — an offline-first, private cycle intelligence companion certified under package ID `app.vakya.luna`.
 
             ### 📦 Packages Included
-            - **`Luna-v1.0.0.apk`** *(Recommended)*: Optimized for all modern 64-bit Android smartphones (~20 MB).
+            - **`Luna-v1.0.0.apk`** *(Recommended)*: Optimized for all modern 64-bit Android smartphones (~9.5 MB).
             - **`Luna-arm64-v8a.apk`**: Identical to primary ARM64 package.
-            - **`Luna-universal.apk`**: Compatible with all Android architectures (~57 MB).
-            - **`Luna-armeabi-v7a.apk`**: Compatible with legacy 32-bit Android devices (~17 MB).
-            - **`Luna-x86_64.apk`**: Optimized for Android emulators and Chromebooks (~21 MB).
+            - **`Luna-universal.apk`**: Compatible with all Android architectures (~26 MB).
+            - **`Luna-armeabi-v7a.apk`**: Compatible with legacy 32-bit Android devices (~9.0 MB).
+            - **`Luna-x86_64.apk`**: Optimized for Android emulators and Chromebooks (~9.7 MB).
 
-            ### ✨ Highlights & What's New
-            - **🧠 Longitudinal Pattern Engine**: Discovers recurring personal hormonal rhythms (Late-Luteal Energy Troughs, Estrogen Dopamine Peaks, Premenstrual Sensitivity, Prostaglandin Spikes, Craving Waves) from historical check-in logs.
-            - **💡 Intimate Personal AI Memory**: Prompts reason directly with your documented cycle history with zero generic robot clichés.
-            - **🛡️ Rate Limiting & Financial Shield**: Client-side 25 request/day quota with local persistent caching.
-            - **⚡ Zero Black Screen Native Stability**: Completely fixed Android native AOT launch instability across all Android OEMs.
-            - **🔒 100% Offline & Private**: Zero telemetry, zero analytics, zero cloud tracking — all sensitive health data stays strictly on your device.
+            ### ✨ What's New in This Release
+            - **🛡️ Play Protect Developer Registration**: Official package namespace `app.vakya.luna` configured for Google Play Developer Console certification and seamless APK installs without Play Protect warnings.
+            - **🧠 Longitudinal Pattern Recognition**: Strict 7-log calibration baseline before discovering personal hormonal rhythms (Late-Luteal Energy Trough, Estrogen Acceleration, Premenstrual Sensitivity, Prostaglandin Curves, Craving Waves). Zero fake patterns.
+            - **📊 Progressive Disclosure Insights**: Visual hierarchy prioritizing daily signals (Today's Pulse, 7-Day Energy, Mood Climate) with expandable `Hormonal breakdown ▾` cards.
+            - **🩸 Context-Aware Period Logging**: Intelligent Day 1 detection in Check-in and Calendar screens that eliminates redundant or stuck "Period started" buttons.
+            - **⚡ Adult 1–5 Energy Slider**: Direct, fluid energy level recording with descriptive states (*Drained*, *Low*, *Balanced*, *High*, *Peak*).
+            - **🤖 Discreet Multi-Device Telemetry**: Background asynchronous token consumption tracking to Firebase RTDB with secret 5-tap Admin Panel in the Version Manager.
+            - **📱 Android 11+ Compatibility**: `<queries>` package visibility declared, mandatory notification channels initialized, and safe exact/inexact alarm handling.
+            - **🔒 100% Private & Offline-First**: Sensitive cycle logs, notes, and profile stay strictly inside your encrypted on-device SQLite database.

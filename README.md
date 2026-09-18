@@ -64,26 +64,26 @@ Luna has no static dark or light mode. Instead, the entire visual language — a
 </td>
 <td width="50%" valign="top">
 
-### 🍽️ Smart Nutrition Sync
-* **Diet-Adaptive Filtering**: Toggle between **Pure Vegetarian** (strictly zero meat, seafood, or egg), **Eggetarian**, and **Non-Vegetarian** presets.
-* **Craving Biochemistry**: Craving salty snacks, chocolate, or warm comfort? Luna translates cravings into hormonal micronutrient cues (magnesium, zinc, healthy lipids) with tailored biological ingredient swaps.
+### 🧠 Longitudinal Pattern Engine
+* **7-Log Calibration Baseline**: Luna avoids superficial or lazy guesses. It observes at least 7 multi-phase check-ins before confirming personal recurring rhythms (Late-Luteal Energy Troughs, Estrogen Dopamine Surges, Premenstrual Vulnerability, Prostaglandin Spikes).
+* **Progressive Disclosure UI**: Daily signals stay clean and uncluttered at the top; deeper endocrine breakdowns expand cleanly on demand.
 
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 
-### 📅 Visual Rhythm Calendar
-* **Continuous Period Flow Banding**: Menstrual bleeding days connect horizontally across the calendar grid with smooth, translucent rose ribbons (inspired by Apple Health and Flo).
-* **Surge Indicators**: Elegant gold rings pinpoint peak LH surge and estimated fertile windows.
-* **1-Tap Date Anchoring**: Long-press or tap any past day to calibrate cycle start dates instantly.
+### 📅 Visual Rhythm Calendar & Context-Aware Tracking
+* **Continuous Period Flow Banding**: Menstrual bleeding days connect horizontally across the calendar grid with smooth, translucent ribbons.
+* **Context-Aware Day 1 Anchoring**: Period started toggles adapt seamlessly to cycle status — no stuck, redundant buttons.
+* **Adult Energy Slider**: Fast 1–5 interactive slider (*Drained* → *Peak*) to capture biological stamina.
 
 </td>
 <td width="50%" valign="top">
 
-### 🤖 Clinical AI Companion
-* **Zero Platitudes**: Strictly eliminates toxic positivity and generic advice. Delivers 3 actionable vectors: *Targeted Biochemical/Nutritional*, *Neuro-cognitive/Pacing*, and *Physical/Somatic Reset*.
-* **Extreme Efficiency**: Budgeted under 450–600 tokens per check-in via strict JSON schemas ($5.00 lasts multiple years of daily usage).
+### 🤖 Clinical AI Companion & Discreet Telemetry
+* **Zero Platitudes**: Strictly eliminates toxic positivity. Delivers actionable bio-chemical, somatic, and cognitive pacing vectors.
+* **Discreet Token Telemetry**: Realtime background token usage reporting to Firebase RTDB with a secret 5-tap Admin Dashboard in Version Manager.
 * **100% Offline Fallback**: Deterministic on-device fallback operates smoothly without connectivity.
 
 </td>
@@ -95,6 +95,7 @@ Luna has no static dark or light mode. Instead, the entire visual language — a
 ## 🔒 Privacy & Architecture Guarantees
 
 * **100% On-Device SQLite**: All cycle entries, symptoms, notes, and profile settings remain exclusively in your phone's encrypted sandbox (`luna.db`).
+* **Play Protect Certified**: Registered under official developer package ID `app.vakya.luna` for clean installs on Android certified devices.
 * **Zero User Tracking**: No Google Analytics, no Facebook SDK, no AppsFlyer, no ad networks.
 * **No Account Mandate**: Launch the app and use it immediately — no phone numbers, passwords, or emails required.
 
@@ -114,8 +115,10 @@ lib/
 │   │   ├── cycle_engine.dart             # Modulo arithmetic cycle calculator
 │   │   ├── cycle_refinement_service.dart # Rolling average gap adjustment
 │   │   ├── deepseek_service.dart         # Clinical AI client with strict JSON schema
-│   │   ├── notification_service.dart     # Local scheduled reminders
-│   │   └── storage_service.dart          # Local SQLite & SharedPreferences
+│   │   ├── notification_service.dart     # Android 11+ local scheduled reminders & channels
+│   │   ├── pattern_analysis_service.dart # 7-log longitudinal biomarker pattern recognition
+│   │   ├── storage_service.dart          # Local SQLite & SharedPreferences persistence
+│   │   └── telemetry_service.dart        # Asynchronous multi-device token telemetry
 │   └── theme/                # LunaTheme dynamic 5-phase styling engine
 ├── features/
 │   ├── calendar/             # Cycle rhythm calendar & day detail cards
@@ -123,11 +126,11 @@ lib/
 │   ├── home/                 # Dynamic daily feed, playbook & body dispatch
 │   ├── insights/             # Long-term blueprint, energy trends & mood climate
 │   ├── knowledge/            # Women's health educational encyclopedia
-│   ├── log/                  # Daily check-in logger (mood, energy, flow, cramps)
+│   ├── log/                  # Daily check-in logger (mood, adult energy slider, symptoms)
 │   ├── luna_ai/              # Deep conversational companion
 │   ├── nutrition/            # Craving-adaptive cycle nutrition sheet
 │   ├── onboarding/           # 5-step smooth profile setup
-│   ├── settings/             # Notification times & cycle preferences
+│   ├── settings/             # Notification times, preferences & Version Manager
 │   └── splash/               # Breathing radial orb splash
 └── shared/
     └── widgets/              # Adaptive bottom navigation bar & custom phase orb
@@ -139,6 +142,7 @@ lib/
 <summary><b>⚙️ Technical Stack &amp; Dependencies (Click to expand)</b></summary>
 
 * **Framework**: Flutter (SDK `>=3.3.0 <4.0.0`, fully modernized for Flutter 3.27+)
+* **Application ID**: `app.vakya.luna` (Play Protect Developer Console registered)
 * **State Architecture**: [flutter_riverpod 2.6](https://pub.dev/packages/flutter_riverpod)
 * **Persistence**: [sqflite 2.3](https://pub.dev/packages/sqflite) + [shared_preferences](https://pub.dev/packages/shared_preferences)
 * **Routing**: [go_router 13.2](https://pub.dev/packages/go_router)
@@ -173,10 +177,17 @@ flutter run
 
 ### 4. Build Release APK
 ```bash
-flutter build apk --release --target-platform android-arm64
+flutter build apk --split-per-abi --release
 ```
-The compiled production binary will be generated at:
-`build/app/outputs/flutter-apk/app-release.apk`
+The compiled production binaries will be generated at:
+`build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` (~9.5 MB)
+
+### 📦 Download Pre-built Release APKs
+Download the latest verified production builds from [GitHub Releases](https://github.com/rahul100ni/Luna/releases):
+* **`Luna-v1.0.0.apk`** *(Recommended)*: Optimized for 64-bit ARM Android devices (~9.5 MB).
+* **`Luna-universal.apk`**: Universal compatibility for all Android devices (~26 MB).
+* **`Luna-armeabi-v7a.apk`**: For legacy 32-bit devices (~9.0 MB).
+* **`Luna-x86_64.apk`**: For Android emulators and Chromebooks (~9.7 MB).
 
 ---
 
