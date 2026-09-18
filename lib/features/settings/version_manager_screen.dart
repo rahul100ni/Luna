@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/services/deepseek_service.dart';
 import '../../core/services/telemetry_service.dart';
@@ -144,6 +145,25 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       _showSnack('API key saved locally on this device ✓');
     }
     if (mounted) setState(() => _loadingApiKey = false);
+  }
+
+  // ── Open Link in External Browser ────────────────────────────────────────
+  Future<void> _openInBrowser(String url) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      _showSnack('No URL provided');
+      return;
+    }
+    try {
+      final uri = Uri.parse(trimmed);
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      _showSnack('Could not open in browser: $e');
+    }
   }
 
   // ── Fetch versions from Firebase REST API ─────────────────────────────────
@@ -742,6 +762,7 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                               : 0,
                           isLatest: i == 0,
                           onInstall: () => _downloadAndInstall(ver),
+                          onOpenBrowser: () => _openInBrowser(ver.url),
                           onEdit: (v, d, u) => _editVersion(ver, v, d, u),
                           onDelete: () => _deleteVersion(ver),
                         ),
@@ -1047,6 +1068,7 @@ class _VersionCard extends StatefulWidget {
   final double downloadProgress;
   final bool isLatest;
   final VoidCallback onInstall;
+  final VoidCallback onOpenBrowser;
   final Function(String ver, String desc, String url) onEdit;
   final VoidCallback onDelete;
 
@@ -1058,6 +1080,7 @@ class _VersionCard extends StatefulWidget {
     required this.downloadProgress,
     required this.isLatest,
     required this.onInstall,
+    required this.onOpenBrowser,
     required this.onEdit,
     required this.onDelete,
   });
@@ -1235,67 +1258,100 @@ class _VersionCardState extends State<_VersionCard> {
 
                 const SizedBox(height: 14),
 
-                GestureDetector(
-                  onTap: widget.isDownloading ? null : widget.onInstall,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    decoration: BoxDecoration(
-                      gradient: widget.isDownloading
-                          ? null
-                          : LinearGradient(colors: [
-                              c.primary.withValues(alpha: 0.85),
-                              c.secondary.withValues(alpha: 0.85)
-                            ]),
-                      color: widget.isDownloading
-                          ? c.primary.withValues(alpha: 0.08)
-                          : null,
-                      borderRadius: BorderRadius.circular(14),
-                      border: widget.isDownloading
-                          ? Border.all(color: c.primary.withValues(alpha: 0.2))
-                          : null,
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: widget.isDownloading ? null : widget.onInstall,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          decoration: BoxDecoration(
+                            gradient: widget.isDownloading
+                                ? null
+                                : LinearGradient(colors: [
+                                    c.primary.withValues(alpha: 0.85),
+                                    c.secondary.withValues(alpha: 0.85)
+                                  ]),
+                            color: widget.isDownloading
+                                ? c.primary.withValues(alpha: 0.08)
+                                : null,
+                            borderRadius: BorderRadius.circular(14),
+                            border: widget.isDownloading
+                                ? Border.all(
+                                    color: c.primary.withValues(alpha: 0.2))
+                                : null,
+                          ),
+                          child: Center(
+                            child: widget.isDownloading
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: c.accent,
+                                              value: widget.downloadProgress > 0
+                                                  ? widget.downloadProgress
+                                                  : null)),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                          widget.downloadProgress > 0
+                                              ? 'Downloading ${(widget.downloadProgress * 100).toStringAsFixed(0)}%'
+                                              : 'Starting...',
+                                          style: GoogleFonts.dmSans(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: c.accent)),
+                                    ],
+                                  )
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.download_rounded,
+                                          size: 16, color: Colors.white),
+                                      const SizedBox(width: 8),
+                                      Text('Install APK',
+                                          style: GoogleFonts.dmSans(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white)),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Center(
-                      child: widget.isDownloading
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: c.accent,
-                                        value: widget.downloadProgress > 0
-                                            ? widget.downloadProgress
-                                            : null)),
-                                const SizedBox(width: 10),
-                                Text(
-                                    widget.downloadProgress > 0
-                                        ? 'Downloading ${(widget.downloadProgress * 100).toStringAsFixed(0)}%'
-                                        : 'Starting...',
-                                    style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: c.accent)),
-                              ],
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.download_rounded,
-                                    size: 16, color: Colors.white),
-                                const SizedBox(width: 8),
-                                Text('Install ${widget.ver.version}',
-                                    style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white)),
-                              ],
-                            ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: widget.onOpenBrowser,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 13),
+                        decoration: BoxDecoration(
+                          color: c.surface.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: c.onSurface.withValues(alpha: 0.12)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.open_in_new_rounded,
+                                size: 15, color: c.accent),
+                            const SizedBox(width: 6),
+                            Text('Browser',
+                                style: GoogleFonts.dmSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: c.onSurface)),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
