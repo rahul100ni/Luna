@@ -1524,24 +1524,6 @@ class _VersionCardState extends State<_VersionCard> {
                         style: GoogleFonts.dmSans(
                             fontSize: 11,
                             color: c.onSurface.withValues(alpha: 0.3))),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: widget.onOpenBrowser,
-                    child: Tooltip(
-                      message: 'Open download in browser',
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: c.surface.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: c.onSurface.withValues(alpha: 0.08)),
-                        ),
-                        child: Icon(Icons.open_in_browser_rounded,
-                            size: 14, color: c.accent),
-                      ),
-                    ),
-                  ),
                   if (widget.isAdmin) ...[
                     const SizedBox(width: 8),
                     GestureDetector(
