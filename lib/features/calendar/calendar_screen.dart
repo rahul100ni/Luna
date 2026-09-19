@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/models/log_entry.dart';
 import '../../core/models/user_profile.dart';
@@ -686,21 +687,23 @@ class _SelectedDayCard extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
                 decoration: BoxDecoration(
-                  color: phaseAccent.withValues(alpha: 0.18),
+                  color: (hasAnchor ? phaseAccent : colors.accent).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: phaseAccent.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: (hasAnchor ? phaseAccent : colors.accent).withValues(alpha: 0.25),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(phaseInfo.emoji, style: const TextStyle(fontSize: 12)),
+                    Text(hasAnchor ? phaseInfo.emoji : '✨', style: const TextStyle(fontSize: 12)),
                     const SizedBox(width: 5),
                     Text(
-                      hasAnchor ? '${phaseInfo.name} · Day ${state!.dayOfCycle}' : 'Blueprint',
+                      hasAnchor ? '${phaseInfo.name} · Day ${state!.dayOfCycle}' : 'Day View',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: phaseAccent,
+                        color: hasAnchor ? phaseAccent : colors.accent,
                       ),
                     ),
                   ],
@@ -711,25 +714,25 @@ class _SelectedDayCard extends ConsumerWidget {
 
           const SizedBox(height: 12),
 
-          // If a log exists for this date, display it prominently!
+          // If a log exists for this date, display it compactly
           if (entry != null) ...[
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: colors.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: colors.primary.withValues(alpha: 0.25)),
+                border: Border.all(color: colors.primary.withValues(alpha: 0.22)),
               ),
               child: Row(
                 children: [
-                  Text(entry.mood.emoji, style: const TextStyle(fontSize: 24)),
+                  Text(entry.mood?.emoji ?? '📝', style: const TextStyle(fontSize: 22)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          entry.mood.label,
+                          entry.mood?.label ?? 'Check-in recorded',
                           style: GoogleFonts.dmSans(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
@@ -775,48 +778,105 @@ class _SelectedDayCard extends ConsumerWidget {
             const SizedBox(height: 12),
           ],
 
-          // Day Specific Biological Highlight
-          Text(
-            dayGuidance.dayHighlight,
-            style: GoogleFonts.cormorantGaramond(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: colors.onSurface,
+          if (!hasAnchor) ...[
+            Text(
+              'Daily Attunement',
+              style: GoogleFonts.cormorantGaramond(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                color: colors.onSurface,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            dayGuidance.biologicalContext,
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              color: colors.onSurface.withValues(alpha: 0.55),
-              height: 1.35,
+            const SizedBox(height: 4),
+            Text(
+              'No cycle anchor recorded yet. Mark your period start date or log daily wellness to unlock hormonal guidance.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: colors.onSurface.withValues(alpha: 0.55),
+                height: 1.4,
+              ),
             ),
-          ),
+            const SizedBox(height: 14),
+          ] else ...[
+            Text(
+              dayGuidance.dayHighlight,
+              style: GoogleFonts.cormorantGaramond(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                color: colors.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              dayGuidance.biologicalContext,
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: colors.onSurface.withValues(alpha: 0.55),
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 10),
 
-          const SizedBox(height: 12),
+            // Unified sleek guidance container
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colors.onSurface.withValues(alpha: 0.035),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: colors.onSurface.withValues(alpha: 0.05)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('✓',
+                          style: TextStyle(
+                              color: phaseAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          dayGuidance.doThis,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11.5,
+                            color: colors.onSurface.withValues(alpha: 0.85),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('✗',
+                          style: TextStyle(
+                              color: colors.primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          dayGuidance.avoidThis,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11.5,
+                            color: colors.onSurface.withValues(alpha: 0.7),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
 
-          // Day-calibrated guidance tips
-          _GuidanceRow(
-            prefix: '✓',
-            label: dayGuidance.doThis,
-            accent: phaseAccent,
-            colors: colors,
-          ),
-          const SizedBox(height: 7),
-          _GuidanceRow(
-            prefix: '✗',
-            label: dayGuidance.avoidThis,
-            accent: const Color(0xFFE07070),
-            colors: colors,
-          ),
-
-          const SizedBox(height: 14),
-
-          // ── Period anchor button ──────────────────────────────────
-          // If selected day is the anchor: shows confirmed status
-          // If within the period bleeding days: shows active period day
-          // Otherwise: allows user to mark that date as period start
+          // ── Action Buttons ──────────────────────────────────────────
           Consumer(builder: (ctx, ref, _) {
             final profile = ref.watch(profileProvider);
             final anchor = profile?.lastPeriodStart;
@@ -831,135 +891,120 @@ class _SelectedDayCard extends ConsumerWidget {
             final periodLen = profile?.averagePeriodLength ?? 5;
             final isInPeriodDays = daysDiff != null && daysDiff > 0 && daysDiff < periodLen;
 
-            return Column(
-              children: [
-                if (isSameDay) ...[
+            if (isSameDay) {
+              return Column(
+                children: [
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD94F6E).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.35)),
+                      color: colors.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text('🩸', style: TextStyle(fontSize: 14)),
-                        const SizedBox(width: 8),
+                        const Text('🩸', style: TextStyle(fontSize: 13)),
+                        const SizedBox(width: 6),
                         Text(
                           'Period start date for this cycle ✓',
                           style: GoogleFonts.dmSans(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFFFF8FA3),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ] else if (isInPeriodDays) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD94F6E).withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.2)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('🩸', style: TextStyle(fontSize: 14)),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Period · Day ${daysDiff + 1} of cycle',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFFFF8FA3),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ] else ...[
-                  GestureDetector(
-                    onTap: () async {
-                      await ref
-                          .read(profileProvider.notifier)
-                          .updateLastPeriod(selectedDay);
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(
-                            backgroundColor: const Color(0xFFD94F6E),
-                            behavior: SnackBarBehavior.floating,
-                            content: Text(
-                              'Cycle anchored to ${DateFormat("d MMMM").format(selectedDay)} 🩸',
-                              style: GoogleFonts.dmSans(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFD94F6E).withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                            color: const Color(0xFFD94F6E).withValues(alpha: 0.35)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('🩸', style: TextStyle(fontSize: 14)),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Mark as Period Start',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFFF8FA3),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-
-                // Log Check-in for this day
-                GestureDetector(
-                  onTap: () => context.push('/log'),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: colors.primary.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: colors.primary.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.edit_calendar_rounded, size: 14, color: colors.accent),
-                        const SizedBox(width: 6),
-                        Text(
-                          entry == null ? 'Log for Day' : 'View Full Log',
-                          style: GoogleFonts.dmSans(
                             fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                             color: colors.accent,
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildLogDayButton(context, colors, entry),
+                ],
+              );
+            }
+
+            if (isInPeriodDays) {
+              return Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: colors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: colors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('🩸', style: TextStyle(fontSize: 13)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Period · Day ${daysDiff + 1} of cycle',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: colors.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildLogDayButton(context, colors, entry),
+                ],
+              );
+            }
+
+            // Balanced side-by-side action buttons
+            return Row(
+              children: [
+                Expanded(
+                  child: _buildLogDayButton(context, colors, entry),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      await ref
+                          .read(profileProvider.notifier)
+                          .updateLastPeriod(selectedDay);
+                      final toSave = entry != null
+                          ? entry.copyWith(periodStarted: true)
+                          : LogEntry(
+                              id: const Uuid().v4(),
+                              date: selectedDay,
+                              mood: null,
+                              energyLevel: null,
+                              symptoms: [],
+                              periodStarted: true,
+                            );
+                      await ref.read(logEntriesProvider.notifier).addEntry(toSave);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('🩸', style: TextStyle(fontSize: 12)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Period Start',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: colors.accent,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -970,55 +1015,34 @@ class _SelectedDayCard extends ConsumerWidget {
       ),
     );
   }
-}
 
-class _GuidanceRow extends StatelessWidget {
-  final String prefix;
-  final String label;
-  final Color accent;
-  final PhaseColors colors;
-
-  const _GuidanceRow({
-    required this.prefix,
-    required this.label,
-    required this.accent,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            prefix,
-            style: TextStyle(
-              fontSize: 12,
-              color: accent,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
+  Widget _buildLogDayButton(BuildContext context, PhaseColors colors, LogEntry? entry) {
+    return GestureDetector(
+      onTap: () => context.push('/log'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.primary.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.edit_calendar_rounded, size: 14, color: colors.accent),
+            const SizedBox(width: 6),
+            Text(
+              entry == null ? 'Log Day' : 'View Log',
               style: GoogleFonts.dmSans(
-                fontSize: 11.5,
-                color: colors.onSurface.withValues(alpha: 0.85),
-                height: 1.35,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: colors.accent,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:luna_app/core/constants/phase_constants.dart';
@@ -6,6 +7,7 @@ import 'package:luna_app/core/models/user_profile.dart';
 import 'package:luna_app/core/services/deepseek_service.dart';
 import 'package:luna_app/core/services/storage_service.dart';
 import 'package:luna_app/core/services/pattern_analysis_service.dart';
+import 'package:luna_app/core/services/cycle_engine.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -229,6 +231,99 @@ void main() {
 
       await StorageService.cacheAiResponse(cacheKey, '{"status":"cached"}');
       expect(StorageService.getCachedAiResponse(cacheKey), equals('{"status":"cached"}'));
+    });
+  });
+
+  group('Cycle Engine & UX Theme Tests', () {
+    test('CycleEngine.calculate returns follicular phase when no cycle anchor is set', () {
+      final profile = UserProfile(
+        id: 'u_no_cycle',
+        name: 'NewUser',
+        averageCycleLength: 28,
+        averagePeriodLength: 5,
+        lastPeriodStart: null,
+        createdAt: DateTime.now(),
+      );
+      final state = CycleEngine.calculate(profile);
+      expect(state.phase, equals(CyclePhase.follicular));
+      expect(state.dayOfCycle, equals(0));
+    });
+
+    test('Menstrual phase uses uplifting warm coral rose colors rather than harsh red or depressing dark tones', () {
+      final info = PhaseConstants.getPhaseInfo(CyclePhase.menstrual);
+      expect(info.colors.primary.toARGB32(), equals(0xFFE56B85));
+      expect(info.colors.background.toARGB32(), equals(0xFF1A0E13));
+    });
+
+    test('PhaseConstants provides dedicated neutralColors for no-cycle state', () {
+      expect(PhaseConstants.neutralColors.primary.toARGB32(), equals(0xFF7E92C9));
+      expect(PhaseConstants.neutralColors.background.toARGB32(), equals(0xFF0F1117));
+    });
+
+    test('LogEntry allows null mood when user records energy or symptoms without mood', () {
+      final entry = LogEntry(
+        id: 'no_mood_1',
+        date: DateTime.now(),
+        mood: null,
+        energyLevel: 4,
+        symptoms: ['Tired'],
+        periodStarted: false,
+      );
+      expect(entry.mood, isNull);
+      expect(entry.energyLevel, equals(4));
+
+      final map = entry.toMap();
+      expect(map['mood'], isNull);
+
+      final restored = LogEntry.fromMap(map);
+      expect(restored.mood, isNull);
+      expect(restored.energyLevel, equals(4));
+    });
+
+    test('PhaseConstants copy contains no em dashes', () {
+      for (final phase in CyclePhase.values) {
+        final info = PhaseConstants.getPhaseInfo(phase);
+        expect(info.scienceBody.contains('—'), isFalse);
+        for (final item in info.doThis) {
+          expect(item.contains('—'), isFalse);
+        }
+        for (final item in info.avoidThis) {
+          expect(item.contains('—'), isFalse);
+        }
+        for (final item in info.eatThis) {
+          expect(item.contains('—'), isFalse);
+        }
+      }
+    });
+
+    test('AI Auto-logging JSON tag parsing correctly extracts periodStarted, flow, cramps, mood, energy, symptoms and strips stray brackets', () {
+      const sampleResponse =
+          'I hear you so deeply. Take it slow today.\n\n[LOG:{"periodStarted":true,"flow":"heavy","cramps":"severe","mood":"struggling","energy":1,"symptoms":["Headache","Cramps"]}]';
+
+      final logStartIdx = sampleResponse.indexOf('[LOG:');
+      expect(logStartIdx != -1, isTrue);
+
+      String cleanResponse = sampleResponse.substring(0, logStartIdx).trim();
+      String rawLog = sampleResponse.substring(logStartIdx + 5).trim();
+      if (rawLog.endsWith(']')) {
+        rawLog = rawLog.substring(0, rawLog.length - 1).trim();
+      }
+
+      // Safety clean
+      cleanResponse = cleanResponse.replaceAll(RegExp(r'\s*\[LOG:[^\]]*\]?'), '').trim();
+      cleanResponse = cleanResponse.replaceAll(RegExp(r'\]+$'), '').trim();
+
+      expect(cleanResponse, equals('I hear you so deeply. Take it slow today.'));
+      expect(cleanResponse.endsWith(']'), isFalse);
+
+      // JSON parsing test
+      final parsed = jsonDecode(rawLog) as Map<String, dynamic>;
+      expect(parsed['periodStarted'], isTrue);
+      expect(parsed['flow'], equals('heavy'));
+      expect(parsed['cramps'], equals('severe'));
+      expect(parsed['mood'], equals('struggling'));
+      expect(parsed['energy'], equals(1));
+      expect(parsed['symptoms'], equals(['Headache', 'Cramps']));
     });
   });
 }

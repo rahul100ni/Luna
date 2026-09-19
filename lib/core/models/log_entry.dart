@@ -1,7 +1,7 @@
 class LogEntry {
   final String id;
   final DateTime date;
-  final MoodLevel mood;
+  final MoodLevel? mood; // nullable — mood is optional (can log energy/symptoms/flow without mood)
   final int? energyLevel; // nullable — only stored when user explicitly sets it
   final SleepQuality? sleepQuality; // NEW: replaces the 5-bolt energy UI
   final FlowLevel? flow;
@@ -13,7 +13,7 @@ class LogEntry {
   const LogEntry({
     required this.id,
     required this.date,
-    required this.mood,
+    this.mood,
     this.energyLevel,
     this.sleepQuality,
     this.flow,
@@ -26,7 +26,7 @@ class LogEntry {
   Map<String, dynamic> toMap() => {
         'id': id,
         'date': date.toIso8601String(),
-        'mood': mood.index,
+        'mood': mood?.index,
         'energyLevel': energyLevel,
         'sleepQuality': sleepQuality?.index,
         'flow': flow?.index,
@@ -39,7 +39,7 @@ class LogEntry {
   factory LogEntry.fromMap(Map<String, dynamic> map) => LogEntry(
         id: map['id'] as String,
         date: DateTime.parse(map['date'] as String),
-        mood: MoodLevel.values[map['mood'] as int],
+        mood: map['mood'] != null ? MoodLevel.values[map['mood'] as int] : null,
         // Backward-compatible: old rows with `energyLevel = 3` (default) are
         // treated as "no explicit log" (null), since 3 was the silent default.
         // New rows that are explicitly set will persist as their actual value.
@@ -67,6 +67,7 @@ class LogEntry {
     List<String>? symptoms,
     String? notes,
     bool? periodStarted,
+    bool clearMood = false,
     bool clearEnergy = false,
     bool clearSleep = false,
     bool clearFlow = false,
@@ -75,7 +76,7 @@ class LogEntry {
       LogEntry(
         id: id ?? this.id,
         date: date ?? this.date,
-        mood: mood ?? this.mood,
+        mood: clearMood ? null : (mood ?? this.mood),
         energyLevel: clearEnergy ? null : (energyLevel ?? this.energyLevel),
         sleepQuality: clearSleep ? null : (sleepQuality ?? this.sleepQuality),
         flow: clearFlow ? null : (flow ?? this.flow),

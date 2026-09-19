@@ -30,7 +30,7 @@ class HomeScreen extends ConsumerWidget {
                   color: Color(0xFF9B84D4))));
     }
 
-    final bool dataIsAssumed = profile.lastPeriodStart == null;
+    final bool dataIsAssumed = profile.lastPeriodStart == null || cycleState.dayOfCycle <= 0;
     final phaseInfo = cycleState.phaseInfo;
     final greeting = _getGreeting();
 
@@ -652,7 +652,7 @@ class _NutritionSyncBanner extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Pick your diet & craving — see what to eat & avoid',
+                    'Pick your diet & craving, see what to eat & avoid',
                     style: GoogleFonts.dmSans(
                       fontSize: 11.5,
                       color: colors.onSurface.withValues(alpha: 0.6),
@@ -911,14 +911,14 @@ class _TodayPlaybookState extends State<_TodayPlaybook> {
     }
   }
 
-  // Strip verbose explanation after ' — ' to keep it scannable
+  // Strip verbose explanation after ': ', ' (', or ' — ' to keep it scannable
   String _shortItem(String item) {
-    // If item has ' — ' (em-dash explanation), just show the action part
+    final colonIdx = item.indexOf(': ');
+    if (colonIdx > 4) return item.substring(0, colonIdx);
+    final parenIdx = item.indexOf(' (');
+    if (parenIdx > 4) return item.substring(0, parenIdx);
     final dashIdx = item.indexOf(' — ');
     if (dashIdx > 0) return item.substring(0, dashIdx);
-    // If item has ': ', keep up to the colon as the headline
-    final colonIdx = item.indexOf(': ');
-    if (colonIdx > 20) return item.substring(0, colonIdx);
     return item;
   }
 

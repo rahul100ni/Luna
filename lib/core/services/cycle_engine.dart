@@ -38,8 +38,8 @@ class CycleEngine {
     if (lastPeriod == null) {
       return CycleState(
         dayOfCycle: 0,
-        phase: CyclePhase.menstrual,
-        phaseInfo: PhaseConstants.getPhaseInfo(CyclePhase.menstrual),
+        phase: CyclePhase.follicular,
+        phaseInfo: PhaseConstants.getPhaseInfo(CyclePhase.follicular),
         daysUntilNextPeriod: profile.averageCycleLength,
         daysUntilPhaseChange: 5,
       );

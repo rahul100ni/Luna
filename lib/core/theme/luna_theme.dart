@@ -5,6 +5,10 @@ import '../constants/phase_constants.dart';
 class LunaTheme {
   static ThemeData themeForPhase(CyclePhase phase) {
     final colors = PhaseConstants.getPhaseInfo(phase).colors;
+    return themeForColors(colors);
+  }
+
+  static ThemeData themeForColors(PhaseColors colors) {
     final base = ThemeData.dark();
 
     return base.copyWith(

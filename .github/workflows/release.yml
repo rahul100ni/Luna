@@ -45,7 +45,7 @@ jobs:
           mkdir -p release-assets
           cp build/app/outputs/flutter-apk/app-release.apk release-assets/Luna-universal.apk
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-assets/Luna-arm64-v8a.apk
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-assets/Luna-v1.0.0.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-assets/Luna-${{ github.ref_name }}.apk
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release-assets/Luna-armeabi-v7a.apk
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk release-assets/Luna-x86_64.apk
 

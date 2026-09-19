@@ -88,51 +88,51 @@ class InsightsScreen extends ConsumerWidget {
                   profile: profile,
                   currentPhase: currentPhase,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
-                // 1. Cycle Architecture & Blueprint Card (Always Visible & Active)
+                // 1. Cycle Architecture & Blueprint Card (Top Placement)
                 _CycleBlueprintCard(
                   colors: colors,
                   profile: profile,
                   cycleState: cycleState,
                   currentPhase: currentPhase,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
-                // 2. Today's Biological Pulse Card (Logged or Inline Check-in)
+                // 2. Daily Check-in Card (Today's Biological Pulse)
                 _TodayPulseCard(
                   colors: colors,
                   todayEntry: todayEntry,
                   cycleState: cycleState,
                   currentPhase: currentPhase,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
-                // 3. 7-Day Energy Rhythm (Actual Logs + Projected Phase Baseline)
+                // 3. Phase Hormone Intelligence (Metabolism, Sleep, & Training)
+                _PhaseIntelligenceSection(
+                  colors: colors,
+                  currentPhase: currentPhase,
+                  cycleState: cycleState,
+                ),
+                const SizedBox(height: 16),
+
+                // 4. 7-Day Energy Rhythm (Hidden if no energy logged this week)
                 _EnergyRhythmCard(
                   colors: colors,
                   logs: logs,
                   profile: profile,
                   currentPhase: currentPhase,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
-                // 4. Emotional Climate & Mood Trends
+                // 5. Emotional Climate & Mood Trends
                 _MoodClimateCard(
                   colors: colors,
                   logs: logs,
                   cycleState: cycleState,
                   currentPhase: currentPhase,
                 ),
-                const SizedBox(height: 18),
-
-                // 5. Phase Hormone Intelligence (Metabolism, Sleep, & Training)
-                _PhaseIntelligenceSection(
-                  colors: colors,
-                  currentPhase: currentPhase,
-                  cycleState: cycleState,
-                ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
                 // 6. Symptom Watchlist & Logged History
                 _SymptomsSection(
@@ -140,14 +140,16 @@ class InsightsScreen extends ConsumerWidget {
                   logs: logs,
                   currentPhase: currentPhase,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
-                // 7. Discovered Longitudinal Patterns (Deep Biomarker Intelligence - Progressive Disclosure)
-                _DiscoveredPatternsCard(
-                  colors: colors,
-                  patternProfile: patternProfile,
-                ),
-                const SizedBox(height: 18),
+                // 7. Pattern Intelligence (Personal Biomarker Discoveries)
+                if (profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0) ...[
+                  _DiscoveredPatternsCard(
+                    colors: colors,
+                    patternProfile: patternProfile,
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // 8. Cycle & Period History
                 _PeriodHistorySection(
@@ -155,7 +157,7 @@ class InsightsScreen extends ConsumerWidget {
                   logs: logs,
                   profile: profile,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -481,6 +483,7 @@ class _CycleBlueprintCard extends StatelessWidget {
                 value: nextPeriodText,
                 subtitle: nextPeriodSub,
                 colors: colors,
+                onTap: hasCycle ? null : () => context.push('/log'),
               ),
             ],
           ),
@@ -571,57 +574,78 @@ class _MetricTile extends StatelessWidget {
   final String value;
   final String subtitle;
   final PhaseColors colors;
+  final VoidCallback? onTap;
 
   const _MetricTile({
     required this.title,
     required this.value,
     required this.subtitle,
     required this.colors,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isInteractive = onTap != null;
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-        decoration: BoxDecoration(
-          color: colors.onSurface.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: colors.onSurface.withValues(alpha: 0.04)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.dmSans(
-                fontSize: 10,
-                color: colors.onSurface.withValues(alpha: 0.45),
-                fontWeight: FontWeight.w500,
-              ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          decoration: BoxDecoration(
+            color: isInteractive
+                ? colors.primary.withValues(alpha: 0.14)
+                : colors.onSurface.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isInteractive
+                  ? colors.accent.withValues(alpha: 0.3)
+                  : colors.onSurface.withValues(alpha: 0.04),
             ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.cormorantGaramond(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: colors.onSurface,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10,
+                      color: colors.onSurface.withValues(alpha: 0.45),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (isInteractive)
+                    Icon(Icons.arrow_forward_rounded, size: 10, color: colors.accent),
+                ],
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.dmSans(
-                fontSize: 9,
-                color: colors.accent.withValues(alpha: 0.7),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: isInteractive ? colors.accent : colors.onSurface,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.dmSans(
+                  fontSize: 9,
+                  fontWeight: isInteractive ? FontWeight.w600 : FontWeight.w400,
+                  color: colors.accent.withValues(alpha: isInteractive ? 0.95 : 0.7),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -698,47 +722,70 @@ class _TodayPulseCard extends ConsumerWidget {
     required this.currentPhase,
   });
 
-  Future<void> _recordQuickMood(BuildContext context, WidgetRef ref, MoodLevel mood) async {
+  Future<void> _recordQuickMood(
+      BuildContext context, WidgetRef ref, MoodLevel mood) async {
+    if (todayEntry != null && todayEntry!.mood == mood) {
+      // Tapped already selected mood: unlog mood cleanly
+      if (!todayEntry!.periodStarted &&
+          todayEntry!.symptoms.isEmpty &&
+          todayEntry!.energyLevel == null &&
+          todayEntry!.flow == null &&
+          todayEntry!.cramps == null &&
+          todayEntry!.sleepQuality == null &&
+          (todayEntry!.notes == null || todayEntry!.notes!.isEmpty)) {
+        await ref.read(logEntriesProvider.notifier).deleteTodayEntry();
+      } else {
+        await ref.read(logEntriesProvider.notifier).addEntry(
+              todayEntry!.copyWith(clearMood: true),
+            );
+      }
+      return;
+    }
+
     final entry = LogEntry(
       id: todayEntry?.id ?? const Uuid().v4(),
       date: DateTime.now(),
       mood: mood,
-      energyLevel: todayEntry?.energyLevel ?? 3,
+      energyLevel: todayEntry?.energyLevel, // NEVER default to 3
       flow: todayEntry?.flow,
       cramps: todayEntry?.cramps,
+      sleepQuality: todayEntry?.sleepQuality,
       symptoms: todayEntry?.symptoms ?? [],
       notes: todayEntry?.notes,
       periodStarted: todayEntry?.periodStarted ?? false,
     );
     await ref.read(logEntriesProvider.notifier).addEntry(entry);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Recorded ${mood.emoji} ${mood.label} for today 💜"),
-          backgroundColor: const Color(0xFF2A1F3D),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
   }
 
-  String _getBiologicalTakeaway(CyclePhase phase, MoodLevel mood, int energy) {
-    if (phase == CyclePhase.menstrual) {
-      if (energy <= 2) {
-        return 'Systemic reset: Lowest progesterone & estrogen slow mitochondrial output. Resting today directly lowers cramping.';
+  String _getBiologicalTakeaway({
+    required bool hasCycle,
+    required CyclePhase phase,
+    MoodLevel? mood,
+    int? energy,
+  }) {
+    if (!hasCycle) {
+      if (energy != null && energy <= 2) {
+        return 'Nervous system reset: taking things slow today lets your body restore natural vitality.';
+      } else if (energy != null && energy >= 4) {
+        return 'Natural momentum: channel your high vitality into creative focus and activities that inspire you.';
       }
-      return 'Restorative renewal: Your body is clearing the endometrial lining while beginning follicular recruitment.';
+      return 'Mindful check-in: tuning into your body is the first step toward understanding your natural rhythms.';
+    }
+
+    if (phase == CyclePhase.menstrual) {
+      if (energy != null && energy <= 2) {
+        return 'Systemic reset: lowest estrogen and progesterone naturally lower energy output. Resting today directly eases cramping.';
+      }
+      return 'Restorative renewal: your body is clearing the uterine lining and resetting its endocrine balance.';
     } else if (phase == CyclePhase.follicular) {
-      return 'Estrogen ascendance: Rising estradiol enhances frontal lobe connectivity, focus, and dopamine reception.';
+      return 'Estrogen ascendance: rising estradiol enhances cognitive clarity, focus, and natural energy.';
     } else if (phase == CyclePhase.ovulatory) {
-      return 'Peak radiance: The LH surge and testosterone spike boost confidence, verbal dexterity, and metabolic throughput.';
+      return 'Peak radiance: peak estrogen and testosterone support stamina, verbal confidence, and vitality.';
     } else {
       if (mood == MoodLevel.struggling || mood == MoodLevel.low) {
-        return 'Amygdala sensitivity: Dropping progesterone temporarily reduces GABA receptors. Your feelings are neurochemically valid.';
+        return 'Nervous system sensitivity: shifting progesterone temporarily alters GABA activity. Your feelings are neurochemically valid.';
       }
-      return 'Progesterone plateau: Calorie burn rises by 5–10%. Slower digestion promotes steady nutrient extraction.';
+      return 'Progesterone phase: digestion slows for steady nutrient absorption and body temperature stays gently elevated.';
     }
   }
 
@@ -761,127 +808,210 @@ class _TodayPulseCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header row with status badge and unlog button
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                hasLogged ? "Today's Biological Pulse" : 'Daily Check-in',
+                'Daily Check-in',
                 style: GoogleFonts.cormorantGaramond(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: colors.onSurface,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: hasLogged
-                      ? colors.accent.withValues(alpha: 0.15)
-                      : Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
+              if (hasLogged)
+                Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      hasLogged ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                      size: 11,
-                      color: hasLogged ? colors.accent : Colors.amberAccent,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: colors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 11,
+                            color: colors.accent,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Logged',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: colors.accent,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      hasLogged ? 'Logged' : 'Awaiting pulse',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: hasLogged ? colors.accent : Colors.amberAccent,
+                    const SizedBox(width: 6),
+                    InkWell(
+                      onTap: () async {
+                        await ref
+                            .read(logEntriesProvider.notifier)
+                            .deleteTodayEntry();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content:
+                                  const Text("Today's check-in unlogged 🌸"),
+                              backgroundColor: const Color(0xFF2A1F3D),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: colors.onSurface.withValues(alpha: 0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 13,
+                          color: colors.onSurface.withValues(alpha: 0.5),
+                        ),
                       ),
                     ),
                   ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          if (hasLogged) ...[
-            // Today's summary row
-            Row(
-              children: [
+                )
+              else
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    todayEntry!.mood.emoji,
-                    style: const TextStyle(fontSize: 28),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        todayEntry!.mood.label,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: colors.onSurface,
-                        ),
+                      const Icon(
+                        Icons.radio_button_unchecked_rounded,
+                        size: 11,
+                        color: Colors.amberAccent,
                       ),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          Text(
-                            'Energy Level:',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 11,
-                              color: colors.onSurface.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          ...List.generate(5, (i) {
-                            final energy = todayEntry!.energyLevel ?? 3;
-                            final filled = i < energy;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 2),
-                              child: Icon(
-                                Icons.bolt_rounded,
-                                size: 14,
-                                color: filled
-                                    ? colors.accent
-                                    : colors.onSurface.withValues(alpha: 0.15),
-                              ),
-                            );
-                          }),
-                        ],
+                      const SizedBox(width: 4),
+                      Text(
+                        'Awaiting check-in',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.amberAccent,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  onPressed: () => context.push('/log'),
-                  icon: Icon(Icons.edit_outlined, size: 18, color: colors.accent),
-                  tooltip: 'Edit today',
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Text(
+            hasLogged
+                ? 'Tap your selected mood again to unlog, or switch anytime:'
+                : 'How are you feeling today?',
+            style: GoogleFonts.dmSans(
+              fontSize: 12.5,
+              color: colors.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // 6 Mood Emoji Selector (ALWAYS visible and interactive, circular style)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: MoodLevel.values.map((m) {
+              final isSelected = hasLogged && todayEntry!.mood == m;
+              return InkWell(
+                onTap: () => _recordQuickMood(context, ref, m),
+                borderRadius: BorderRadius.circular(24),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: isSelected ? 48 : 44,
+                  height: isSelected ? 48 : 44,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? colors.primary.withValues(alpha: 0.28)
+                        : colors.onSurface.withValues(alpha: 0.04),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? colors.accent
+                          : colors.onSurface.withValues(alpha: 0.08),
+                      width: isSelected ? 1.8 : 1,
+                    ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: colors.accent.withValues(alpha: 0.24),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            )
+                          ]
+                        : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      m.emoji,
+                      style: TextStyle(fontSize: isSelected ? 24 : 21),
+                    ),
+                  ),
                 ),
+              );
+            }).toList(),
+          ),
+
+          if (hasLogged) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Text(
+                  todayEntry!.mood?.label ?? 'Check-in Recorded',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: colors.accent,
+                  ),
+                ),
+                if (todayEntry!.energyLevel != null) ...[
+                  Text(
+                    '  ·  Energy: ${todayEntry!.energyLevel}/5',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: colors.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                ],
               ],
             ),
-
             if (todayEntry!.symptoms.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: todayEntry!.symptoms.map((s) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
                     decoration: BoxDecoration(
                       color: colors.onSurface.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: colors.onSurface.withValues(alpha: 0.07)),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: colors.onSurface.withValues(alpha: 0.07)),
                     ),
                     child: Text(
                       s,
@@ -894,25 +1024,30 @@ class _TodayPulseCard extends ConsumerWidget {
                 }).toList(),
               ),
             ],
-
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: colors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: colors.primary.withValues(alpha: 0.14)),
+                border:
+                    Border.all(color: colors.primary.withValues(alpha: 0.14)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('🧠', style: TextStyle(fontSize: 16)),
+                  const Text('✨', style: TextStyle(fontSize: 15)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _getBiologicalTakeaway(currentPhase, todayEntry!.mood, todayEntry!.energyLevel ?? 3),
+                      _getBiologicalTakeaway(
+                        hasCycle: cycleState != null && cycleState!.dayOfCycle > 0,
+                        phase: currentPhase,
+                        mood: todayEntry!.mood,
+                        energy: todayEntry!.energyLevel,
+                      ),
                       style: GoogleFonts.dmSans(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         color: colors.onSurface.withValues(alpha: 0.75),
                         height: 1.45,
                       ),
@@ -921,64 +1056,33 @@ class _TodayPulseCard extends ConsumerWidget {
                 ],
               ),
             ),
-          ] else ...[
-            Text(
-              'Tap your mood to record your daily biological state:',
-              style: GoogleFonts.dmSans(
-                fontSize: 12,
-                color: colors.onSurface.withValues(alpha: 0.55),
-              ),
-            ),
-            const SizedBox(height: 14),
+          ],
 
-            // 6 Mood Emoji Selector
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: MoodLevel.values.map((m) {
-                return InkWell(
-                  onTap: () => _recordQuickMood(context, ref, m),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: colors.onSurface.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: colors.onSurface.withValues(alpha: 0.06)),
-                    ),
-                    child: Text(
-                      m.emoji,
-                      style: const TextStyle(fontSize: 24),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 14),
-
-            InkWell(
-              onTap: () => context.push('/log'),
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: colors.primary.withValues(alpha: 0.2)),
-                ),
-                child: Center(
-                  child: Text(
-                    'Open Detailed Logger (Energy, Flow, Symptoms) →',
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: () => context.push('/log'),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.tune_rounded, size: 14, color: colors.accent),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasLogged
+                        ? 'Edit detailed check-in (energy, flow, symptoms) →'
+                        : 'Log in detail (energy, flow, symptoms) →',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: colors.accent,
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ],
       ),
     ).animate().fadeIn(delay: 60.ms, duration: 400.ms);
@@ -986,7 +1090,7 @@ class _TodayPulseCard extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. 7-DAY ENERGY RHYTHM MATRIX (NO BLANKS!)
+// 3. 7-DAY ENERGY RHYTHM MATRIX (HIDDEN IF NO ENERGY LOGGED THIS WEEK)
 // ─────────────────────────────────────────────────────────────────────────────
 class _EnergyRhythmCard extends StatelessWidget {
   final PhaseColors colors;
@@ -1012,27 +1116,19 @@ class _EnergyRhythmCard extends StatelessWidget {
       return DateTime(d.year, d.month, d.day);
     });
 
-    const dayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+    // Check if any energy has actually been logged during this 7-day window
+    final hasAnyEnergyLogged = weekDays.any((d) => logs.any((l) =>
+        l.energyLevel != null &&
+        l.date.year == d.year &&
+        l.date.month == d.month &&
+        l.date.day == d.day));
 
-    // Projected baseline energy per phase
-    int baselineEnergy;
-    switch (currentPhase) {
-      case CyclePhase.menstrual:
-        baselineEnergy = 2;
-        break;
-      case CyclePhase.follicular:
-        baselineEnergy = 4;
-        break;
-      case CyclePhase.ovulatory:
-        baselineEnergy = 5;
-        break;
-      case CyclePhase.earlyLuteal:
-        baselineEnergy = 3;
-        break;
-      case CyclePhase.lateLuteal:
-        baselineEnergy = 2;
-        break;
+    // When no energy is logged for this week, cleanly hide the card
+    if (!hasAnyEnergyLogged) {
+      return const SizedBox.shrink();
     }
+
+    const dayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
     return Container(
       width: double.infinity,
@@ -1049,90 +1145,116 @@ class _EnergyRhythmCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Weekly Energy Rhythm',
+                'Energy This Week',
                 style: GoogleFonts.cormorantGaramond(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: colors.onSurface,
                 ),
               ),
-              Text(
-                'Scale 1–5',
-                style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  color: colors.onSurface.withValues(alpha: 0.4),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: colors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '1–5 Scale',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: colors.accent,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
-            'Actual logged levels paired with biological phase baseline',
+            'Your logged daily vitality levels',
             style: GoogleFonts.dmSans(
-              fontSize: 11,
+              fontSize: 12,
               color: colors.onSurface.withValues(alpha: 0.5),
             ),
           ),
           const SizedBox(height: 20),
 
-          // 7 Days Chart
+          // 7 Days Clean Energy Bar Chart
           SizedBox(
             height: 96,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(7, (i) {
                 final date = weekDays[i];
-                final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
-                final isFuture = date.isAfter(now);
+                final isToday = date.year == now.year &&
+                    date.month == now.month &&
+                    date.day == now.day;
 
                 // Find log for this day
                 LogEntry? matchingLog;
                 for (final l in logs) {
-                  if (l.date.year == date.year && l.date.month == date.month && l.date.day == date.day) {
+                  if (l.date.year == date.year &&
+                      l.date.month == date.month &&
+                      l.date.day == date.day) {
                     matchingLog = l;
                     break;
                   }
                 }
 
-                final hasLog = matchingLog != null && matchingLog.energyLevel != null;
-                final displayEnergy = hasLog ? matchingLog.energyLevel! : baselineEnergy;
-                final barHeight = (displayEnergy / 5.0) * 64.0;
+                final hasLog =
+                    matchingLog != null && matchingLog.energyLevel != null;
+                final energy = hasLog ? matchingLog.energyLevel! : 0;
+                final barHeight = hasLog ? ((energy / 5.0) * 52.0 + 8.0) : 6.0;
 
                 return Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         // Energy badge on top of bar
                         Text(
-                          hasLog ? '$displayEnergy' : '~$displayEnergy',
+                          hasLog ? '$energy' : '-',
                           style: GoogleFonts.dmSans(
-                            fontSize: 9,
-                            fontWeight: hasLog ? FontWeight.w700 : FontWeight.w400,
+                            fontSize: 10,
+                            fontWeight:
+                                hasLog ? FontWeight.w700 : FontWeight.w400,
                             color: hasLog
                                 ? colors.accent
-                                : colors.onSurface.withValues(alpha: 0.35),
+                                : colors.onSurface.withValues(alpha: 0.25),
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
 
-                        // The Bar
+                        // The Bar / Dot
                         Container(
                           height: barHeight,
                           decoration: BoxDecoration(
+                            gradient: hasLog
+                                ? LinearGradient(
+                                    colors: [
+                                      colors.primary,
+                                      colors.accent,
+                                    ],
+                                    begin: Alignment.bottomCenter,
+                                    end: Alignment.topCenter,
+                                  )
+                                : null,
                             color: hasLog
-                                ? (isToday
-                                    ? colors.accent
-                                    : colors.primary.withValues(alpha: 0.75))
-                                : colors.onSurface.withValues(alpha: isFuture ? 0.05 : 0.09),
-                            borderRadius: BorderRadius.circular(6),
-                            border: hasLog
                                 ? null
-                                : Border.all(
-                                    color: colors.onSurface.withValues(alpha: 0.12),
-                                    style: BorderStyle.solid,
-                                  ),
+                                : colors.onSurface.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(6),
+                            boxShadow: hasLog && isToday
+                                ? [
+                                    BoxShadow(
+                                      color:
+                                          colors.accent.withValues(alpha: 0.35),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    )
+                                  ]
+                                : null,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -1141,17 +1263,18 @@ class _EnergyRhythmCard extends StatelessWidget {
                         Text(
                           dayLabels[i],
                           style: GoogleFonts.dmSans(
-                            fontSize: 10,
-                            fontWeight: isToday ? FontWeight.w700 : FontWeight.w400,
+                            fontSize: 10.5,
+                            fontWeight:
+                                isToday ? FontWeight.w700 : FontWeight.w500,
                             color: isToday
                                 ? colors.accent
-                                : colors.onSurface.withValues(alpha: 0.5),
+                                : colors.onSurface.withValues(alpha: 0.55),
                           ),
                         ),
                         Text(
                           '${date.day}',
                           style: GoogleFonts.dmSans(
-                            fontSize: 9,
+                            fontSize: 9.5,
                             color: colors.onSurface.withValues(alpha: 0.3),
                           ),
                         ),
@@ -1161,50 +1284,6 @@ class _EnergyRhythmCard extends StatelessWidget {
                 );
               }),
             ),
-          ),
-          const SizedBox(height: 14),
-
-          // Legend
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: colors.accent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                'Logged Energy',
-                style: GoogleFonts.dmSans(
-                  fontSize: 10,
-                  color: colors.onSurface.withValues(alpha: 0.6),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: colors.onSurface.withValues(alpha: 0.4),
-                    width: 1,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                'Hormonal Baseline (~$baselineEnergy/5)',
-                style: GoogleFonts.dmSans(
-                  fontSize: 10,
-                  color: colors.onSurface.withValues(alpha: 0.4),
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -1233,10 +1312,12 @@ class _MoodClimateCard extends StatelessWidget {
     final sorted = [...logs]..sort((a, b) => b.date.compareTo(a.date));
     final moodCounts = <MoodLevel, int>{};
     for (final l in sorted) {
-      moodCounts[l.mood] = (moodCounts[l.mood] ?? 0) + 1;
+      if (l.mood != null) {
+        moodCounts[l.mood!] = (moodCounts[l.mood!] ?? 0) + 1;
+      }
     }
 
-    final totalCount = logs.length;
+    final totalCount = moodCounts.values.fold(0, (sum, count) => sum + count);
     final dominantMood = moodCounts.isEmpty
         ? null
         : moodCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
@@ -1446,6 +1527,72 @@ class _PhaseIntelligenceSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (cycleState == null || cycleState!.dayOfCycle <= 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: colors.onSurface.withValues(alpha: 0.06)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('🔬', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 10),
+                Text(
+                  'Phase Intelligence',
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Once your cycle begins and you log your period start date, Luna unlocks personalized hormonal metabolism, sleep science, and workout rhythm for every phase.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                color: colors.onSurface.withValues(alpha: 0.6),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 14),
+            InkWell(
+              onTap: () => context.push('/log'),
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Record cycle start date →',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: colors.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final info = PhaseConstants.getPhaseInfo(currentPhase);
 
     String nutritionTip;
@@ -1798,11 +1945,11 @@ class _PeriodHistorySection extends ConsumerWidget {
       builder: (ctx, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFFE07070),
+            colorScheme: ColorScheme.dark(
+              primary: colors.primary,
               onPrimary: Colors.white,
-              surface: Color(0xFF1E1530),
-              onSurface: Colors.white,
+              surface: colors.surface,
+              onSurface: colors.onSurface,
             ),
           ),
           child: child!,
@@ -1815,8 +1962,8 @@ class _PeriodHistorySection extends ConsumerWidget {
       final entry = LogEntry(
         id: const Uuid().v4(),
         date: picked,
-        mood: MoodLevel.decent,
-        energyLevel: 3,
+        mood: null,
+        energyLevel: null,
         symptoms: [],
         periodStarted: true,
       );
@@ -1824,7 +1971,10 @@ class _PeriodHistorySection extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Period start logged: ${picked.day} ${_monthName(picked.month)} 🩸'),
+            content: Text(
+              'Period start logged: ${picked.day} ${_monthName(picked.month)} 🩸',
+              style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+            ),
             backgroundColor: const Color(0xFF2A1F3D),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1867,10 +2017,10 @@ class _PeriodHistorySection extends ConsumerWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE07070).withValues(alpha: 0.16),
+                    color: colors.primary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: const Color(0xFFE07070).withValues(alpha: 0.3),
+                      color: colors.primary.withValues(alpha: 0.35),
                     ),
                   ),
                   child: Row(
@@ -1883,7 +2033,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                         style: GoogleFonts.dmSans(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFFFF8FA3),
+                          color: colors.accent,
                         ),
                       ),
                     ],
@@ -1905,7 +2055,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE07070).withValues(alpha: 0.15),
+                        color: colors.primary.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Center(
@@ -1914,7 +2064,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                           style: GoogleFonts.cormorantGaramond(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFFFF8FA3),
+                            color: colors.accent,
                           ),
                         ),
                       ),
@@ -1953,7 +2103,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE07070).withValues(alpha: 0.15),
+                    color: colors.primary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Center(
@@ -1962,7 +2112,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                       style: GoogleFonts.cormorantGaramond(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFFFF8FA3),
+                        color: colors.accent,
                       ),
                     ),
                   ),
@@ -2047,7 +2197,8 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: (hasPatterns ? colors.accent : colors.primary).withValues(alpha: 0.15),
+                  color: (hasPatterns ? colors.accent : colors.primary)
+                      .withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Center(
@@ -2060,7 +2211,7 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Cycle Pattern Intelligence',
+                      'Pattern Intelligence',
                       style: GoogleFonts.cormorantGaramond(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -2071,7 +2222,7 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                     Text(
                       hasPatterns
                           ? 'Longitudinal biomarker discoveries'
-                          : 'Personal baseline calibration',
+                          : 'Personal pattern calibration',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         color: colors.onSurface.withValues(alpha: 0.45),
@@ -2081,7 +2232,8 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: (hasPatterns ? colors.accent : colors.primary)
                       .withValues(alpha: 0.12),
@@ -2135,28 +2287,13 @@ class _DiscoveredPatternsCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Text('🔬', style: TextStyle(fontSize: 14)),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Calibrating Your Biological Baseline',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: colors.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
                   Text(
                     totalLogs == 0
-                        ? 'Luna observes your mood, energy, and symptoms across multiple cycle phases before confirming personal patterns, ensuring clinical integrity without premature assumptions.'
-                        : 'Luna requires at least 7 daily check-ins across different phases of your cycle to detect genuine hormonal patterns rather than guessing from isolated days.',
+                        ? 'Luna tracks your mood, energy, and symptoms across cycle phases to identify your personal patterns with biological precision.'
+                        : 'Luna needs at least 7 daily check-ins across different phases to detect your personal hormonal rhythm without guessing.',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
-                      color: colors.onSurface.withValues(alpha: 0.6),
+                      color: colors.onSurface.withValues(alpha: 0.65),
                       height: 1.5,
                     ),
                   ),
@@ -2169,27 +2306,31 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                       height: 6,
                       child: LinearProgressIndicator(
                         value: progress,
-                        backgroundColor: colors.onSurface.withValues(alpha: 0.08),
-                        valueColor: AlwaysStoppedAnimation<Color>(colors.accent),
+                        backgroundColor:
+                            colors.onSurface.withValues(alpha: 0.08),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(colors.accent),
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '$totalLogs of 7 check-ins collected',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: colors.onSurface.withValues(alpha: 0.45),
+                      Expanded(
+                        child: Text(
+                          '$totalLogs of 7 check-ins logged',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: colors.onSurface.withValues(alpha: 0.45),
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         totalLogs < 7
-                            ? '${7 - totalLogs} more to unlock patterns'
-                            : 'Analyzing multi-cycle trends',
+                            ? '${7 - totalLogs} more needed'
+                            : 'Analyzing trends',
                         style: GoogleFonts.dmSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -2201,7 +2342,7 @@ class _DiscoveredPatternsCard extends StatelessWidget {
 
                   const SizedBox(height: 14),
                   Text(
-                    'Biomarkers under continuous observation:',
+                    'Upcoming discoveries:',
                     style: GoogleFonts.dmSans(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
@@ -2213,10 +2354,14 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 6,
                     children: [
-                      _PatternPreviewBadge(icon: '📉', label: 'Luteal energy dips', colors: colors),
-                      _PatternPreviewBadge(icon: '⚡', label: 'Estrogen stamina peaks', colors: colors),
-                      _PatternPreviewBadge(icon: '💜', label: 'Premenstrual mood resilience', colors: colors),
-                      _PatternPreviewBadge(icon: '🩸', label: 'Prostaglandin cramp curves', colors: colors),
+                      _PatternPreviewBadge(
+                          icon: '📉', label: 'Energy dips', colors: colors),
+                      _PatternPreviewBadge(
+                          icon: '⚡', label: 'Stamina peaks', colors: colors),
+                      _PatternPreviewBadge(
+                          icon: '💜', label: 'Mood shifts', colors: colors),
+                      _PatternPreviewBadge(
+                          icon: '🩸', label: 'Cramp patterns', colors: colors),
                     ],
                   ),
                 ],

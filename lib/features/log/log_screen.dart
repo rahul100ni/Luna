@@ -70,8 +70,12 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       if (todayEntry != null) {
         setState(() {
           _existingEntryId = todayEntry.id;
-          _mood = todayEntry.mood;
-          _moodSelected = true;
+          if (todayEntry.mood != null) {
+            _mood = todayEntry.mood!;
+            _moodSelected = true;
+          } else {
+            _moodSelected = false;
+          }
           _energy = todayEntry.energyLevel;
           _flow = todayEntry.flow;
           _cramps = todayEntry.cramps;
@@ -116,11 +120,24 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     }
   }
 
+  bool get _canSave =>
+      _moodSelected ||
+      _energy != null ||
+      _symptoms.isNotEmpty ||
+      _periodStarted ||
+      _flow != null ||
+      _cramps != null ||
+      _sleep != null ||
+      _notesController.text.trim().isNotEmpty;
+
   Future<void> _save() async {
-    if (!_moodSelected) {
+    if (!_canSave) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Tap how you\'re feeling first 💜'),
+          content: Text(
+            'Record at least one detail first 💜',
+            style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+          ),
           backgroundColor: const Color(0xFF2A1F3D),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -134,7 +151,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     final entry = LogEntry(
       id: entryId,
       date: DateTime.now(),
-      mood: _mood,
+      mood: _moodSelected ? _mood : null,
       energyLevel: _energy,
       flow: _flow,
       cramps: _cramps,
@@ -626,8 +643,12 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                             final sel = _mood == m && _moodSelected;
                             return GestureDetector(
                               onTap: () => setState(() {
-                                _mood = m;
-                                _moodSelected = true;
+                                if (sel) {
+                                  _moodSelected = false;
+                                } else {
+                                  _mood = m;
+                                  _moodSelected = true;
+                                }
                               }),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
@@ -722,16 +743,19 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                             children: [
                               SliderTheme(
                                 data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 6,
+                                  trackHeight: 8,
                                   activeTrackColor: colors.accent,
-                                  inactiveTrackColor: colors.background.withValues(alpha: 0.6),
+                                  inactiveTrackColor: colors.background.withValues(alpha: 0.8),
                                   thumbColor: colors.accent,
-                                  overlayColor: colors.accent.withValues(alpha: 0.2),
-                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
-                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-                                  tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2.5),
-                                  activeTickMarkColor: Colors.white.withValues(alpha: 0.6),
-                                  inactiveTickMarkColor: colors.onSurface.withValues(alpha: 0.15),
+                                  overlayColor: colors.accent.withValues(alpha: 0.22),
+                                  thumbShape: const RoundSliderThumbShape(
+                                    enabledThumbRadius: 11,
+                                    elevation: 3,
+                                  ),
+                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+                                  tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
+                                  activeTickMarkColor: Colors.white,
+                                  inactiveTickMarkColor: colors.onSurface.withValues(alpha: 0.2),
                                 ),
                                 child: Slider(
                                   value: (_energy ?? 3).toDouble(),
@@ -748,18 +772,36 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text('1 · Drained',
-                                        style: GoogleFonts.dmSans(
-                                            fontSize: 10,
-                                            color: colors.onSurface.withValues(alpha: 0.35))),
-                                    Text('3 · Balanced',
-                                        style: GoogleFonts.dmSans(
-                                            fontSize: 10,
-                                            color: colors.onSurface.withValues(alpha: 0.35))),
-                                    Text('5 · Peak',
-                                        style: GoogleFonts.dmSans(
-                                            fontSize: 10,
-                                            color: colors.onSurface.withValues(alpha: 0.35))),
+                                    Text(
+                                      '1 · Drained',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 10.5,
+                                        fontWeight: _energy == 1 ? FontWeight.w700 : FontWeight.w500,
+                                        color: _energy == 1
+                                            ? colors.accent
+                                            : colors.onSurface.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    Text(
+                                      '3 · Balanced',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 10.5,
+                                        fontWeight: _energy == 3 ? FontWeight.w700 : FontWeight.w500,
+                                        color: _energy == 3
+                                            ? colors.accent
+                                            : colors.onSurface.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    Text(
+                                      '5 · Peak',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 10.5,
+                                        fontWeight: _energy == 5 ? FontWeight.w700 : FontWeight.w500,
+                                        color: _energy == 5
+                                            ? colors.accent
+                                            : colors.onSurface.withValues(alpha: 0.35),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -946,68 +988,157 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                         const SizedBox(height: 24),
 
                         // ── Symptoms ──────────────────────────────────
-                        Text(
-                          'WHAT\'S GOING ON',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: colors.onSurface.withValues(alpha: 0.35),
-                            letterSpacing: 1.2,
-                          ),
-                        ).animate().fadeIn(delay: 160.ms),
-                        const SizedBox(height: 12),
+                        Builder(builder: (_) {
+                          final patternProfile = ref.watch(patternProfileProvider);
+                          final currentPhase = cycleState?.phase;
 
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _quickSymptoms.map((s) {
-                            final key = '${s['e']} ${s['l']}';
-                            final sel = _symptoms.contains(key);
-                            return GestureDetector(
-                              onTap: () => setState(() {
-                                if (sel) {
-                                  _symptoms.remove(key);
-                                } else {
-                                  _symptoms.add(key);
-                                }
-                              }),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 160),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 9),
-                                decoration: BoxDecoration(
-                                  color: sel
-                                      ? colors.primary.withValues(alpha: 0.18)
-                                      : colors.surface.withValues(alpha: 0.6),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: sel
-                                        ? colors.primary
-                                        : colors.onSurface.withValues(alpha: 0.07),
-                                    width: sel ? 1.5 : 1,
+                          // Adaptive symptom suggestion set
+                          final suggestedLabels = <String>{};
+                          if (hasCycleAnchor && currentPhase != null) {
+                            switch (currentPhase) {
+                              case CyclePhase.menstrual:
+                                suggestedLabels.addAll(['Tired', 'Bloating', 'Headache', 'Sad', 'Tender']);
+                                break;
+                              case CyclePhase.follicular:
+                                suggestedLabels.addAll(['Feeling good', 'Brain fog']);
+                                break;
+                              case CyclePhase.ovulatory:
+                                suggestedLabels.addAll(['Feeling good', 'Tender', 'Hot flashes', 'Cravings']);
+                                break;
+                              case CyclePhase.earlyLuteal:
+                                suggestedLabels.addAll(['Bloating', 'Cravings', 'Tired', 'Tender']);
+                                break;
+                              case CyclePhase.lateLuteal:
+                                suggestedLabels.addAll(['Irritable', 'Bloating', 'Cravings', 'Anxious', 'Tired', 'Headache']);
+                                break;
+                            }
+                            // Boost symptoms identified in personal patterns for this phase
+                            final phaseSymptoms = patternProfile.dominantPhaseSymptoms[currentPhase];
+                            if (phaseSymptoms != null && phaseSymptoms.isNotEmpty) {
+                              for (final s in phaseSymptoms) {
+                                suggestedLabels.add(s.split(' ').last);
+                              }
+                            }
+                          }
+
+                          // Sort symptoms: selected first, suggested next, remainder last
+                          final sortedSymptoms = [..._quickSymptoms]..sort((a, b) {
+                              final keyA = '${a['e']} ${a['l']}';
+                              final keyB = '${b['e']} ${b['l']}';
+                              final selA = _symptoms.contains(keyA);
+                              final selB = _symptoms.contains(keyB);
+                              if (selA != selB) return selA ? -1 : 1;
+
+                              final sugA = suggestedLabels.contains(a['l']);
+                              final sugB = suggestedLabels.contains(b['l']);
+                              if (sugA != sugB) return sugA ? -1 : 1;
+
+                              return 0;
+                            });
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'WHAT\'S GOING ON',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: colors.onSurface.withValues(alpha: 0.35),
+                                      letterSpacing: 1.2,
+                                    ),
                                   ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(s['e']!, style: const TextStyle(fontSize: 13)),
-                                    const SizedBox(width: 5),
+                                  if (hasCycleAnchor && suggestedLabels.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
                                     Text(
-                                      s['l']!,
+                                      '· Adaptive to your rhythm',
                                       style: GoogleFonts.dmSans(
-                                        fontSize: 12,
-                                        color: sel
-                                            ? colors.accent
-                                            : colors.onSurface.withValues(alpha: 0.6),
-                                        fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        color: colors.accent.withValues(alpha: 0.7),
                                       ),
                                     ),
                                   ],
-                                ),
+                                ],
                               ),
-                            );
-                          }).toList(),
-                        ).animate().fadeIn(delay: 180.ms),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: sortedSymptoms.map((s) {
+                                  final key = '${s['e']} ${s['l']}';
+                                  final sel = _symptoms.contains(key);
+                                  final isSuggested = hasCycleAnchor && suggestedLabels.contains(s['l']);
+
+                                  return GestureDetector(
+                                    onTap: () => setState(() {
+                                      if (sel) {
+                                        _symptoms.remove(key);
+                                      } else {
+                                        _symptoms.add(key);
+                                      }
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 160),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 9),
+                                      decoration: BoxDecoration(
+                                        color: sel
+                                            ? colors.primary.withValues(alpha: 0.22)
+                                            : isSuggested
+                                                ? colors.primary.withValues(alpha: 0.08)
+                                                : colors.surface.withValues(alpha: 0.6),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: sel
+                                              ? colors.primary
+                                              : isSuggested
+                                                  ? colors.accent.withValues(alpha: 0.35)
+                                                  : colors.onSurface.withValues(alpha: 0.07),
+                                          width: sel ? 1.6 : (isSuggested ? 1.2 : 1),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(s['e']!, style: const TextStyle(fontSize: 13)),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            s['l']!,
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 12,
+                                              color: sel
+                                                  ? colors.accent
+                                                  : isSuggested
+                                                      ? colors.onSurface.withValues(alpha: 0.9)
+                                                      : colors.onSurface.withValues(alpha: 0.6),
+                                              fontWeight: sel
+                                                  ? FontWeight.w700
+                                                  : (isSuggested ? FontWeight.w600 : FontWeight.w400),
+                                            ),
+                                          ),
+                                          if (isSuggested && !sel) ...[
+                                            const SizedBox(width: 4),
+                                            Container(
+                                              width: 4,
+                                              height: 4,
+                                              decoration: BoxDecoration(
+                                                color: colors.accent,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          );
+                        }).animate().fadeIn(delay: 160.ms),
 
                         const SizedBox(height: 24),
 
@@ -1073,14 +1204,14 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             decoration: BoxDecoration(
-                              gradient: _moodSelected
+                              gradient: _canSave
                                   ? LinearGradient(colors: [colors.primary, colors.secondary])
                                   : LinearGradient(colors: [
                                       colors.onSurface.withValues(alpha: 0.1),
                                       colors.onSurface.withValues(alpha: 0.07),
                                     ]),
                               borderRadius: BorderRadius.circular(20),
-                              boxShadow: _moodSelected
+                              boxShadow: _canSave
                                   ? [
                                       BoxShadow(
                                         color: colors.primary.withValues(alpha: 0.35),
@@ -1092,11 +1223,11 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                             ),
                             child: Center(
                               child: Text(
-                                _moodSelected ? 'Save today 💜' : 'Tap a mood first 💜',
+                                _canSave ? 'Save today 💜' : 'Record your check-in 💜',
                                 style: GoogleFonts.dmSans(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
-                                  color: _moodSelected
+                                  color: _canSave
                                       ? Colors.white
                                       : colors.onSurface.withValues(alpha: 0.3),
                                 ),

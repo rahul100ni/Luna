@@ -52,6 +52,13 @@ final cycleStateProvider = Provider<CycleState?>((ref) {
   return CycleEngine.calculate(profile);
 });
 
+// ── Cycle Anchor Presence Provider ─────────────────────────────────────────────
+final hasCycleAnchorProvider = Provider<bool>((ref) {
+  final profile = ref.watch(profileProvider);
+  final cycleState = ref.watch(cycleStateProvider);
+  return profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
+});
+
 // ── Current Phase Provider ────────────────────────────────────────────────────
 final currentPhaseProvider = Provider<CyclePhase>((ref) {
   final cycleState = ref.watch(cycleStateProvider);
@@ -76,6 +83,29 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
   Future<void> addEntry(LogEntry entry) async {
     await StorageService.saveLogEntry(entry);
     state = [entry, ...state.where((e) => e.id != entry.id)];
+  }
+
+  Future<void> deleteEntry(String id) async {
+    await StorageService.deleteLogEntry(id);
+    state = state.where((e) => e.id != id).toList();
+  }
+
+  Future<void> deleteTodayEntry() async {
+    final today = DateTime.now();
+    final toRemove = state
+        .where((e) =>
+            e.date.year == today.year &&
+            e.date.month == today.month &&
+            e.date.day == today.day)
+        .toList();
+    for (final entry in toRemove) {
+      await StorageService.deleteLogEntry(entry.id);
+    }
+    state = state
+        .where((e) => !(e.date.year == today.year &&
+            e.date.month == today.month &&
+            e.date.day == today.day))
+        .toList();
   }
 
   Future<void> refresh() async {

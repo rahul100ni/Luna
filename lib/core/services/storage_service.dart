@@ -106,6 +106,17 @@ class StorageService {
     }
   }
 
+  static Future<void> deleteLogEntry(String id) async {
+    if (_db == null) return;
+    try {
+      await _db!.delete(
+        'log_entries',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } catch (_) {}
+  }
+
   // ── Clear All Data (full reset to factory) ─────────────────────────
   static Future<void> clearAllData() async {
     // 1. Wipe SQLite log entries

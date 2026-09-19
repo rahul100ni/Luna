@@ -423,7 +423,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _showResetConfirmation(PhaseColors colors) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: colors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
@@ -444,7 +444,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: Text(
               'Cancel',
               style: GoogleFonts.dmSans(
@@ -454,18 +454,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
-              // 1. Cancel all scheduled notifications
-              await NotificationService.cancelAll();
-              // 2. Wipe all data — profile, logs, cache, API key, settings
+              Navigator.of(dialogCtx).pop();
+              try {
+                // 1. Cancel all scheduled notifications
+                await NotificationService.cancelAll();
+              } catch (_) {}
+              // 2. Wipe all data from storage (SQLite + SharedPreferences)
               await StorageService.clearAllData();
-              // 3. Clear chat session
               await StorageService.clearLastChatSession();
-              // 4. Clear Riverpod provider state
+              // 3. Clear Riverpod provider state
               ref.read(profileProvider.notifier).clear();
               ref.read(logEntriesProvider.notifier).refresh();
-              // 5. Navigate to onboarding
-              if (mounted) context.go('/onboarding');
+              // 4. Clean navigation to onboarding
+              if (mounted) {
+                context.go('/onboarding');
+              }
             },
             child: Text(
               'Reset Luna',
@@ -498,9 +501,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         content: Text(
-          'Luna is a cycle companion built with love — to help you understand '
+          'Luna is a cycle companion built with love, here to help you understand '
           'your body, honour your rhythms, and show up for yourself every '
-          'single day.\n\nAll your data stays on your device.\n\nVersion 1.0.0',
+          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24',
           style: GoogleFonts.dmSans(
             fontSize: 14,
             color: colors.onSurface.withValues(alpha: 0.7),
@@ -698,7 +701,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.only(bottom: 32),
               child: Column(children: [
                 Text(
-                  'Luna v1.0.0',
+                  'Luna v1.1.24',
                   style: GoogleFonts.dmSans(
                     fontSize: 11,
                     color: colors.onSurface.withValues(alpha: 0.18),

@@ -72,36 +72,40 @@ class DeepSeekService {
 
     final buffer = StringBuffer();
     buffer.writeln(
-        "You are Luna — an exceptionally knowledgeable, intuitive, and empathetic cycle and women's health AI companion for $userName.");
+        "You are Luna. You are not a bot, an artificial assistant, or a clinical script for $userName.");
     buffer.writeln(
-        "You combine deep endocrinological knowledge with the warmth, wit, and conversational authenticity of a trusted health mentor.");
+        "LUNA IS THE APP, AND THE APP IS LUNA. You and the app are one single cohesive, living companion. You are her closest, most trusted friend who also possesses deep biological, endocrinological, and nervous system intuition.");
+    buffer.writeln(
+        "Talk to her like texting a warm, grounded friend: authentic, calm, perceptive, and never performing or patronizing.");
     buffer.writeln();
-    buffer.writeln("USER PROFILE & BIOLOGICAL CONTEXT:");
+    buffer.writeln("USER CONTEXT & CURRENT BODY LOG:");
     buffer.writeln("- Name: $userName");
 
     if (!hasCycleAnchor || dayOfCycle <= 0) {
       buffer.writeln(
-          "- Cycle Status: Cycle start date has NOT been recorded yet (awaiting first period log).");
+          "- Cycle Status: Cycle start date has NOT been recorded yet (no period logged).");
       buffer.writeln(
-          "- CRITICAL INSTRUCTION: Do NOT assume she is bleeding, having cramps, or on her period! NEVER mention 'Day 0', 'bleeding', or 'uterine shedding' unless she explicitly asks or mentions it. Treat her input based on general physiological balance, circadian rhythm, nervous system regulation, and her stated feeling.");
+          "- CRITICAL INSTRUCTION FOR NO-CYCLE STATE: You do NOT have her cycle data yet. NEVER pretend to guess or assume her phase! NEVER assume she is bleeding, having cramps, or on Day 0. Do NOT say 'since you are in your follicular phase' or 'as your body sheds'.");
+      buffer.writeln(
+          "- ATTITUDE: Be honest and natural: you don't know her cycle scientifically yet, but regardless of that, you are here as her genuine friend: 'I don't have your cycle data yet to break down the hormones, but I'm here right now as your friend. How are you feeling today?' Meet her where she is, without asking cold medical questions.");
     } else {
       buffer.writeln(
           "- Cycle Status: Day $dayOfCycle of $cycleLength-day cycle (${phaseInfo.name} Phase)");
-      buffer.writeln("- Biological Phase: ${phaseInfo.name} — ${phaseInfo.tagline}");
-      buffer.writeln("- Phase Hormone Reality: ${phaseInfo.scienceBody}");
+      buffer.writeln("- Biological Phase: ${phaseInfo.name} (${phaseInfo.tagline})");
+      buffer.writeln("- Biological Hormone Reality: ${phaseInfo.scienceBody}");
     }
 
     if (mood != null) {
-      buffer.writeln("- Current Mood: ${mood.label} ${mood.emoji}");
+      buffer.writeln("- Today's Mood: ${mood.label} ${mood.emoji}");
     }
     if (energyLevel != null) {
-      buffer.writeln("- Energy Level: $energyLevel/5");
+      buffer.writeln("- Today's Energy: $energyLevel/5");
     }
     if (symptoms != null && symptoms.isNotEmpty) {
       buffer.writeln("- Tracked Symptoms: ${symptoms.join(', ')}");
     }
     if (additionalContext != null && additionalContext.trim().isNotEmpty) {
-      buffer.writeln("- User Stated: \"$additionalContext\"");
+      buffer.writeln("- What she told you: \"$additionalContext\"");
     }
 
     if (patternProfile != null && patternProfile.hasSufficientData) {
@@ -114,21 +118,17 @@ class DeepSeekService {
     buffer.writeln();
     buffer.writeln("CRITICAL REASONING & RESPONSE GUIDELINES:");
     buffer.writeln(
-        "1. DEEPLY REASON ABOUT HER INPUT: Look at her specific symptoms, energy, and cycle day together. Connect the dots between what she feels and what is happening biologically. Don't just spit out generic comforting phrases.");
+        "1. DEEP CONNECTION: Connect what she tells you to what her body is going through. If she's exhausted, don't just say 'get rest', acknowledge the physiology behind it without sounding clinical.");
     buffer.writeln(
-        "2. BANNED CLICHÉS: NEVER recommend 'a sock full of rice', generic 'hot water bottle on belly' (unless she explicitly complained of menstrual cramps!), generic 'ginger/chamomile tea', or 'put on comfy clothes'. These sound like a broken robot.");
+        "2. BANNED CLICHÉS: NEVER recommend 'a sock full of rice', generic 'hot water bottle on belly' (unless she explicitly complains of menstrual cramps!), generic 'ginger/chamomile tea', or 'put on comfy clothes'.");
     buffer.writeln(
-        "3. TARGETED & DIVERSE ACTIONS: Suggest 3 concrete, distinct actions:");
+        "3. TARGETED ACTIONS: If she asks for advice, suggest 3 distinct, concrete things: 1 nutritional/mineral tweak, 1 sensory/cognitive pacing reset, and 1 somatic physical reset.");
     buffer.writeln(
-        "   - One targeted biochemical/nutritional action (specific food, snack, hydration with electrolytes, or mineral targeting her exact symptom)");
+        "4. TONE: Warm, intelligent, conversational, sisterly. No toxic positivity. Treat her like an intelligent woman.");
     buffer.writeln(
-        "   - One neuro-cognitive/work or sensory pacing action (lighting, pomodoro, task triage, boundary setting, eye rest, brain break)");
+        "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, refer to her history naturally: 'Last cycle around this day, your energy dipped similarly'.");
     buffer.writeln(
-        "   - One physical/somatic reset (targeted movement, acupressure point, cool compress for headaches, diaphragmatic breathing, posture adjustment)");
-    buffer.writeln(
-        "4. TONE: Warm, intelligent, conversational, grounded. No toxic positivity ('you're just showing up, that's enough') — treat her like an intelligent adult.");
-    buffer.writeln(
-        "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, directly reference her documented cycles! Acknowledge how her energy/mood today relates to her recurring trajectory. Never sound like an impersonal stranger.");
+        "6. NO EM DASHES: NEVER use em dashes (—). Use colons, commas, periods, or parentheses instead.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -143,10 +143,17 @@ class DeepSeekService {
       buffer.writeln("}");
     } else {
       buffer.writeln();
+      buffer.writeln();
       buffer.writeln(
-          "Respond in natural, engaging conversational text (2-4 sentences max). Be sharp, perceptive, and directly answer her message.");
+          "CHAT MODE GUIDELINES: Respond in natural, conversational texting style (2-4 sentences max). NO bullet points. Speak like a loving, perceptive friend.");
       buffer.writeln(
-          "NO robotic bullet points, NO generic disclaimers. Speak like a real human expert friend.");
+          "AUTO-LOGGING HELPER: If she shares any personal body state, cycle update, energy level, or symptoms in her message (e.g. 'my period started today', 'I started bleeding', 'heavy flow', 'severe cramps', 'I feel so low/exhausted', 'headache and cramps', 'feeling thriving'), respond with genuine sisterly warmth.");
+      buffer.writeln(
+          "At the very end of your response, on a separate new line, append a clean JSON tag strictly formatted as:");
+      buffer.writeln(
+          r'[LOG:{"periodStarted":<true|false>,"flow":"<spotting|light|medium|heavy>","cramps":"<none|mild|moderate|severe>","mood":"<struggling|low|meh|decent|good|thriving>","energy":<1-5>,"symptoms":["<Symptom1>","<Symptom2>"]}]');
+      buffer.writeln(
+          "Include ONLY the fields she explicitly or clearly communicated! If she didn't mention period starting, do not include periodStarted. If she didn't mention flow, omit flow. If she didn't mention cramps, omit cramps. If she didn't mention any loggable attributes at all, do NOT include any [LOG:...] tag.");
     }
 
     return buffer.toString();
@@ -739,7 +746,7 @@ class LunaResponse {
           'Take a 10-minute eye break from screens to calm sympathetic nervous system overload.',
           'Do a gentle shoulder and neck roll sequence to release subconscious tension and improve cerebral circulation.',
         ],
-        closing: 'Take things at your own steady pace today — I am right here with you. 🌸',
+        closing: 'Take things at your own steady pace today, I am right here with you. 🌸',
         isError: false,
       );
     }
@@ -755,7 +762,7 @@ class LunaResponse {
           'Navigating Day $dayOfCycle in your ${info.name} phase brings unique biological demands, and your feelings are completely valid.',
       science: info.scienceBody,
       actions: actions,
-      closing: 'Honor what your body is asking for right now — you\'ve got this. 💜',
+      closing: 'Honor what your body is asking for right now, you\'ve got this. 💜',
       isError: false,
     );
   }
@@ -823,7 +830,7 @@ class DailyPrescription {
     switch (phase) {
       case CyclePhase.menstrual:
         return const DailyPrescription(
-          headline: 'A biological reset in motion — honor rest and deep inward clarity.',
+          headline: 'A biological reset in motion: honor rest and deep inward clarity.',
           biologicalBrief:
               'Estrogen and progesterone are at baseline while uterine turnover demands cellular energy.',
           focusAndPacing:
@@ -836,7 +843,7 @@ class DailyPrescription {
         );
       case CyclePhase.follicular:
         return const DailyPrescription(
-          headline: 'Estrogen is climbing — your cognitive agility and drive are unlocking.',
+          headline: 'Estrogen is climbing: your cognitive agility and drive are unlocking.',
           biologicalBrief:
               'Rising estradiol elevates dopamine receptor density and boosts prefrontal cortex verbal fluency.',
           focusAndPacing:
@@ -849,7 +856,7 @@ class DailyPrescription {
         );
       case CyclePhase.ovulatory:
         return const DailyPrescription(
-          headline: 'Peak confidence and hormonal stamina — you are magnetic today.',
+          headline: 'Peak confidence and hormonal stamina: you are magnetic today.',
           biologicalBrief:
               'Estrogen and testosterone crest together, enhancing verbal memory, reaction speed, and physical power.',
           focusAndPacing:
@@ -862,7 +869,7 @@ class DailyPrescription {
         );
       case CyclePhase.earlyLuteal:
         return const DailyPrescription(
-          headline: 'Progesterone is warming your system — focus shifts to calm execution.',
+          headline: 'Progesterone is warming your system: focus shifts to calm execution.',
           biologicalBrief:
               'Progesterone stimulates GABA receptors in the brain, creating a natural calming, detail-oriented state.',
           focusAndPacing:
@@ -875,7 +882,7 @@ class DailyPrescription {
         );
       case CyclePhase.lateLuteal:
         return const DailyPrescription(
-          headline: 'Your emotional center is sensitized — radical gentleness is your power.',
+          headline: 'Your emotional center is sensitized: radical gentleness is your power.',
           biologicalBrief:
               'Hormone drop sensitizes the amygdala to stress; prioritize blood sugar and nervous system calm.',
           focusAndPacing:
@@ -1052,7 +1059,7 @@ class NutritionPrescription {
       ));
 
       swap =
-          'Craving milk chocolate or cookies? Melt 2 squares of 80% dark chocolate over a banana or date with peanut butter — rich, sweet, and packed with cramp-reducing magnesium.';
+          'Craving milk chocolate or cookies? Melt 2 squares of 80% dark chocolate over a banana or date with peanut butter: rich, sweet, and packed with cramp-reducing magnesium.';
     } else if (cravingVibe == 'warm_soupy') {
       beneficial.add(BeneficialFood(
         name: isVeg

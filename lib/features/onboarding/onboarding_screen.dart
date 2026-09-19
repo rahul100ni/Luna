@@ -172,7 +172,7 @@ class _WelcomePage extends StatelessWidget {
           ).animate().fadeIn(delay: 500.ms),
           const SizedBox(height: 12),
           Text(
-            'I\'ll learn your cycle, understand your moods, and show up for you at exactly the right moments — with science, warmth, and a little magic.',
+            'I\'ll learn your cycle, understand your moods, and show up for you at exactly the right moments, with science, warmth, and a little magic.',
             textAlign: TextAlign.center,
             style: GoogleFonts.dmSans(
               fontSize: 15,
@@ -213,7 +213,7 @@ class _NamePage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Just your first name — this stays on your phone.',
+            'Just your first name (it stays safely on your phone).',
             style: GoogleFonts.dmSans(fontSize: 15, color: Colors.white54),
           ),
           const SizedBox(height: 40),
@@ -315,7 +315,7 @@ class _CycleLengthPage extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Don\'t worry if you\'re not sure — just pick the closest option.',
+            'Don\'t worry if you\'re not sure, just pick the closest option.',
             style: GoogleFonts.dmSans(fontSize: 14, color: Colors.white54, height: 1.5),
           ),
 
