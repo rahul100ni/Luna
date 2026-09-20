@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/models/log_entry.dart';
+import '../../core/models/luna_memory_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/deepseek_service.dart';
@@ -31,6 +32,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   bool _chatLoading = false;
   bool _chatMode = false;
   bool _showScienceCard = false;
+  String? _lastAutoLogSummary;
+  bool _isCheckInLogExpanded = false;
+  final Set<int> _expandedChatLogIndices = {};
   List<_ChatMessage> _chatHistory = [];
   late AnimationController _pulseController;
 
@@ -104,6 +108,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     await StorageService.clearLastChatSession();
     setState(() {
       _chatHistory = [];
+      _lastAutoLogSummary = null;
+      _isCheckInLogExpanded = false;
+      _expandedChatLogIndices.clear();
     });
 
     final userText = _textController.text.trim();
@@ -116,6 +123,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final cycleState = ref.read(cycleStateProvider);
     final todayEntry = ref.read(todayLogProvider);
     final patternProfile = ref.read(patternProfileProvider);
+    final gapAnalysis = ref.read(cycleGapAnalysisProvider);
     if (profile == null || cycleState == null) {
       setState(() => _loading = false);
       return;
@@ -139,6 +147,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         energyLevel: todayEntry?.energyLevel,
         symptoms: allSymptoms,
         patternProfile: patternProfile,
+        gapAnalysis: gapAnalysis,
       );
     } else {
       response = await DeepSeekService.getMoodResponse(
@@ -151,13 +160,23 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         energyLevel: todayEntry?.energyLevel,
         symptoms: allSymptoms,
         patternProfile: patternProfile,
+        gapAnalysis: gapAnalysis,
       );
     }
+
+    // Auto-log immediately on check-in from the Luna Home Screen Phase!
+    final autoLogSummary = await _processAutoLog(
+      logMap: response.logMap,
+      userText: userText,
+      fallbackMood: _selectedMood,
+      fallbackSymptoms: _selectedSymptoms.toList(),
+    );
 
     // Store the user message text before we clear for check-in history seeding
     _lastUserText = userText;
     setState(() {
       _response = response;
+      _lastAutoLogSummary = autoLogSummary;
       _loading = false;
     });
   }
@@ -176,7 +195,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       _chatHistory = [
         _ChatMessage(text: userMsg, isUser: true, time: DateTime.now()),
         _ChatMessage(
-            text: _response!.validation, isUser: false, time: DateTime.now()),
+          text: _response!.validation,
+          isUser: false,
+          time: DateTime.now(),
+          autoLogNote: _lastAutoLogSummary,
+        ),
       ];
       _chatMode = true;
     });
@@ -205,6 +228,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final cycleState = ref.read(cycleStateProvider);
     final todayEntry = ref.read(todayLogProvider);
     final patternProfile = ref.read(patternProfileProvider);
+    final gapAnalysis = ref.read(cycleGapAnalysisProvider);
     if (profile == null || cycleState == null) {
       setState(() => _chatLoading = false);
       return;
@@ -225,6 +249,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       energyLevel: todayEntry?.energyLevel,
       symptoms: allSymptoms,
       patternProfile: patternProfile,
+      gapAnalysis: gapAnalysis,
       messages: _chatHistory
           .map((m) => {
                 'role': m.isUser ? 'user' : 'assistant',
@@ -233,192 +258,20 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           .toList(),
     );
 
-    // Parse discreet auto-log tag if Luna detected expressions of cycle, flow, cramps, mood, energy, or symptoms
+    // Extract [LOG:... if present in chat response
     String cleanResponse = response;
-    String? autoLogSummary;
-
+    String? rawLog;
     final logStartIdx = response.indexOf('[LOG:');
     if (logStartIdx != -1) {
-      // Message is cleanly separated before [LOG:
       cleanResponse = response.substring(0, logStartIdx).trim();
-      String rawLog = response.substring(logStartIdx + 5).trim();
-      if (rawLog.endsWith(']')) {
-        rawLog = rawLog.substring(0, rawLog.length - 1).trim();
-      }
-
-      bool? detectedPeriodStarted;
-      FlowLevel? detectedFlow;
-      CrampLevel? detectedCramps;
-      MoodLevel? detectedMood;
-      int? detectedEnergy;
-      final detectedSymptoms = <String>[];
-
-      // 1. Try parsing JSON format first
-      bool parsedAsJson = false;
-      if (rawLog.startsWith('{') && rawLog.endsWith('}')) {
-        try {
-          final map = jsonDecode(rawLog) as Map<String, dynamic>;
-          parsedAsJson = true;
-
-          if (map['periodStarted'] is bool) {
-            detectedPeriodStarted = map['periodStarted'] as bool;
-          } else if (map['periodStarted'] is String) {
-            detectedPeriodStarted =
-                (map['periodStarted'] as String).toLowerCase() == 'true';
-          }
-
-          if (map['flow'] is String) {
-            final fStr = (map['flow'] as String).toLowerCase().trim();
-            detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
-                  (f) => f?.name.toLowerCase() == fStr,
-                  orElse: () => null,
-                );
-          }
-
-          if (map['cramps'] is String) {
-            final cStr = (map['cramps'] as String).toLowerCase().trim();
-            detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
-                  (c) => c?.name.toLowerCase() == cStr,
-                  orElse: () => null,
-                );
-          }
-
-          if (map['mood'] is String) {
-            final mStr = (map['mood'] as String).toLowerCase().trim();
-            detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
-                  (m) => m?.name.toLowerCase() == mStr,
-                  orElse: () => null,
-                );
-          }
-
-          if (map['energy'] is num) {
-            detectedEnergy = (map['energy'] as num).toInt();
-          } else if (map['energy'] is String) {
-            detectedEnergy = int.tryParse(map['energy'] as String);
-          }
-
-          if (map['symptoms'] is List) {
-            for (final s in (map['symptoms'] as List)) {
-              final sStr = s.toString().trim();
-              if (sStr.isNotEmpty) detectedSymptoms.add(sStr);
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 2. Fallback regex parser if not JSON or for legacy key=value format
-      if (!parsedAsJson) {
-        final pMatch = RegExp(r'periodStarted\s*[:=]\s*(true|false)',
-                caseSensitive: false)
-            .firstMatch(rawLog);
-        if (pMatch != null) {
-          detectedPeriodStarted = pMatch.group(1)?.toLowerCase() == 'true';
-        }
-
-        final flowMatch = RegExp(r'flow\s*[:=]\s*(\w+)', caseSensitive: false)
-            .firstMatch(rawLog);
-        if (flowMatch != null) {
-          final fStr = flowMatch.group(1)?.toLowerCase();
-          detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
-                (f) => f?.name.toLowerCase() == fStr,
-                orElse: () => null,
-              );
-        }
-
-        final crampsMatch =
-            RegExp(r'cramps\s*[:=]\s*(\w+)', caseSensitive: false)
-                .firstMatch(rawLog);
-        if (crampsMatch != null) {
-          final cStr = crampsMatch.group(1)?.toLowerCase();
-          detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
-                (c) => c?.name.toLowerCase() == cStr,
-                orElse: () => null,
-              );
-        }
-
-        final moodMatch = RegExp(r'mood\s*[:=]\s*(\w+)', caseSensitive: false)
-            .firstMatch(rawLog);
-        if (moodMatch != null) {
-          final moodStr = moodMatch.group(1)?.toLowerCase();
-          detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
-                (m) => m?.name.toLowerCase() == moodStr,
-                orElse: () => null,
-              );
-        }
-
-        final energyMatch =
-            RegExp(r'energy\s*[:=]\s*(\d+)', caseSensitive: false)
-                .firstMatch(rawLog);
-        if (energyMatch != null) {
-          detectedEnergy = int.tryParse(energyMatch.group(1) ?? '');
-        }
-
-        final symptomsMatch =
-            RegExp(r'symptoms\s*[:=]\s*\[([^\]]*)\]', caseSensitive: false)
-                .firstMatch(rawLog);
-        if (symptomsMatch != null) {
-          final rawList = symptomsMatch.group(1)?.split(',') ?? [];
-          for (final item in rawList) {
-            final trimmed =
-                item.replaceAll('"', '').replaceAll("'", '').trim();
-            if (trimmed.isNotEmpty) {
-              detectedSymptoms.add(trimmed);
-            }
-          }
-        }
-      }
-
-      // If periodStarted was detected, anchor the cycle to today immediately
-      if (detectedPeriodStarted == true) {
-        final now = DateTime.now();
-        await ref.read(profileProvider.notifier).updateLastPeriod(now);
-      }
-
-      if (detectedPeriodStarted == true ||
-          detectedFlow != null ||
-          detectedCramps != null ||
-          detectedMood != null ||
-          detectedEnergy != null ||
-          detectedSymptoms.isNotEmpty) {
-        final currentToday = ref.read(todayLogProvider);
-        final entryId = currentToday?.id ?? const Uuid().v4();
-        final updatedSymptoms = {
-          ...?currentToday?.symptoms,
-          ...detectedSymptoms
-        }.toList();
-
-        final newEntry = LogEntry(
-          id: entryId,
-          date: DateTime.now(),
-          mood: detectedMood ?? currentToday?.mood,
-          energyLevel: detectedEnergy ?? currentToday?.energyLevel,
-          sleepQuality: currentToday?.sleepQuality,
-          flow: detectedFlow ?? currentToday?.flow,
-          cramps: detectedCramps ?? currentToday?.cramps,
-          symptoms: updatedSymptoms,
-          notes: currentToday?.notes,
-          periodStarted: (detectedPeriodStarted ?? false) ||
-              (currentToday?.periodStarted ?? false),
-        );
-
-        await ref.read(logEntriesProvider.notifier).addEntry(newEntry);
-
-        final parts = <String>[];
-        if (detectedPeriodStarted == true) parts.add('Period started 🩸');
-        if (detectedFlow != null) {
-          parts.add(
-              '${detectedFlow.name[0].toUpperCase()}${detectedFlow.name.substring(1)} flow');
-        }
-        if (detectedCramps != null && detectedCramps != CrampLevel.none) {
-          parts.add(
-              '${detectedCramps.name[0].toUpperCase()}${detectedCramps.name.substring(1)} cramps');
-        }
-        if (detectedMood != null) parts.add(detectedMood.label);
-        if (detectedEnergy != null) parts.add('$detectedEnergy/5 energy');
-        if (detectedSymptoms.isNotEmpty) parts.add(detectedSymptoms.join(', '));
-        autoLogSummary = parts.join(' · ');
-      }
+      rawLog = response.substring(logStartIdx + 5).trim();
     }
+
+    // Process auto-log with multi-layer parsing (JSON + regex + userText heuristics)
+    final autoLogSummary = await _processAutoLog(
+      rawAiLog: rawLog,
+      userText: text,
+    );
 
     // Safety clean: strip any dangling [LOG:... or trailing brackets from text
     cleanResponse =
@@ -439,6 +292,457 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     // Persist after each new Luna response
     _persistChatHistory();
     _scrollToBottom();
+  }
+
+  /// Unified multi-layer auto-logging engine:
+  /// Combines AI structured JSON log, tag parsing, and deterministic text heuristics.
+  Future<String?> _processAutoLog({
+    String? rawAiLog,
+    Map<String, dynamic>? logMap,
+    required String userText,
+    MoodLevel? fallbackMood,
+    List<String>? fallbackSymptoms,
+  }) async {
+    bool? detectedPeriodStarted;
+    FlowLevel? detectedFlow;
+    CrampLevel? detectedCramps;
+    MoodLevel? detectedMood = fallbackMood;
+    int? detectedEnergy;
+    SleepQuality? detectedSleep;
+    String? detectedNotes;
+    String? detectedMemoryCategory;
+    String? detectedMemoryNote;
+    final detectedSymptoms = <String>[...?fallbackSymptoms];
+
+    // 1. Process logMap (from AI JSON response)
+    if (logMap != null) {
+      if (logMap['periodStarted'] is bool) {
+        detectedPeriodStarted = logMap['periodStarted'] as bool;
+      } else if (logMap['periodStarted'] is String) {
+        detectedPeriodStarted =
+            (logMap['periodStarted'] as String).toLowerCase() == 'true';
+      }
+
+      if (logMap['flow'] is String) {
+        final fStr = (logMap['flow'] as String).toLowerCase().trim();
+        detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
+              (f) => f?.name.toLowerCase() == fStr,
+              orElse: () => null,
+            );
+      }
+
+      if (logMap['cramps'] is String) {
+        final cStr = (logMap['cramps'] as String).toLowerCase().trim();
+        detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
+              (c) => c?.name.toLowerCase() == cStr,
+              orElse: () => null,
+            );
+      }
+
+      if (logMap['mood'] is String) {
+        final mStr = (logMap['mood'] as String).toLowerCase().trim();
+        detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
+              (m) => m?.name.toLowerCase() == mStr,
+              orElse: () => detectedMood,
+            );
+      }
+
+      if (logMap['energy'] is num) {
+        detectedEnergy = (logMap['energy'] as num).toInt();
+      } else if (logMap['energy'] is String) {
+        detectedEnergy = int.tryParse(logMap['energy'] as String);
+      }
+
+      if (logMap['sleep'] is String) {
+        final sStr = (logMap['sleep'] as String).toLowerCase().trim();
+        detectedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
+              (s) => s?.name.toLowerCase() == sStr,
+              orElse: () => null,
+            );
+      }
+
+      if (logMap['notes'] is String) {
+        final nStr = (logMap['notes'] as String).trim();
+        if (nStr.isNotEmpty) detectedNotes = nStr;
+      }
+
+      if (logMap['memory'] is Map) {
+        final mem = logMap['memory'] as Map;
+        final cat = mem['category']?.toString().trim() ?? 'preference';
+        final note = mem['note']?.toString().trim() ?? '';
+        if (note.isNotEmpty) {
+          detectedMemoryCategory = cat;
+          detectedMemoryNote = note;
+        }
+      }
+
+      if (logMap['symptoms'] is List) {
+        for (final s in (logMap['symptoms'] as List)) {
+          final sStr = s.toString().trim();
+          if (sStr.isNotEmpty && !detectedSymptoms.contains(sStr)) {
+            detectedSymptoms.add(sStr);
+          }
+        }
+      }
+    }
+
+    // 2. Process rawAiLog string (from [LOG:...])
+    if (rawAiLog != null && rawAiLog.trim().isNotEmpty) {
+      String trimmedLog = rawAiLog.trim();
+      if (trimmedLog.endsWith(']')) {
+        trimmedLog = trimmedLog.substring(0, trimmedLog.length - 1).trim();
+      }
+
+      bool parsedAsJson = false;
+      if (trimmedLog.startsWith('{') && trimmedLog.endsWith('}')) {
+        try {
+          final map = jsonDecode(trimmedLog) as Map<String, dynamic>;
+          parsedAsJson = true;
+
+          if (map['periodStarted'] is bool) {
+            detectedPeriodStarted = map['periodStarted'] as bool;
+          } else if (map['periodStarted'] is String) {
+            detectedPeriodStarted =
+                (map['periodStarted'] as String).toLowerCase() == 'true';
+          }
+
+          if (map['flow'] is String) {
+            final fStr = (map['flow'] as String).toLowerCase().trim();
+            detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
+                  (f) => f?.name.toLowerCase() == fStr,
+                  orElse: () => detectedFlow,
+                );
+          }
+
+          if (map['cramps'] is String) {
+            final cStr = (map['cramps'] as String).toLowerCase().trim();
+            detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
+                  (c) => c?.name.toLowerCase() == cStr,
+                  orElse: () => detectedCramps,
+                );
+          }
+
+          if (map['mood'] is String) {
+            final mStr = (map['mood'] as String).toLowerCase().trim();
+            detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
+                  (m) => m?.name.toLowerCase() == mStr,
+                  orElse: () => detectedMood,
+                );
+          }
+
+          if (map['energy'] is num) {
+            detectedEnergy = (map['energy'] as num).toInt();
+          } else if (map['energy'] is String) {
+            detectedEnergy = int.tryParse(map['energy'] as String) ?? detectedEnergy;
+          }
+
+          if (map['sleep'] is String) {
+            final sStr = (map['sleep'] as String).toLowerCase().trim();
+            detectedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
+                  (s) => s?.name.toLowerCase() == sStr,
+                  orElse: () => detectedSleep,
+                );
+          }
+
+          if (map['notes'] is String) {
+            final nStr = (map['notes'] as String).trim();
+            if (nStr.isNotEmpty) detectedNotes = nStr;
+          }
+
+          if (map['memory'] is Map) {
+            final mem = map['memory'] as Map;
+            final cat = mem['category']?.toString().trim() ?? 'preference';
+            final note = mem['note']?.toString().trim() ?? '';
+            if (note.isNotEmpty) {
+              detectedMemoryCategory = cat;
+              detectedMemoryNote = note;
+            }
+          }
+
+          if (map['symptoms'] is List) {
+            for (final s in (map['symptoms'] as List)) {
+              final sStr = s.toString().trim();
+              if (sStr.isNotEmpty && !detectedSymptoms.contains(sStr)) {
+                detectedSymptoms.add(sStr);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!parsedAsJson) {
+        final pMatch = RegExp(r'periodStarted\s*[:=]\s*(true|false)',
+                caseSensitive: false)
+            .firstMatch(trimmedLog);
+        if (pMatch != null) {
+          detectedPeriodStarted = pMatch.group(1)?.toLowerCase() == 'true';
+        }
+
+        final flowMatch = RegExp(r'flow\s*[:=]\s*(\w+)', caseSensitive: false)
+            .firstMatch(trimmedLog);
+        if (flowMatch != null) {
+          final fStr = flowMatch.group(1)?.toLowerCase();
+          detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
+                (f) => f?.name.toLowerCase() == fStr,
+                orElse: () => detectedFlow,
+              );
+        }
+
+        final crampsMatch =
+            RegExp(r'cramps\s*[:=]\s*(\w+)', caseSensitive: false)
+                .firstMatch(trimmedLog);
+        if (crampsMatch != null) {
+          final cStr = crampsMatch.group(1)?.toLowerCase();
+          detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
+                (c) => c?.name.toLowerCase() == cStr,
+                orElse: () => detectedCramps,
+              );
+        }
+
+        final moodMatch = RegExp(r'mood\s*[:=]\s*(\w+)', caseSensitive: false)
+            .firstMatch(trimmedLog);
+        if (moodMatch != null) {
+          final moodStr = moodMatch.group(1)?.toLowerCase();
+          detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
+                (m) => m?.name.toLowerCase() == moodStr,
+                orElse: () => detectedMood,
+              );
+        }
+
+        final energyMatch =
+            RegExp(r'energy\s*[:=]\s*(\d+)', caseSensitive: false)
+                .firstMatch(trimmedLog);
+        if (energyMatch != null) {
+          detectedEnergy = int.tryParse(energyMatch.group(1) ?? '') ?? detectedEnergy;
+        }
+
+        final sleepMatch =
+            RegExp(r'sleep\s*[:=]\s*(\w+)', caseSensitive: false)
+                .firstMatch(trimmedLog);
+        if (sleepMatch != null) {
+          final sStr = sleepMatch.group(1)?.toLowerCase();
+          detectedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
+                (s) => s?.name.toLowerCase() == sStr,
+                orElse: () => detectedSleep,
+              );
+        }
+
+        final notesMatch =
+            RegExp(r'notes\s*[:=]\s*["\x27]([^"\x27]+)["\x27]', caseSensitive: false)
+                .firstMatch(trimmedLog);
+        if (notesMatch != null) {
+          detectedNotes = notesMatch.group(1)?.trim();
+        }
+
+        final symptomsMatch =
+            RegExp(r'symptoms\s*[:=]\s*\[([^\]]*)\]', caseSensitive: false)
+                .firstMatch(trimmedLog);
+        if (symptomsMatch != null) {
+          final rawList = symptomsMatch.group(1)?.split(',') ?? [];
+          for (final item in rawList) {
+            final trimmed =
+                item.replaceAll('"', '').replaceAll("'", '').trim();
+            if (trimmed.isNotEmpty && !detectedSymptoms.contains(trimmed)) {
+              detectedSymptoms.add(trimmed);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Intelligent Heuristic Scanner on userText
+    if (userText.trim().isNotEmpty) {
+      final lower = userText.toLowerCase();
+
+      // Flow scanner
+      if (detectedFlow == null) {
+        if (RegExp(r'\b(high\s+flow|heavy\s+flow|heavy\s+bleeding)\b').hasMatch(lower)) {
+          detectedFlow = FlowLevel.heavy;
+        } else if (RegExp(r'\b(medium\s+flow|moderate\s+flow)\b').hasMatch(lower)) {
+          detectedFlow = FlowLevel.medium;
+        } else if (RegExp(r'\b(light\s+flow|spotting)\b').hasMatch(lower)) {
+          detectedFlow = FlowLevel.light;
+        }
+      }
+
+      // Period start scanner (even if user said "started tomorrow", "started today", or "started bleeding")
+      if (detectedPeriodStarted != true) {
+        if (RegExp(r'\b(period\s+started|got\s+my\s+period|started\s+my\s+period|started\s+bleeding|my\s+period\s+came|period\s+is\s+here)\b').hasMatch(lower)) {
+          detectedPeriodStarted = true;
+        }
+      }
+
+      // Cramps scanner
+      if (detectedCramps == null) {
+        if (RegExp(r'\b(max\s+cramps|severe\s+cramps|terrible\s+cramps|worst\s+cramps|awful\s+cramps|intense\s+cramps)\b').hasMatch(lower)) {
+          detectedCramps = CrampLevel.severe;
+        } else if (RegExp(r'\b(bad\s+cramps|moderate\s+cramps|painful\s+cramps|cramping\s+badly)\b').hasMatch(lower)) {
+          detectedCramps = CrampLevel.moderate;
+        } else if (RegExp(r'\b(mild\s+cramps|slight\s+cramps|little\s+cramps)\b').hasMatch(lower)) {
+          detectedCramps = CrampLevel.mild;
+        } else if (RegExp(r'\b(cramp|cramps|cramping)\b').hasMatch(lower)) {
+          detectedCramps = CrampLevel.moderate;
+        }
+      }
+
+      // Energy scanner (handles "O energy", "0 energy", "zero energy")
+      if (detectedEnergy == null) {
+        if (RegExp(r'\b([o0]|zero|no)\s+energy\b').hasMatch(lower)) {
+          detectedEnergy = 1;
+        } else if (RegExp(r'\b(low\s+energy|exhausted|drained|no\s+stamina)\b').hasMatch(lower)) {
+          detectedEnergy = 1;
+        } else if (RegExp(r'\b(high\s+energy|energized|energetic)\b').hasMatch(lower)) {
+          detectedEnergy = 5;
+        }
+      }
+
+      // Sleep scanner
+      if (detectedSleep == null) {
+        if (RegExp(r'\b(worst\s+sleep|poor\s+sleep|terrible\s+sleep|awful\s+sleep|bad\s+sleep|couldn\x27?t\s+sleep|insomnia)\b').hasMatch(lower)) {
+          detectedSleep = SleepQuality.poor;
+        } else if (RegExp(r'\b(deep\s+sleep|great\s+sleep|amazing\s+sleep|best\s+sleep)\b').hasMatch(lower)) {
+          detectedSleep = SleepQuality.great;
+        }
+      }
+
+      // Mood scanner
+      if (detectedMood == null) {
+        if (RegExp(r'\b(day\s+is\s+ruined|struggling|crying|depressed|can\x27?t\s+take\s+this|miserable|overwhelmed)\b').hasMatch(lower)) {
+          detectedMood = MoodLevel.struggling;
+        } else if (RegExp(r'\b(sad|down|low|gloomy|unhappy)\b').hasMatch(lower)) {
+          detectedMood = MoodLevel.low;
+        } else if (RegExp(r'\b(amazing|thriving|fantastic|wonderful)\b').hasMatch(lower)) {
+          detectedMood = MoodLevel.thriving;
+        }
+      }
+
+      // Symptoms scanner
+      void checkSymptom(RegExp reg, String name) {
+        if (reg.hasMatch(lower) && !detectedSymptoms.contains(name)) {
+          detectedSymptoms.add(name);
+        }
+      }
+      checkSymptom(RegExp(r'\b(headache|headaches|migraine)\b'), 'Headache');
+      checkSymptom(RegExp(r'\b(cramp|cramps|cramping)\b'), 'Cramps');
+      checkSymptom(RegExp(r'\b(bloat|bloated|bloating)\b'), 'Bloating');
+      checkSymptom(RegExp(r'\b(fatigue|fatigued|tired|exhausted)\b'), 'Fatigue');
+      checkSymptom(RegExp(r'\b(brain\s+fog|foggy)\b'), 'Brain fog');
+      checkSymptom(RegExp(r'\b(anxious|anxiety|panic)\b'), 'Anxious');
+      checkSymptom(RegExp(r'\b(irritable|irritated|angry|moody)\b'), 'Irritable');
+      checkSymptom(RegExp(r'\b(craving|cravings)\b'), 'Cravings');
+      checkSymptom(RegExp(r'\b(backache|back\s+pain)\b'), 'Backache');
+      checkSymptom(RegExp(r'\b(tender|breast\s+pain)\b'), 'Tender');
+    }
+
+    // 4. CRITICAL BIOLOGICAL MANDATE:
+    // Menstrual flow strictly implies period has started!
+    if (detectedFlow != null) {
+      detectedPeriodStarted = true;
+    }
+
+    // 5. Execute period start anchor if detected
+    if (detectedPeriodStarted == true) {
+      final now = DateTime.now();
+      await ref.read(periodHistoryProvider.notifier).addPeriodStart(now, source: 'ai');
+    }
+
+    // 6. Persist memory if captured
+    if (detectedMemoryNote != null && detectedMemoryNote.isNotEmpty) {
+      await StorageService.saveMemory(
+        LunaMemoryEntry(
+          id: LunaMemoryEntry.newId(),
+          category: detectedMemoryCategory ?? 'preference',
+          content: detectedMemoryNote,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    // 7. Save to LogEntry if ANY biomarker exists
+    if (detectedPeriodStarted == true ||
+        detectedFlow != null ||
+        detectedCramps != null ||
+        detectedMood != null ||
+        detectedEnergy != null ||
+        detectedSleep != null ||
+        (detectedNotes != null && detectedNotes.isNotEmpty) ||
+        detectedSymptoms.isNotEmpty) {
+      final currentToday = ref.read(todayLogProvider);
+      final entryId = currentToday?.id ?? const Uuid().v4();
+      final updatedSymptoms = {
+        ...?currentToday?.symptoms,
+        ...detectedSymptoms
+      }.toList();
+
+      final updatedNotes = detectedNotes != null && detectedNotes.isNotEmpty
+          ? (currentToday?.notes != null && currentToday!.notes!.isNotEmpty
+              ? '${currentToday.notes} · $detectedNotes'
+              : detectedNotes)
+          : currentToday?.notes;
+
+      final newEntry = LogEntry(
+        id: entryId,
+        date: DateTime.now(),
+        mood: detectedMood ?? currentToday?.mood,
+        energyLevel: detectedEnergy ?? currentToday?.energyLevel,
+        sleepQuality: detectedSleep ?? currentToday?.sleepQuality,
+        flow: detectedFlow ?? currentToday?.flow,
+        cramps: detectedCramps ?? currentToday?.cramps,
+        symptoms: updatedSymptoms,
+        notes: updatedNotes,
+        periodStarted: (detectedPeriodStarted ?? false) ||
+            (currentToday?.periodStarted ?? false),
+      );
+
+      await ref.read(logEntriesProvider.notifier).addEntry(newEntry);
+    }
+
+    // 8. Generate summary badge
+    final parts = <String>[];
+    if (detectedPeriodStarted == true) parts.add('Period started 🩸');
+    if (detectedFlow != null) {
+      parts.add(
+          '${detectedFlow.name[0].toUpperCase()}${detectedFlow.name.substring(1)} flow');
+    }
+    if (detectedCramps != null && detectedCramps != CrampLevel.none) {
+      parts.add(
+          '${detectedCramps.name[0].toUpperCase()}${detectedCramps.name.substring(1)} cramps');
+    }
+    if (detectedMood != null) parts.add(detectedMood.label);
+    if (detectedEnergy != null) parts.add('$detectedEnergy/5 energy');
+    if (detectedSleep != null) parts.add('${detectedSleep.label} sleep');
+
+    // Individual, deduplicated symptoms in Title Case
+    final cleanedSymptoms = <String>[];
+    for (final s in detectedSymptoms) {
+      final trimmed = s.trim();
+      if (trimmed.isEmpty) continue;
+      final normalized =
+          trimmed[0].toUpperCase() + trimmed.substring(1).toLowerCase();
+      // Omit redundant symptom if already captured in dedicated flow/cramp badges
+      if (normalized == 'Cramps' &&
+          detectedCramps != null &&
+          detectedCramps != CrampLevel.none) {
+        continue;
+      }
+      if (normalized == 'Period' && detectedPeriodStarted == true) {
+        continue;
+      }
+      if (!cleanedSymptoms
+          .any((existing) => existing.toLowerCase() == normalized.toLowerCase())) {
+        cleanedSymptoms.add(normalized);
+      }
+    }
+    for (final s in cleanedSymptoms) {
+      parts.add(s);
+    }
+
+    // Discreet memory note indicator (never dump raw paragraphs into chips)
+    if (detectedMemoryNote != null && detectedMemoryNote.isNotEmpty) {
+      parts.add('Remembered 💜');
+    }
+
+    return parts.isNotEmpty ? parts.join(' · ') : null;
   }
 
 
@@ -917,6 +1221,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                             ]),
                           ).animate().fadeIn().slideY(begin: 0.08),
 
+                          if (_lastAutoLogSummary != null && _lastAutoLogSummary!.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            _buildAutoLogCard(_lastAutoLogSummary!, colors),
+                          ],
+
                           const SizedBox(height: 14),
 
                           GestureDetector(
@@ -1025,10 +1334,14 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                                   onTap: () => setState(() {
                                     _response = null;
                                     _selectedMood = null;
+                                    _selectedSymptoms.clear();
                                     _textController.clear();
                                     _showScienceCard = false;
                                     _showTextInput = false;
                                     _lastUserText = '';
+                                    _lastAutoLogSummary = null;
+                                    _isCheckInLogExpanded = false;
+                                    _expandedChatLogIndices.clear();
                                   }),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1154,7 +1467,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                         return _buildTypingIndicator(colors);
                       }
                       final msg = _chatHistory[index];
-                      return _buildMessageBubble(msg, colors);
+                      return _buildMessageBubble(msg, colors, index);
                     },
                   ),
                 ),
@@ -1260,7 +1573,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     );
   }
 
-  Widget _buildMessageBubble(_ChatMessage msg, dynamic colors) {
+  Widget _buildMessageBubble(_ChatMessage msg, dynamic colors, int messageIndex) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -1316,34 +1629,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                   ),
                 ),
                 if (msg.autoLogNote != null) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: colors.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: colors.accent.withValues(alpha: 0.25),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('🌙', style: TextStyle(fontSize: 10)),
-                        const SizedBox(width: 5),
-                        Text(
-                          'Luna noted: ${msg.autoLogNote}',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: colors.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildChatLogBadge(messageIndex, msg.autoLogNote!, colors),
                 ],
               ],
             ),
@@ -1351,6 +1637,105 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         ],
       ),
     ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05);
+  }
+
+  Widget _buildChatLogBadge(int messageIndex, String summary, dynamic colors) {
+    final items = summary
+        .split(' · ')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    final isExpanded = _expandedChatLogIndices.contains(messageIndex);
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (isExpanded) {
+            _expandedChatLogIndices.remove(messageIndex);
+          } else {
+            _expandedChatLogIndices.add(messageIndex);
+          }
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeInOut,
+        margin: const EdgeInsets.only(top: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: isExpanded ? 8 : 4.5,
+        ),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: isExpanded ? 0.8 : 0.45),
+          borderRadius: BorderRadius.circular(isExpanded ? 14 : 20),
+          border: Border.all(
+            color: colors.primary.withValues(alpha: isExpanded ? 0.24 : 0.14),
+            width: 0.8,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('✨', style: TextStyle(fontSize: 10)),
+                const SizedBox(width: 5),
+                Text(
+                  isExpanded ? 'Noted in log' : 'Noted in log (${items.length})',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: colors.accent.withValues(alpha: 0.85),
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  isExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 14,
+                  color: colors.accent.withValues(alpha: 0.6),
+                ),
+              ],
+            ),
+            if (isExpanded) ...[
+              const SizedBox(height: 7),
+              Wrap(
+                spacing: 5,
+                runSpacing: 5,
+                children: items
+                    .map((item) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: colors.accent.withValues(alpha: 0.2),
+                              width: 0.7,
+                            ),
+                          ),
+                          child: Text(
+                            item,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: colors.accent,
+                            ),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildTypingIndicator(dynamic colors) {
@@ -1418,6 +1803,118 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildAutoLogCard(String summary, dynamic colors) {
+    final items = summary
+        .split(' · ')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: () => setState(() => _isCheckInLogExpanded = !_isCheckInLogExpanded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeInOut,
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: _isCheckInLogExpanded ? 12 : 9,
+        ),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: _isCheckInLogExpanded ? 0.75 : 0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: colors.primary.withValues(alpha: _isCheckInLogExpanded ? 0.25 : 0.16),
+            width: 0.9,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('✨', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 7),
+                Text(
+                  'Noted in your daily log',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colors.accent,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: colors.accent,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _isCheckInLogExpanded ? 'Hide' : 'View details',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: colors.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Icon(
+                  _isCheckInLogExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: colors.onSurface.withValues(alpha: 0.5),
+                ),
+              ],
+            ),
+            if (_isCheckInLogExpanded) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: items
+                    .map((item) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(
+                              color: colors.accent.withValues(alpha: 0.22),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Text(
+                            item,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: colors.accent,
+                            ),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ).animate().fadeIn(delay: 100.ms);
   }
 }
 

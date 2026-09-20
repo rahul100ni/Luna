@@ -30,6 +30,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   DateTime? _lastPeriodDate;
   bool _cycleLengthUnknown = false;
   bool _periodLengthUnknown = false;
+  bool _isFinishing = false;
 
   @override
   void dispose() {
@@ -50,26 +51,53 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _finish() async {
-    final profile = UserProfile(
-      id: const Uuid().v4(),
-      name: _nameController.text.trim().isEmpty
-          ? 'gorgeous'
-          : _nameController.text.trim(),
-      averageCycleLength: _cycleLength,
-      averagePeriodLength: _periodLength,
-      lastPeriodStart: _lastPeriodDate,
-      createdAt: DateTime.now(),
-    );
-    await ref.read(profileProvider.notifier).saveProfile(profile);
-    await StorageService.setOnboardingComplete();
-    final prefs = await SharedPreferences.getInstance();
-    if (_cycleLengthUnknown) await prefs.setBool('cycle_length_unknown', true);
-    if (_periodLengthUnknown) await prefs.setBool('period_length_unknown', true);
-    // Bug 7 fix: request notification permission on Android 13+ before routing
-    // to home — this is the ideal UX moment; user just completed setup and will
-    // understand why Luna is asking for permission.
-    await NotificationService.requestPermission();
-    if (mounted) context.go('/home');
+    if (_isFinishing) return;
+    setState(() => _isFinishing = true);
+
+    try {
+      final profile = UserProfile(
+        id: const Uuid().v4(),
+        name: _nameController.text.trim().isEmpty
+            ? 'gorgeous'
+            : _nameController.text.trim(),
+        averageCycleLength: _cycleLength,
+        averagePeriodLength: _periodLength,
+        lastPeriodStart: _lastPeriodDate,
+        createdAt: DateTime.now(),
+      );
+      await ref.read(profileProvider.notifier).saveProfile(profile);
+
+      // Persist the last period date to history so Period History is immediately populated
+      if (_lastPeriodDate != null) {
+        try {
+          await ref.read(periodHistoryProvider.notifier).addPeriodStart(
+            _lastPeriodDate!,
+            source: 'onboarding',
+          );
+        } catch (e) {
+          debugPrint('Error adding onboarding period start: $e');
+        }
+      }
+
+      await StorageService.setOnboardingComplete();
+      final prefs = await SharedPreferences.getInstance();
+      if (_cycleLengthUnknown) await prefs.setBool('cycle_length_unknown', true);
+      if (_periodLengthUnknown) await prefs.setBool('period_length_unknown', true);
+
+      // Non-blocking notification permission request with 1.2s timeout
+      try {
+        await NotificationService.requestPermission().timeout(
+          const Duration(milliseconds: 1200),
+          onTimeout: () => false,
+        );
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('Error finishing onboarding: $e');
+    } finally {
+      if (mounted) {
+        context.go('/home');
+      }
+    }
   }
 
 
@@ -110,7 +138,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     onDateSelected: (d) => setState(() => _lastPeriodDate = d),
                     onNext: _next,
                   ),
-                  _ReadyPage(onNext: _next),
+                  _ReadyPage(onNext: _finish, isLoading: _isFinishing),
                 ],
               ),
             ),
@@ -626,7 +654,8 @@ class _LastPeriodPage extends StatelessWidget {
 
 class _ReadyPage extends StatelessWidget {
   final VoidCallback onNext;
-  const _ReadyPage({required this.onNext});
+  final bool isLoading;
+  const _ReadyPage({required this.onNext, this.isLoading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -658,7 +687,11 @@ class _ReadyPage extends StatelessWidget {
             ),
           ).animate().fadeIn(delay: 500.ms),
           const SizedBox(height: 56),
-          _LunaButton(label: 'Meet Luna 🌙', onTap: onNext),
+          _LunaButton(
+            label: 'Meet Luna 🌙',
+            onTap: onNext,
+            isLoading: isLoading,
+          ),
         ],
       ),
     );
@@ -668,27 +701,42 @@ class _ReadyPage extends StatelessWidget {
 class _LunaButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  const _LunaButton({required this.label, required this.onTap});
+  final bool isLoading;
+  const _LunaButton({
+    required this.label,
+    required this.onTap,
+    this.isLoading = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: onTap,
+        onPressed: isLoading ? null : onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF9B84D4),
           foregroundColor: Colors.white,
+          disabledBackgroundColor: const Color(0xFF9B84D4).withValues(alpha: 0.6),
           padding: const EdgeInsets.symmetric(vertical: 18),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
           elevation: 0,
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.dmSans(fontSize: 17, fontWeight: FontWeight.w600),
-        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Text(
+                label,
+                style: GoogleFonts.dmSans(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }

@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/models/log_entry.dart';
+import '../../core/models/period_entry.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
@@ -29,6 +29,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final colors = ref.watch(phaseColorsProvider);
     final profile = ref.watch(profileProvider);
     final logEntries = ref.watch(logEntriesProvider);
+    final periodHistory = ref.watch(periodHistoryProvider);
+    final isCycleLengthUnknown = ref.watch(isCycleLengthUnknownProvider);
     final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
 
     final isViewingCurrentMonth =
@@ -238,6 +240,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         profile: profile,
                         colors: colors,
                         logEntries: logEntries,
+                        periodHistory: periodHistory,
+                        isCycleLengthUnknown: isCycleLengthUnknown,
                         onDayTap: (d) => setState(() => _selectedDay = d),
                       ),
                     )
@@ -255,6 +259,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             profile: profile,
                             colors: colors,
                             logEntries: logEntries,
+                            periodHistory: periodHistory,
+                            isCycleLengthUnknown: isCycleLengthUnknown,
                           )
                         : const SizedBox(),
                   ),
@@ -433,6 +439,8 @@ class _CalendarGrid extends StatelessWidget {
   final UserProfile profile;
   final PhaseColors colors;
   final List<LogEntry> logEntries;
+  final List<PeriodEntry> periodHistory;
+  final bool isCycleLengthUnknown;
   final ValueChanged<DateTime> onDayTap;
 
   const _CalendarGrid({
@@ -441,6 +449,8 @@ class _CalendarGrid extends StatelessWidget {
     required this.profile,
     required this.colors,
     required this.logEntries,
+    required this.periodHistory,
+    required this.isCycleLengthUnknown,
     required this.onDayTap,
   });
 
@@ -481,10 +491,18 @@ class _CalendarGrid extends StatelessWidget {
       final isSelected =
           date.year == selectedDay.year && date.month == selectedDay.month && date.day == selectedDay.day;
 
-      final phase = hasAnchor ? CycleEngine.phaseForDate(date, profile) : CyclePhase.follicular;
+      final isConfirmedStart = hasAnchor && CycleEngine.isConfirmedPeriodStart(date, periodHistory);
+      final phase = hasAnchor
+          ? CycleEngine.phaseForDate(
+              date,
+              profile,
+              periodHistory: periodHistory,
+              isCycleLengthUnknown: isCycleLengthUnknown,
+            )
+          : CyclePhase.follicular;
       final phaseColor = _phaseColor(phase);
-      final isMenstrual = hasAnchor && phase == CyclePhase.menstrual;
-      final isOvulation = hasAnchor && phase == CyclePhase.ovulatory;
+      final isMenstrual = hasAnchor && (phase == CyclePhase.menstrual || isConfirmedStart);
+      final isOvulation = hasAnchor && phase == CyclePhase.ovulatory && !isConfirmedStart;
 
       // Check if user logged on this date
       final hasLog = logEntries.any((e) =>
@@ -506,11 +524,13 @@ class _CalendarGrid extends StatelessWidget {
                   shape: BoxShape.circle,
                   color: isSelected
                       ? colors.primary
-                      : isMenstrual
-                          ? const Color(0xFFD94F6E).withValues(alpha: 0.18)
-                          : isToday
-                              ? colors.primary.withValues(alpha: 0.14)
-                              : Colors.transparent,
+                      : isConfirmedStart
+                          ? const Color(0xFFD94F6E)
+                          : isMenstrual
+                              ? const Color(0xFFD94F6E).withValues(alpha: 0.18)
+                              : isToday
+                                  ? colors.primary.withValues(alpha: 0.14)
+                                  : Colors.transparent,
                   border: isSelected
                       ? null
                       : isToday
@@ -529,15 +549,23 @@ class _CalendarGrid extends StatelessWidget {
                             offset: const Offset(0, 2),
                           ),
                         ]
-                      : null,
+                      : isConfirmedStart
+                          ? [
+                              BoxShadow(
+                                color: const Color(0xFFD94F6E).withValues(alpha: 0.35),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
                 ),
                 child: Center(
                   child: Text(
                     '$day',
                     style: GoogleFonts.dmSans(
                       fontSize: 13,
-                      fontWeight: isSelected || isToday ? FontWeight.w700 : FontWeight.w500,
-                      color: isSelected
+                      fontWeight: isSelected || isToday || isConfirmedStart ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected || isConfirmedStart
                           ? Colors.white
                           : isMenstrual
                               ? const Color(0xFFFF8FA3)
@@ -558,7 +586,9 @@ class _CalendarGrid extends StatelessWidget {
                       height: 4.5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: phaseColor.withValues(alpha: 0.85),
+                        color: isConfirmedStart
+                            ? const Color(0xFFD94F6E)
+                            : phaseColor.withValues(alpha: 0.85),
                       ),
                     ),
                   if (hasLog) ...[
@@ -596,18 +626,29 @@ class _SelectedDayCard extends ConsumerWidget {
   final UserProfile profile;
   final PhaseColors colors;
   final List<LogEntry> logEntries;
+  final List<PeriodEntry> periodHistory;
+  final bool isCycleLengthUnknown;
 
   const _SelectedDayCard({
     required this.selectedDay,
     required this.profile,
     required this.colors,
     required this.logEntries,
+    required this.periodHistory,
+    required this.isCycleLengthUnknown,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasAnchor = profile.lastPeriodStart != null;
-    final state = hasAnchor ? CycleEngine.calculateForDate(profile, selectedDay) : null;
+    final state = hasAnchor
+        ? CycleEngine.calculateForDate(
+            profile,
+            selectedDay,
+            periodHistory: periodHistory,
+            isCycleLengthUnknown: isCycleLengthUnknown,
+          )
+        : null;
 
     final isToday = selectedDay.year == DateTime.now().year &&
         selectedDay.month == DateTime.now().month &&
@@ -878,20 +919,18 @@ class _SelectedDayCard extends ConsumerWidget {
 
           // ── Action Buttons ──────────────────────────────────────────
           Consumer(builder: (ctx, ref, _) {
+            final history = ref.watch(periodHistoryProvider);
+            final isConfirmedStart = CycleEngine.isConfirmedPeriodStart(selectedDay, history);
+
             final profile = ref.watch(profileProvider);
             final anchor = profile?.lastPeriodStart;
-            final isSameDay = anchor != null &&
-                anchor.year == selectedDay.year &&
-                anchor.month == selectedDay.month &&
-                anchor.day == selectedDay.day;
-
             final daysDiff = anchor != null
                 ? selectedDay.calendarDaysDifference(anchor)
                 : null;
             final periodLen = profile?.averagePeriodLength ?? 5;
             final isInPeriodDays = daysDiff != null && daysDiff > 0 && daysDiff < periodLen;
 
-            if (isSameDay) {
+            if (isConfirmedStart) {
               return Column(
                 children: [
                   Container(
@@ -903,16 +942,74 @@ class _SelectedDayCard extends ConsumerWidget {
                       border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('🩸', style: TextStyle(fontSize: 13)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Period start date for this cycle ✓',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: colors.accent,
+                        Row(
+                          children: [
+                            const Text('🩸', style: TextStyle(fontSize: 13)),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Period start date ✓',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: colors.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                        InkWell(
+                          onTap: () async {
+                            final match = history.where((p) =>
+                                p.startDate.year == selectedDay.year &&
+                                p.startDate.month == selectedDay.month &&
+                                p.startDate.day == selectedDay.day).firstOrNull;
+                            if (match != null) {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (dlgCtx) => AlertDialog(
+                                  backgroundColor: colors.surface,
+                                  title: Text('Remove period start?',
+                                      style: GoogleFonts.cormorantGaramond(
+                                          color: colors.onSurface,
+                                          fontWeight: FontWeight.w700)),
+                                  content: Text(
+                                      'Remove period start record for ${DateFormat('MMMM d').format(selectedDay)}?',
+                                      style: GoogleFonts.dmSans(
+                                          color: colors.onSurface.withValues(alpha: 0.8),
+                                          fontSize: 13)),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dlgCtx, false),
+                                      child: Text('Cancel',
+                                          style: GoogleFonts.dmSans(
+                                              color: colors.onSurface.withValues(alpha: 0.6))),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dlgCtx, true),
+                                      child: Text('Remove',
+                                          style: GoogleFonts.dmSans(
+                                              color: const Color(0xFFD94F6E),
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                await ref.read(periodHistoryProvider.notifier).removePeriodEntry(match.id);
+                              }
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              'Remove',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 11,
+                                color: colors.onSurface.withValues(alpha: 0.5),
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -968,19 +1065,24 @@ class _SelectedDayCard extends ConsumerWidget {
                   child: GestureDetector(
                     onTap: () async {
                       await ref
-                          .read(profileProvider.notifier)
-                          .updateLastPeriod(selectedDay);
-                      final toSave = entry != null
-                          ? entry.copyWith(periodStarted: true)
-                          : LogEntry(
-                              id: const Uuid().v4(),
-                              date: selectedDay,
-                              mood: null,
-                              energyLevel: null,
-                              symptoms: [],
-                              periodStarted: true,
-                            );
-                      await ref.read(logEntriesProvider.notifier).addEntry(toSave);
+                          .read(periodHistoryProvider.notifier)
+                          .addPeriodStart(selectedDay, source: 'calendar');
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Period start logged: ${DateFormat('MMMM d').format(selectedDay)} 🩸',
+                              style: GoogleFonts.dmSans(
+                                  color: Colors.white, fontWeight: FontWeight.w500),
+                            ),
+                            backgroundColor: const Color(0xFF2A1F3D),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                        );
+                      }
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 11),

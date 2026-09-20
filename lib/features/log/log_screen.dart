@@ -9,7 +9,6 @@ import '../../core/models/log_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/cycle_engine.dart';
-import '../../core/services/cycle_refinement_service.dart';
 
 class LogScreen extends ConsumerStatefulWidget {
   const LogScreen({super.key});
@@ -22,6 +21,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
   MoodLevel _mood = MoodLevel.decent;
   bool _moodSelected = false;
   bool _saved = false;
+  bool _isSaving = false;
   String? _existingEntryId;
 
   // Energy level — adult slider (1 to 5, nullable if untouched)
@@ -131,6 +131,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       _notesController.text.trim().isNotEmpty;
 
   Future<void> _save() async {
+    if (_isSaving) return;
     if (!_canSave) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -147,58 +148,46 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       return;
     }
 
-    final entryId = _existingEntryId ?? const Uuid().v4();
-    final entry = LogEntry(
-      id: entryId,
-      date: DateTime.now(),
-      mood: _moodSelected ? _mood : null,
-      energyLevel: _energy,
-      flow: _flow,
-      cramps: _cramps,
-      sleepQuality: _sleep,
-      symptoms: _symptoms,
-      notes: _notesController.text.isEmpty ? null : _notesController.text,
-      periodStarted: _periodStarted,
-    );
-    await ref.read(logEntriesProvider.notifier).addEntry(entry);
+    setState(() => _isSaving = true);
 
-    // Update cycle anchor when period started is marked
-    if (_periodStarted) {
-      await ref.read(profileProvider.notifier).updateLastPeriod(DateTime.now());
-      final entries = ref.read(logEntriesProvider);
-      final freshProfile = ref.read(profileProvider);
-      if (freshProfile != null) {
-        final msg = await CycleRefinementService.checkAndRefine(
-          profile: freshProfile,
-          allEntries: entries,
-          onUpdateCycle: (v) => ref
-              .read(profileProvider.notifier)
-              .saveProfile(freshProfile.copyWith(averageCycleLength: v)),
-          onUpdatePeriod: (v) => ref
-              .read(profileProvider.notifier)
-              .saveProfile(freshProfile.copyWith(averagePeriodLength: v)),
+    try {
+      final entryId = _existingEntryId ?? const Uuid().v4();
+      final entry = LogEntry(
+        id: entryId,
+        date: DateTime.now(),
+        mood: _moodSelected ? _mood : null,
+        energyLevel: _energy,
+        flow: _flow,
+        cramps: _cramps,
+        sleepQuality: _sleep,
+        symptoms: _symptoms,
+        notes: _notesController.text.isEmpty ? null : _notesController.text,
+        periodStarted: _periodStarted || _flow != null,
+      );
+      await ref.read(logEntriesProvider.notifier).addEntry(entry);
+
+      // Update cycle anchor and history when period started is marked or active flow logged
+      if (_periodStarted || _flow != null) {
+        await ref.read(periodHistoryProvider.notifier).addPeriodStart(
+          DateTime.now(),
+          source: 'logged',
         );
-        if (msg != null && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: const Color(0xFF2A1F3D),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+      }
+
+      setState(() {
+        _saved = true;
+      });
+      await Future.delayed(const Duration(milliseconds: 1400));
+      if (mounted) {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
         }
       }
-    }
-
-    setState(() => _saved = true);
-    await Future.delayed(const Duration(milliseconds: 1400));
-    if (mounted) {
-      if (context.canPop()) {
-        context.pop();
-      } else {
-        context.go('/home');
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
       }
     }
   }
@@ -482,10 +471,6 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
     final lastPeriod = profile?.lastPeriodStart;
     final now = DateTime.now();
-    final isAnchoredToday = lastPeriod != null &&
-        lastPeriod.year == now.year &&
-        lastPeriod.month == now.month &&
-        lastPeriod.day == now.day;
     final daysSinceAnchor =
         lastPeriod != null ? now.calendarDaysDifference(lastPeriod) : null;
     final periodLength = profile?.averagePeriodLength ?? 5;
@@ -817,7 +802,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                         // 2. If currently in active period -> In-progress state
                         // 3. Otherwise -> Clean, welcoming toggle to mark start
                         Builder(builder: (_) {
-                          if (_periodStarted || isAnchoredToday) {
+                          if (_periodStarted) {
                             return GestureDetector(
                               onTap: () => setState(() => _periodStarted = !_periodStarted),
                               child: AnimatedContainer(
@@ -1198,7 +1183,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
                         // ── Save ─────────────────────────────────────
                         GestureDetector(
-                          onTap: _save,
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _isSaving ? null : _save,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             width: double.infinity,
@@ -1222,16 +1208,27 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                                   : [],
                             ),
                             child: Center(
-                              child: Text(
-                                _canSave ? 'Save today 💜' : 'Record your check-in 💜',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                  color: _canSave
-                                      ? Colors.white
-                                      : colors.onSurface.withValues(alpha: 0.3),
-                                ),
-                              ),
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  : Text(
+                                      _saved
+                                          ? 'Saved ✓'
+                                          : (_canSave ? 'Save today 💜' : 'Record your check-in 💜'),
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: _canSave
+                                            ? Colors.white
+                                            : colors.onSurface.withValues(alpha: 0.3),
+                                      ),
+                                    ),
                             ),
                           ),
                         ).animate().fadeIn(delay: 220.ms),

@@ -283,7 +283,7 @@ class PhaseConstants {
 
   /// Determines cycle phase from day of cycle (1-indexed)
   static CyclePhase phaseFromDay(int day, int cycleLength) {
-    if (day <= 0) return CyclePhase.menstrual;
+    if (day <= 0) return CyclePhase.follicular; // guard for invalid input
     if (day <= 5) return CyclePhase.menstrual;
     if (day <= 13) return CyclePhase.follicular;
     if (day <= 16) return CyclePhase.ovulatory;

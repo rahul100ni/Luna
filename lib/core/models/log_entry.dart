@@ -85,6 +85,18 @@ class LogEntry {
         notes: notes ?? this.notes,
         periodStarted: periodStarted ?? this.periodStarted,
       );
+
+  /// Returns true if this entry contains actual wellness / biomarker observations
+  /// (mood, energy, sleep, flow, cramps, symptoms, or personal notes).
+  /// A bare period anchor (with only periodStarted = true) does not qualify.
+  bool get hasBiomarkerData =>
+      mood != null ||
+      energyLevel != null ||
+      sleepQuality != null ||
+      flow != null ||
+      (cramps != null && cramps != CrampLevel.none) ||
+      symptoms.isNotEmpty ||
+      (notes != null && notes!.trim().isNotEmpty);
 }
 
 enum MoodLevel {

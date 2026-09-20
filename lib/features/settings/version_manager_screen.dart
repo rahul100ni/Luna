@@ -201,9 +201,9 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
           );
         }).toList();
 
-        // Sort semantically (e.g., v1.1.0 > v1.0.9)
+        // Sort semantically (e.g., v1.1.24.5 > v1.1.24)
         list.sort((a, b) {
-          final RegExp semverRegExp = RegExp(r'v?(\d+)\.(\d+)\.(\d+)');
+          final RegExp semverRegExp = RegExp(r'v?(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?');
           final matchA = semverRegExp.firstMatch(a.version);
           final matchB = semverRegExp.firstMatch(b.version);
 
@@ -211,14 +211,17 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
             final aMajor = int.parse(matchA.group(1)!);
             final aMinor = int.parse(matchA.group(2)!);
             final aPatch = int.parse(matchA.group(3)!);
+            final aSub = matchA.group(4) != null ? int.parse(matchA.group(4)!) : 0;
 
             final bMajor = int.parse(matchB.group(1)!);
             final bMinor = int.parse(matchB.group(2)!);
             final bPatch = int.parse(matchB.group(3)!);
+            final bSub = matchB.group(4) != null ? int.parse(matchB.group(4)!) : 0;
 
             if (aMajor != bMajor) return bMajor.compareTo(aMajor);
             if (aMinor != bMinor) return bMinor.compareTo(aMinor);
             if (aPatch != bPatch) return bPatch.compareTo(aPatch);
+            if (aSub != bSub) return bSub.compareTo(aSub);
           }
           return b.date.compareTo(a.date);
         });
@@ -532,7 +535,7 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                       const SizedBox(width: 12),
                       Text(
                           _downloadProgress > 0
-                              ? 'Downloading ${(_downloadProgress * 100).toStringAsFixed(0)}%  —  hang tight'
+                              ? 'Downloading ${(_downloadProgress * 100).toStringAsFixed(0)}% · hang tight'
                               : 'Downloading...',
                           style: GoogleFonts.dmSans(
                               fontSize: 13,

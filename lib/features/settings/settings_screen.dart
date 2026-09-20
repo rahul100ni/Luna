@@ -322,7 +322,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
 
       if (action == 'clear') {
-        await ref.read(profileProvider.notifier).updateLastPeriod(null);
+        await ref.read(periodHistoryProvider.notifier).clearAll();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -331,6 +331,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         }
         return;
       }
+
       if (action != 'change') return;
     }
 
@@ -405,8 +406,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
 
     if (confirmed == true) {
-      await ref.read(profileProvider.notifier).updateLastPeriod(picked);
+      await ref.read(periodHistoryProvider.notifier).addPeriodStart(picked, source: 'settings');
     }
+
+
   }
 
   // ── 5. Notification preferences bottom sheet ─────────────────────────────────
@@ -503,7 +506,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         content: Text(
           'Luna is a cycle companion built with love, here to help you understand '
           'your body, honour your rhythms, and show up for yourself every '
-          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24',
+          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24.5',
           style: GoogleFonts.dmSans(
             fontSize: 14,
             color: colors.onSurface.withValues(alpha: 0.7),
@@ -701,7 +704,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.only(bottom: 32),
               child: Column(children: [
                 Text(
-                  'Luna v1.1.24',
+                  'Luna v1.1.24.5',
                   style: GoogleFonts.dmSans(
                     fontSize: 11,
                     color: colors.onSurface.withValues(alpha: 0.18),

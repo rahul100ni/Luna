@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../constants/phase_constants.dart';
 import '../models/log_entry.dart';
+import '../models/luna_memory_entry.dart';
 import 'storage_service.dart';
 import 'pattern_analysis_service.dart';
 import 'telemetry_service.dart';
+import 'cycle_engine.dart';
 
 class DeepSeekService {
   static String? _inMemoryApiKey;
@@ -66,6 +68,8 @@ class DeepSeekService {
     List<String>? symptoms,
     String? additionalContext,
     LongitudinalProfile? patternProfile,
+    List<LunaMemoryEntry>? memories,
+    CycleGapAnalysis? gapAnalysis,
     bool isChatMode = false,
   }) {
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
@@ -95,6 +99,17 @@ class DeepSeekService {
       buffer.writeln("- Biological Hormone Reality: ${phaseInfo.scienceBody}");
     }
 
+    if (gapAnalysis != null && gapAnalysis.hasAbnormality) {
+      buffer.writeln();
+      buffer.writeln("=================================================");
+      buffer.writeln("CYCLE VARIATION & ABNORMALITY STATUS:");
+      buffer.writeln("- ${gapAnalysis.biologicalSummary}");
+      buffer.writeln("- CRITICAL CLINICAL GUIDANCE:");
+      buffer.writeln("  ${gapAnalysis.clinicalGuidanceDirective}");
+      buffer.writeln("- INSTRUCTION: Address this biological variation directly, explaining the underlying follicular or luteal endocrinology rather than offering generic clichés or dos and don'ts.");
+      buffer.writeln("=================================================");
+    }
+
     if (mood != null) {
       buffer.writeln("- Today's Mood: ${mood.label} ${mood.emoji}");
     }
@@ -115,6 +130,20 @@ class DeepSeekService {
       buffer.writeln("=================================================");
     }
 
+    if (memories != null && memories.isNotEmpty) {
+      buffer.writeln();
+      buffer.writeln("=================================================");
+      buffer.writeln("LUNA INTIMATE COMPANION MEMORY (VISION Pillar One):");
+      for (final m in memories) {
+        buffer.writeln("- [${m.category}] ${m.content}");
+      }
+      buffer.writeln("MEMORY SURFACING PROTOCOL:");
+      buffer.writeln("- Surface these ONLY when naturally, warmly relevant and helpful. Never recite them like a list or party trick.");
+      buffer.writeln("- Speak like a close friend who simply pays attention and remembers her life.");
+      buffer.writeln("- CONTRADICTION RULE: If she tells you something that contradicts an earlier memory or cycle fact, do NOT silently overwrite. Ask with gentle warmth to verify.");
+      buffer.writeln("=================================================");
+    }
+
     buffer.writeln();
     buffer.writeln("CRITICAL REASONING & RESPONSE GUIDELINES:");
     buffer.writeln(
@@ -129,6 +158,8 @@ class DeepSeekService {
         "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, refer to her history naturally: 'Last cycle around this day, your energy dipped similarly'.");
     buffer.writeln(
         "6. NO EM DASHES: NEVER use em dashes (—). Use colons, commas, periods, or parentheses instead.");
+    buffer.writeln(
+        "7. PERIOD START & FLOW MANDATE (CRITICAL): If she mentions bleeding, active flow (spotting, light, medium, heavy), or starting her period (even if phrasing is informal, emotionally distressed, or says 'period started tomorrow' or 'high flow'), you MUST set 'periodStarted': true and 'flow': '<light|medium|heavy>'. Active menstrual flow ALWAYS implies periodStarted: true.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -139,21 +170,33 @@ class DeepSeekService {
       buffer.writeln(
           "  \"science\": \"1-2 sentences of real biological or neurochemical explanation for why she feels this way right now\",");
       buffer.writeln("  \"actions\": [\"action 1\", \"action 2\", \"action 3\"],");
-      buffer.writeln("  \"closing\": \"one short warm, empowering closing line\"");
+      buffer.writeln("  \"closing\": \"one short warm, empowering closing line\",");
+      buffer.writeln("  \"log\": {");
+      buffer.writeln("    \"periodStarted\": <true|false>,");
+      buffer.writeln("    \"flow\": \"<spotting|light|medium|heavy>\",");
+      buffer.writeln("    \"cramps\": \"<none|mild|moderate|severe>\",");
+      buffer.writeln("    \"mood\": \"<struggling|low|meh|decent|good|thriving>\",");
+      buffer.writeln("    \"energy\": <1-5>,");
+      buffer.writeln("    \"sleep\": \"<poor|fair|good|deep>\",");
+      buffer.writeln("    \"symptoms\": [\"<Symptom1>\", \"<Symptom2>\"],");
+      buffer.writeln("    \"notes\": \"<brief note>\",");
+      buffer.writeln("    \"memory\": {\"category\": \"<preference|person|life_context|vulnerability|body_pattern>\", \"note\": \"<what to remember>\"}");
+      buffer.writeln("  }");
       buffer.writeln("}");
+      buffer.writeln("If she shared any biomarkers, energy, cramps, flow, sleep, or mood, populate the 'log' object. If she shared none, omit 'log' or set it to null.");
     } else {
       buffer.writeln();
       buffer.writeln();
       buffer.writeln(
           "CHAT MODE GUIDELINES: Respond in natural, conversational texting style (2-4 sentences max). NO bullet points. Speak like a loving, perceptive friend.");
       buffer.writeln(
-          "AUTO-LOGGING HELPER: If she shares any personal body state, cycle update, energy level, or symptoms in her message (e.g. 'my period started today', 'I started bleeding', 'heavy flow', 'severe cramps', 'I feel so low/exhausted', 'headache and cramps', 'feeling thriving'), respond with genuine sisterly warmth.");
+          "AUTO-LOGGING & MEMORY HELPER (VISION Pillar One & Two):");
       buffer.writeln(
-          "At the very end of your response, on a separate new line, append a clean JSON tag strictly formatted as:");
+          "If she shares any personal body state, cycle update, energy level, sleep, cramps, flow, symptoms, life notes, or personal details, append a clean JSON tag strictly formatted as:");
       buffer.writeln(
-          r'[LOG:{"periodStarted":<true|false>,"flow":"<spotting|light|medium|heavy>","cramps":"<none|mild|moderate|severe>","mood":"<struggling|low|meh|decent|good|thriving>","energy":<1-5>,"symptoms":["<Symptom1>","<Symptom2>"]}]');
+          r'[LOG:{"periodStarted":<true|false>,"flow":"<spotting|light|medium|heavy>","cramps":"<none|mild|moderate|severe>","mood":"<struggling|low|meh|decent|good|thriving>","energy":<1-5>,"sleep":"<poor|fair|good|deep>","symptoms":["<Symptom1>","<Symptom2>"],"notes":"<brief note>","memory":{"category":"<preference|person|life_context|vulnerability|body_pattern>","note":"<what to remember about her>"}}]');
       buffer.writeln(
-          "Include ONLY the fields she explicitly or clearly communicated! If she didn't mention period starting, do not include periodStarted. If she didn't mention flow, omit flow. If she didn't mention cramps, omit cramps. If she didn't mention any loggable attributes at all, do NOT include any [LOG:...] tag.");
+          "Include ONLY the fields she communicated! If she didn't mention period starting and had no flow, omit periodStarted. If she reported flow, set periodStarted: true. If she didn't share a new personal memory, omit memory. If she shared no loggable attributes or memory, do NOT include any [LOG:...] tag.");
     }
 
     return buffer.toString();
@@ -170,7 +213,9 @@ class DeepSeekService {
     List<String>? symptoms,
     String? additionalContext,
     LongitudinalProfile? patternProfile,
+    CycleGapAnalysis? gapAnalysis,
   }) async {
+    final memories = await StorageService.getMemories(limit: 15);
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
       hasCycleAnchor: hasCycleAnchor,
@@ -182,6 +227,8 @@ class DeepSeekService {
       symptoms: symptoms,
       additionalContext: additionalContext,
       patternProfile: patternProfile,
+      gapAnalysis: gapAnalysis,
+      memories: memories,
       isChatMode: false,
     );
 
@@ -210,6 +257,7 @@ class DeepSeekService {
               .map((e) => e as String)
               .toList(),
           closing: parsed['closing'] as String? ?? '',
+          logMap: parsed['log'] as Map<String, dynamic>?,
         );
       } catch (_) {}
     }
@@ -256,6 +304,7 @@ class DeepSeekService {
               .map((e) => e as String)
               .toList(),
           closing: parsed['closing'] as String? ?? '',
+          logMap: parsed['log'] as Map<String, dynamic>?,
         );
       } else {
         return LunaResponse.smartFallback(
@@ -289,7 +338,9 @@ class DeepSeekService {
     int? energyLevel,
     List<String>? symptoms,
     LongitudinalProfile? patternProfile,
+    CycleGapAnalysis? gapAnalysis,
   }) async {
+    final memories = await StorageService.getMemories(limit: 15);
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
       hasCycleAnchor: hasCycleAnchor,
@@ -301,6 +352,8 @@ class DeepSeekService {
       symptoms: symptoms,
       additionalContext: userMessage,
       patternProfile: patternProfile,
+      gapAnalysis: gapAnalysis,
+      memories: memories,
       isChatMode: false,
     );
 
@@ -329,6 +382,7 @@ class DeepSeekService {
               .map((e) => e as String)
               .toList(),
           closing: parsed['closing'] as String? ?? '',
+          logMap: parsed['log'] as Map<String, dynamic>?,
         );
       } catch (_) {}
     }
@@ -375,6 +429,7 @@ class DeepSeekService {
               .map((e) => e as String)
               .toList(),
           closing: parsed['closing'] as String? ?? '',
+          logMap: parsed['log'] as Map<String, dynamic>?,
         );
       } else {
         return LunaResponse.smartFallback(
@@ -408,7 +463,10 @@ class DeepSeekService {
     int? energyLevel,
     List<String>? symptoms,
     LongitudinalProfile? patternProfile,
+    CycleGapAnalysis? gapAnalysis,
   }) async {
+    final memories = await StorageService.getMemories(limit: 20);
+
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
       hasCycleAnchor: hasCycleAnchor,
@@ -419,6 +477,8 @@ class DeepSeekService {
       energyLevel: energyLevel,
       symptoms: symptoms,
       patternProfile: patternProfile,
+      memories: memories,
+      gapAnalysis: gapAnalysis,
       isChatMode: true,
     );
 
@@ -477,6 +537,7 @@ class DeepSeekService {
     int? energyLevel,
     List<String>? symptoms,
     LongitudinalProfile? patternProfile,
+    CycleGapAnalysis? gapAnalysis,
   }) async {
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
@@ -488,6 +549,7 @@ class DeepSeekService {
       energyLevel: energyLevel,
       symptoms: symptoms,
       patternProfile: patternProfile,
+      gapAnalysis: gapAnalysis,
     );
 
     final cacheKey = 'daily_rx_${dayOfCycle}_${phase.index}_${mood?.index ?? -1}_${energyLevel ?? -1}';
@@ -719,6 +781,8 @@ class LunaResponse {
   final List<String> actions;
   final String closing;
   final bool isError;
+  final Map<String, dynamic>? logMap;
+  final String? autoLogSummary;
 
   const LunaResponse({
     required this.validation,
@@ -726,6 +790,8 @@ class LunaResponse {
     required this.actions,
     required this.closing,
     this.isError = false,
+    this.logMap,
+    this.autoLogSummary,
   });
 
   factory LunaResponse.smartFallback({

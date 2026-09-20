@@ -4,6 +4,8 @@ import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../models/log_entry.dart';
+import '../models/period_entry.dart';
+import '../models/luna_memory_entry.dart';
 
 class StorageService {
   static Database? _db;
@@ -15,13 +17,13 @@ class StorageService {
       final dbPath = path.join(await getDatabasesPath(), 'luna.db');
       _db = await openDatabase(
         dbPath,
-        version: 2,
+        version: 4,
         onCreate: (db, version) async {
           await db.execute('''
             CREATE TABLE log_entries (
               id TEXT PRIMARY KEY,
               date TEXT NOT NULL,
-              mood INTEGER NOT NULL,
+              mood INTEGER,
               energyLevel INTEGER,
               sleepQuality INTEGER,
               flow INTEGER,
@@ -31,6 +33,22 @@ class StorageService {
               periodStarted INTEGER DEFAULT 0
             )
           ''');
+          await db.execute('''
+            CREATE TABLE period_history (
+              id TEXT PRIMARY KEY,
+              start_date TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'logged'
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE luna_memories (
+              id TEXT PRIMARY KEY,
+              category TEXT NOT NULL,
+              content TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              last_surfaced TEXT
+            )
+          ''');
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           if (oldVersion < 2) {
@@ -38,10 +56,39 @@ class StorageService {
               'ALTER TABLE log_entries ADD COLUMN sleepQuality INTEGER',
             );
           }
+          if (oldVersion < 3) {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS period_history (
+                id TEXT PRIMARY KEY,
+                start_date TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'logged'
+              )
+            ''');
+          }
+          if (oldVersion < 4) {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS luna_memories (
+                id TEXT PRIMARY KEY,
+                category TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_surfaced TEXT
+              )
+            ''');
+          }
         },
       );
+      if (_db != null) {
+        // Automatic cleanup of any duplicate period entries stored on the same date
+        try {
+          await _db!.execute('''
+            DELETE FROM period_history WHERE rowid NOT IN (
+              SELECT min(rowid) FROM period_history GROUP BY substr(start_date, 1, 10)
+            )
+          ''');
+        } catch (_) {}
+      }
     } catch (e) {
-      // DB unavailable — app degrades gracefully to offline/prefs-only mode
       _db = null;
     }
   }
@@ -68,11 +115,13 @@ class StorageService {
   // ── Log Entries ───────────────────────────────────────────────────
   static Future<void> saveLogEntry(LogEntry entry) async {
     if (_db == null) return; // graceful degradation — no crash
-    await _db!.insert(
-      'log_entries',
-      entry.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    try {
+      await _db!.insert(
+        'log_entries',
+        entry.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
   }
 
   static Future<List<LogEntry>> getLogEntries({int limit = 90}) async {
@@ -119,10 +168,12 @@ class StorageService {
 
   // ── Clear All Data (full reset to factory) ─────────────────────────
   static Future<void> clearAllData() async {
-    // 1. Wipe SQLite log entries
+    // 1. Wipe SQLite tables
     if (_db != null) {
       try {
         await _db!.delete('log_entries');
+        await _db!.delete('period_history');
+        await _db!.delete('luna_memories');
       } catch (_) {}
     }
     // 2. Wipe all SharedPreferences (profile, settings, cache, API key, etc.)
@@ -233,5 +284,135 @@ class StorageService {
 
   static Future<void> clearLastChatSession() async {
     await _prefs?.remove('last_chat_session');
+  }
+
+  // ── Period History ─────────────────────────────────────────────────
+  /// Saves a period start entry. Idempotent by calendar day: if an entry already
+  /// exists for this date (YYYY-MM-DD), it updates rather than adding a duplicate.
+  static Future<void> savePeriodEntry(PeriodEntry entry) async {
+    if (_db == null) return;
+    try {
+      final normDate = DateTime(entry.startDate.year, entry.startDate.month, entry.startDate.day);
+      final datePrefix = '${normDate.year.toString().padLeft(4, '0')}-${normDate.month.toString().padLeft(2, '0')}-${normDate.day.toString().padLeft(2, '0')}';
+
+      final existing = await _db!.query(
+        'period_history',
+        where: 'start_date LIKE ?',
+        whereArgs: ['$datePrefix%'],
+      );
+
+      if (existing.isNotEmpty) {
+        await _db!.update(
+          'period_history',
+          {
+            'start_date': normDate.toIso8601String(),
+            'source': entry.source,
+          },
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+      } else {
+        await _db!.insert(
+          'period_history',
+          {
+            'id': entry.id,
+            'start_date': normDate.toIso8601String(),
+            'source': entry.source,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    } catch (_) {}
+  }
+
+  /// Returns all period history entries sorted newest first, deduplicated by calendar day.
+  static Future<List<PeriodEntry>> getPeriodHistory() async {
+    if (_db == null) return [];
+    try {
+      final maps = await _db!.query('period_history', orderBy: 'start_date DESC');
+      final seenDates = <String>{};
+      final uniqueEntries = <PeriodEntry>[];
+      for (final map in maps) {
+        final entry = PeriodEntry.fromMap(map);
+        final dateKey = '${entry.startDate.year}-${entry.startDate.month}-${entry.startDate.day}';
+        if (seenDates.add(dateKey)) {
+          uniqueEntries.add(entry);
+        }
+      }
+      return uniqueEntries;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> deletePeriodEntry(String id) async {
+    if (_db == null) return;
+    try {
+      await _db!.delete('period_history', where: 'id = ?', whereArgs: [id]);
+    } catch (_) {}
+  }
+
+  static Future<void> clearPeriodHistory() async {
+    if (_db == null) return;
+    try {
+      await _db!.delete('period_history');
+    } catch (_) {}
+  }
+
+  // ── Cycle Calibration State ─────────────────────────────────────────
+  static bool isCycleLengthUnknown() {
+    return _prefs?.getBool('cycle_length_unknown') ?? false;
+  }
+
+  static Future<void> setCycleLengthCalibrated() async {
+    await _prefs?.setBool('cycle_length_unknown', false);
+  }
+
+  static bool isPeriodLengthUnknown() {
+    return _prefs?.getBool('period_length_unknown') ?? false;
+  }
+
+  static Future<void> setPeriodLengthCalibrated() async {
+    await _prefs?.setBool('period_length_unknown', false);
+  }
+
+  // ── Luna Intimate Memory (VISION Pillar One) ───────────────────────
+  static Future<void> saveMemory(LunaMemoryEntry memory) async {
+    if (_db == null) return;
+    try {
+      await _db!.insert(
+        'luna_memories',
+        memory.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  static Future<List<LunaMemoryEntry>> getMemories({int limit = 40}) async {
+    if (_db == null) return [];
+    try {
+      final maps = await _db!.query(
+        'luna_memories',
+        orderBy: 'created_at DESC',
+        limit: limit,
+      );
+      return maps.map(LunaMemoryEntry.fromMap).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> deleteMemory(String id) async {
+    if (_db == null) return;
+    try {
+      await _db!.delete('luna_memories', where: 'id = ?', whereArgs: [id]);
+    } catch (_) {}
+  }
+
+  static Future<void> clearMemories() async {
+    if (_db == null) return;
+    try {
+      await _db!.delete('luna_memories');
+    } catch (_) {}
   }
 }

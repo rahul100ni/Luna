@@ -1,6 +1,7 @@
 import '../constants/phase_constants.dart';
 import '../models/log_entry.dart';
 import '../models/user_profile.dart';
+import '../models/period_entry.dart';
 import 'cycle_engine.dart';
 
 /// Represents a single biomarker pattern discovered from historical logs
@@ -59,15 +60,19 @@ class PatternAnalysisService {
   static LongitudinalProfile analyze({
     required List<LogEntry> logs,
     required UserProfile profile,
+    List<PeriodEntry>? periodHistory,
   }) {
-    if (logs.isEmpty) {
+    // Only analyze logs that contain actual biomarker observations (mood, energy, sleep, flow, cramps, symptoms, notes).
+    // Bare period anchor records (with only periodStarted = true) do NOT count as health check-ins.
+    final biomarkerLogs = logs.where((e) => e.hasBiomarkerData).toList();
+    if (biomarkerLogs.isEmpty) {
       return _emptyProfile();
     }
 
     final cycleLength = profile.averageCycleLength > 0 ? profile.averageCycleLength : 28;
-    final totalLogs = logs.length;
+    final totalLogs = biomarkerLogs.length;
 
-    // 1. Group logs by phase
+    // 1. Group biomarker logs by phase
     final phaseLogs = <CyclePhase, List<LogEntry>>{
       CyclePhase.menstrual: [],
       CyclePhase.follicular: [],
@@ -81,12 +86,12 @@ class PatternAnalysisService {
 
     double energySum = 0;
     int energyCount = 0;
-    for (final log in logs) {
+    for (final log in biomarkerLogs) {
       if (log.energyLevel != null) {
         energySum += log.energyLevel!;
         energyCount++;
       }
-      final phase = CycleEngine.phaseForDate(log.date, profile);
+      final phase = CycleEngine.phaseForDate(log.date, profile, periodHistory: periodHistory);
       phaseLogs[phase]?.add(log);
 
       // Estimate cycle day if anchor exists
@@ -102,7 +107,6 @@ class PatternAnalysisService {
         cycleDayLogs.putIfAbsent(day, () => []).add(log);
       }
     }
-
 
     final averageEnergy = energyCount > 0 ? energySum / energyCount : 3.0;
 
@@ -139,9 +143,19 @@ class PatternAnalysisService {
       dominantPhaseSymptoms[entry.key] = sorted.take(3).map((e) => e.key).toList();
     }
 
-    // 4. Estimate cycles tracked
-    final periodStartCount = logs.where((e) => e.periodStarted).length;
-    final estimatedCycles = periodStartCount > 0 ? periodStartCount : (totalLogs / cycleLength).ceil().clamp(1, 12);
+    // 4. Estimate cycles tracked accurately from period history gaps
+    int estimatedCycles = 1;
+    if (periodHistory != null && periodHistory.length >= 2) {
+      final sortedPeriods = [...periodHistory]..sort((a, b) => a.startDate.compareTo(b.startDate));
+      int validCycles = 0;
+      for (int i = 1; i < sortedPeriods.length; i++) {
+        final a = DateTime.utc(sortedPeriods[i].startDate.year, sortedPeriods[i].startDate.month, sortedPeriods[i].startDate.day);
+        final b = DateTime.utc(sortedPeriods[i - 1].startDate.year, sortedPeriods[i - 1].startDate.month, sortedPeriods[i - 1].startDate.day);
+        final gap = a.difference(b).inDays;
+        if (gap >= 14 && gap <= 60) validCycles++;
+      }
+      estimatedCycles = (validCycles + 1).clamp(1, 12);
+    }
 
     // 5. Discover distinct personal patterns
     final patterns = <DiscoveredPattern>[];
@@ -151,9 +165,11 @@ class PatternAnalysisService {
     final ovulatoryLogs = phaseLogs[CyclePhase.ovulatory] ?? [];
     final menstrualLogs = phaseLogs[CyclePhase.menstrual] ?? [];
 
-    // Enforce rigorous threshold: Luna requires at least 7 logs across the cycle
-    // and multiple phase-specific data points before declaring personal patterns.
-    if (totalLogs >= 7) {
+    final distinctPhasesWithData = phaseLogs.values.where((l) => l.isNotEmpty).length;
+
+    // Enforce rigorous threshold: Luna requires at least 7 biomarker logs across the cycle
+    // spanning at least 2 distinct phases before declaring personal patterns.
+    if (totalLogs >= 7 && distinctPhasesWithData >= 2) {
       final lateLutealEnergyLogs = lateLutealLogs.where((e) => e.energyLevel != null).toList();
       final follicularEnergyLogs = follicularLogs.where((e) => e.energyLevel != null).toList();
       final ovulatoryEnergyLogs = ovulatoryLogs.where((e) => e.energyLevel != null).toList();

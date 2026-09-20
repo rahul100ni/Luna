@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/phase_constants.dart';
 import '../../../core/providers/cycle_provider.dart';
+import '../../../core/services/cycle_engine.dart';
 import '../../../core/services/deepseek_service.dart';
 import '../../../core/services/storage_service.dart';
 
@@ -40,21 +41,23 @@ class _DailyPrescriptionCardState
     super.dispose();
   }
 
-  String _cacheKey(bool hasAnchor, int day, CyclePhase phase) {
+  String _cacheKey(bool hasAnchor, int day, CyclePhase phase, [CycleGapAnalysis? gap]) {
     final now = DateTime.now();
     final anchorPart = hasAnchor ? '${phase.name}_$day' : 'blueprint';
-    return '${now.year}_${now.month}_${now.day}_$anchorPart';
+    final gapPart = gap != null ? '_${gap.regularity.name}_${gap.deviationFromBaseline}' : '';
+    return '${now.year}_${now.month}_${now.day}_$anchorPart$gapPart';
   }
 
   void _loadInitial() {
     final profile = ref.read(profileProvider);
     final cycleState = ref.read(cycleStateProvider);
     final phase = ref.read(currentPhaseProvider);
+    final gapAnalysis = ref.read(cycleGapAnalysisProvider);
     final hasAnchor =
         profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
     final day = cycleState?.dayOfCycle ?? 0;
 
-    final key = _cacheKey(hasAnchor, day, phase);
+    final key = _cacheKey(hasAnchor, day, phase, gapAnalysis);
     final cached = StorageService.getCachedDailyPrescription(key);
 
     if (cached != null) {
@@ -88,11 +91,12 @@ class _DailyPrescriptionCardState
     final phase = ref.read(currentPhaseProvider);
     final todayLog = ref.read(todayLogProvider);
     final patternProfile = ref.read(patternProfileProvider);
+    final gapAnalysis = ref.read(cycleGapAnalysisProvider);
 
     final hasAnchor =
         profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
     final day = cycleState?.dayOfCycle ?? 0;
-    final key = _cacheKey(hasAnchor, day, phase);
+    final key = _cacheKey(hasAnchor, day, phase, gapAnalysis);
 
     // Bug 5 fix: always check cache first — even on manual Refresh tap —
     // unless the user explicitly force-refreshes. This prevents burning API
@@ -125,6 +129,7 @@ class _DailyPrescriptionCardState
       energyLevel: todayLog?.energyLevel,
       symptoms: todayLog?.symptoms,
       patternProfile: patternProfile,
+      gapAnalysis: gapAnalysis,
     );
 
     await StorageService.cacheDailyPrescription(key, jsonEncode(result.toMap()));

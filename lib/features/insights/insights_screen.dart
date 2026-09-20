@@ -154,7 +154,6 @@ class InsightsScreen extends ConsumerWidget {
                 // 8. Cycle & Period History
                 _PeriodHistorySection(
                   colors: colors,
-                  logs: logs,
                   profile: profile,
                 ),
                 const SizedBox(height: 20),
@@ -276,7 +275,7 @@ class _InsightsHeader extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. CYCLE BLUEPRINT & ARCHITECTURE CARD
 // ─────────────────────────────────────────────────────────────────────────────
-class _CycleBlueprintCard extends StatelessWidget {
+class _CycleBlueprintCard extends ConsumerWidget {
   final PhaseColors colors;
   final UserProfile? profile;
   final CycleState? cycleState;
@@ -294,6 +293,7 @@ class _CycleBlueprintCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) => Container(
         decoration: BoxDecoration(
           color: colors.surface,
@@ -389,11 +389,12 @@ class _CycleBlueprintCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cycleLen = profile?.averageCycleLength ?? 28;
     final periodLen = profile?.averagePeriodLength ?? 5;
     final hasCycle = profile?.lastPeriodStart != null && cycleState != null;
     final dayNum = hasCycle ? cycleState!.dayOfCycle : 0;
+    final isUnknown = ref.watch(isCycleLengthUnknownProvider);
 
     String nextPeriodText;
     String nextPeriodSub;
@@ -466,8 +467,8 @@ class _CycleBlueprintCard extends StatelessWidget {
             children: [
               _MetricTile(
                 title: 'Cycle Length',
-                value: '$cycleLen days',
-                subtitle: 'Typical rhythm',
+                value: isUnknown ? 'Calibrating' : '$cycleLen days',
+                subtitle: isUnknown ? '28d baseline' : 'Typical rhythm',
                 colors: colors,
               ),
               const SizedBox(width: 8),
@@ -1926,12 +1927,10 @@ class _SymptomsSection extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _PeriodHistorySection extends ConsumerWidget {
   final PhaseColors colors;
-  final List<LogEntry> logs;
   final UserProfile? profile;
 
   const _PeriodHistorySection({
     required this.colors,
-    required this.logs,
     required this.profile,
   });
 
@@ -1958,16 +1957,8 @@ class _PeriodHistorySection extends ConsumerWidget {
     );
 
     if (picked != null) {
-      await ref.read(profileProvider.notifier).updateLastPeriod(picked);
-      final entry = LogEntry(
-        id: const Uuid().v4(),
-        date: picked,
-        mood: null,
-        energyLevel: null,
-        symptoms: [],
-        periodStarted: true,
-      );
-      await ref.read(logEntriesProvider.notifier).addEntry(entry);
+      // addPeriodStart handles history, profile anchor, and LogEntry creation atomically
+      await ref.read(periodHistoryProvider.notifier).addPeriodStart(picked, source: 'insights');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1986,8 +1977,15 @@ class _PeriodHistorySection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final periodLogs = logs.where((l) => l.periodStarted).toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    // Read from the dedicated period_history table — the single source of truth
+    final periodHistory = ref.watch(periodHistoryProvider);
+    final sortedHistory = [...periodHistory]
+      ..sort((a, b) => b.startDate.compareTo(a.startDate));
+
+    final seenDays = <String>{};
+    final deduplicatedHistory = sortedHistory
+        .where((p) => seenDays.add('${p.startDate.year}-${p.startDate.month}-${p.startDate.day}'))
+        .toList();
 
     return Container(
       width: double.infinity,
@@ -2019,24 +2017,14 @@ class _PeriodHistorySection extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: colors.primary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: colors.primary.withValues(alpha: 0.35),
-                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('🩸', style: TextStyle(fontSize: 10)),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Set Date',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: colors.accent,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'Set Date',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: colors.accent,
+                    ),
                   ),
                 ),
               ),
@@ -2044,9 +2032,20 @@ class _PeriodHistorySection extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
 
-          if (periodLogs.isNotEmpty) ...[
-            ...periodLogs.take(4).map((log) {
-              final d = log.date;
+          if (deduplicatedHistory.isNotEmpty) ...[
+            ...deduplicatedHistory.take(4).toList().asMap().entries.map((entry) {
+              final i = entry.key;
+              final p = entry.value;
+              final d = p.startDate;
+              // Compute gap to previous period if available
+              String? gapText;
+              if (i + 1 < deduplicatedHistory.length) {
+                final prev = deduplicatedHistory[i + 1];
+                final a = DateTime.utc(d.year, d.month, d.day);
+                final b = DateTime.utc(prev.startDate.year, prev.startDate.month, prev.startDate.day);
+                final gap = a.difference(b).inDays;
+                if (gap >= 14 && gap <= 60) gapText = '$gap-day cycle';
+              }
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
@@ -2082,7 +2081,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          'Period start logged',
+                          gapText ?? 'Period start',
                           style: GoogleFonts.dmSans(
                             fontSize: 11,
                             color: colors.onSurface.withValues(alpha: 0.4),
@@ -2091,57 +2090,66 @@ class _PeriodHistorySection extends ConsumerWidget {
                       ],
                     ),
                     const Spacer(),
-                    const Text('🩸', style: TextStyle(fontSize: 15)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🩸', style: TextStyle(fontSize: 15)),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (dlgCtx) => AlertDialog(
+                                backgroundColor: colors.surface,
+                                title: Text('Remove period record?',
+                                    style: GoogleFonts.cormorantGaramond(
+                                        color: colors.onSurface,
+                                        fontWeight: FontWeight.w700)),
+                                content: Text(
+                                    'Remove ${_monthName(d.month)} ${d.day}, ${d.year} from period history? Your cycle calculations will update.',
+                                    style: GoogleFonts.dmSans(
+                                        color: colors.onSurface.withValues(alpha: 0.8),
+                                        fontSize: 13)),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dlgCtx, false),
+                                    child: Text('Cancel',
+                                        style: GoogleFonts.dmSans(
+                                            color: colors.onSurface.withValues(alpha: 0.6))),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dlgCtx, true),
+                                    child: Text('Remove',
+                                        style: GoogleFonts.dmSans(
+                                            color: const Color(0xFFD94F6E),
+                                            fontWeight: FontWeight.w700)),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              await ref.read(periodHistoryProvider.notifier).removePeriodEntry(p.id);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: colors.onSurface.withValues(alpha: 0.05),
+                            ),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 13,
+                              color: colors.onSurface.withValues(alpha: 0.4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               );
             }),
-          ] else if (profile?.lastPeriodStart != null) ...[
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${profile!.lastPeriodStart!.day}',
-                      style: GoogleFonts.cormorantGaramond(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: colors.accent,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_monthName(profile!.lastPeriodStart!.month)} ${profile!.lastPeriodStart!.day}, ${profile!.lastPeriodStart!.year}',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: colors.onSurface,
-                      ),
-                    ),
-                    Text(
-                      'Active cycle anchor',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11,
-                        color: colors.onSurface.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                const Text('🩸', style: TextStyle(fontSize: 15)),
-              ],
-            ),
           ] else ...[
             Text(
               'No period start date recorded yet. Tap "Set Date" above whenever your cycle begins.',
@@ -2290,7 +2298,7 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                   Text(
                     totalLogs == 0
                         ? 'Luna tracks your mood, energy, and symptoms across cycle phases to identify your personal patterns with biological precision.'
-                        : 'Luna needs at least 7 daily check-ins across different phases to detect your personal hormonal rhythm without guessing.',
+                        : 'Luna needs at least 7 daily check-ins with symptoms or wellness data across different phases to detect your personal hormonal rhythm without guessing ($totalLogs of 7 logged with symptoms or mood).',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
                       color: colors.onSurface.withValues(alpha: 0.65),
@@ -2318,7 +2326,7 @@ class _DiscoveredPatternsCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          '$totalLogs of 7 check-ins logged',
+                          '$totalLogs of 7 wellness check-ins logged',
                           style: GoogleFonts.dmSans(
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
