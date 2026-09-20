@@ -53,7 +53,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Luna ${{ github.ref_name }}: The Science-First Cycle Intelligence Companion
+          name: "Luna ${{ github.ref_name }}: The Science-First Cycle Intelligence Companion"
           files: release-assets/*.apk
           generate_release_notes: false
           body: |

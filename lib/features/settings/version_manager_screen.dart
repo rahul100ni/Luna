@@ -386,9 +386,13 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
       final safeName =
           'Luna_${ver.version.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.apk';
       final file = File('${dir.path}/$safeName');
-
       final request = http.Request('GET', Uri.parse(ver.url));
       final response = await http.Client().send(request);
+
+      if (response.statusCode != 200) {
+        throw Exception('Download returned HTTP ${response.statusCode}. The release asset may still be building or unavailable.');
+      }
+
       final total = response.contentLength ?? 0;
       int received = 0;
 
@@ -401,6 +405,14 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
         }
       });
       await sink.close();
+
+      final fileSize = await file.length();
+      if (fileSize < 500000) {
+        if (await file.exists()) {
+          await file.delete();
+        }
+        throw Exception('Downloaded file is incomplete ($fileSize bytes). Please try again.');
+      }
 
       if (mounted) {
         setState(() {
