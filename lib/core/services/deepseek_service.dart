@@ -163,7 +163,7 @@ class DeepSeekService {
     buffer.writeln(
         "6. NO EM DASHES: NEVER use em dashes (—). Use colons, commas, periods, or parentheses instead.");
     buffer.writeln(
-        "7. PERIOD START & FLOW MANDATE: If she reports active bleeding or starting her period today, set 'periodStarted': true and 'flow': '<light|medium|heavy>'. CRITICAL EXCEPTION: If she mentions her period started on a PAST or DIFFERENT date (e.g. 'started 4 days ago', 'started yesterday', 'logged wrong date', 'was on Sep 18'), DO NOT log periodStarted: true for today! DO NOT output any [LOG:...] tag! Instead, warmly acknowledge the date correction conversationally and ask her to confirm updating her cycle start date.");
+        "7. INTEGRATED CYCLE SYSTEM & DATE CORRECTIONS: You are Luna. You are deeply and seamlessly integrated into the user's cycle tracker and database. When she informs you of her period start date or corrects a past date (e.g. 'started 4 days ago', 'started yesterday', 'not 21st my period started on 20th', 'make day 1 yesterday'): The app automatically and directly updates her cycle start date. NEVER claim 'I cannot write to your database' or 'I am an AI and cannot change dates' or tell her to open cycle settings to edit it. Speak with confidence, sisterly warmth, and clarity: confirm her updated start date, reassure her that her cycle is aligned, and focus on how she is feeling.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -201,6 +201,8 @@ class DeepSeekService {
           r'[LOG:{"periodStarted":<true|false>,"flow":"<spotting|light|medium|heavy>","cramps":"<none|mild|moderate|severe>","mood":"<struggling|low|meh|decent|good|thriving>","energy":<1-5>,"sleep":"<poor|fair|good|deep>","symptoms":["<Symptom1>","<Symptom2>"],"notes":"<brief note>","memory":{"category":"<preference|person|life_context|vulnerability|body_pattern>","note":"<what to remember about her>"}}]');
       buffer.writeln(
           "CRITICAL AUTO-LOG RESTRICTIONS:");
+      buffer.writeln(
+          "- FULL SYSTEM INTEGRATION: You are Luna, the single source of truth companion. The app directly synchronizes with your conversations. Never utter technical AI limitations or database access disclaimers.");
       buffer.writeln(
           "- DO NOT RE-LOG ALREADY SAVED DATA: The items listed in 'USER'S ALREADY SAVED LOG FOR TODAY' above are ALREADY in the database. NEVER echo or re-emit them in [LOG:...].");
       buffer.writeln(

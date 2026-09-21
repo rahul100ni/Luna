@@ -360,6 +360,24 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     final requestedPeriodDate = PeriodDateExtractor.extractDate(text);
+    final isDirectCommand = requestedPeriodDate != null &&
+        PeriodDateExtractor.isDirectCorrectionCommand(text);
+
+    if (isDirectCommand) {
+      // Direct explicit user command: apply update to SQLite & Riverpod immediately
+      await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
+
+      final currentToday = ref.read(todayLogProvider);
+      final now = DateTime.now();
+      final isToday = requestedPeriodDate.year == now.year &&
+          requestedPeriodDate.month == now.month &&
+          requestedPeriodDate.day == now.day;
+      if (!isToday && currentToday?.periodStarted == true) {
+        final updatedToday = currentToday!.copyWith(periodStarted: false);
+        await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+      }
+      _pendingPeriodDate = null;
+    }
 
     setState(() {
       _chatHistory.add(
@@ -383,6 +401,22 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final allSymptoms =
         {..._selectedSymptoms, ...?todayEntry?.symptoms}.toList();
 
+    final conversationMessages = _chatHistory
+        .map((m) => {
+              'role': m.isUser ? 'user' : 'assistant',
+              'content': m.text,
+            })
+        .toList();
+
+    if (isDirectCommand) {
+      final dateStr = _formatPeriodDate(requestedPeriodDate);
+      conversationMessages.add({
+        'role': 'system',
+        'content':
+            'SYSTEM CONFIRMATION: The app has already directly updated her cycle start date to $dateStr. Her cycle is now aligned to Day ${cycleState.dayOfCycle} • Menstrual. Acknowledge this with sisterly warmth and reassure her that her cycle is aligned.',
+      });
+    }
+
     final response = await DeepSeekService.getChatMessage(
       userName: profile.name,
       hasCycleAnchor: hasCycleAnchor,
@@ -394,12 +428,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       symptoms: allSymptoms,
       patternProfile: patternProfile,
       gapAnalysis: gapAnalysis,
-      messages: _chatHistory
-          .map((m) => {
-                'role': m.isUser ? 'user' : 'assistant',
-                'content': m.text,
-              })
-          .toList(),
+      messages: conversationMessages,
     );
 
     // Extract [LOG:... if present in chat response
@@ -424,20 +453,32 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     cleanResponse = cleanResponse.replaceAll(RegExp(r'\]+$'), '').trim();
 
     if (requestedPeriodDate != null) {
-      // Supersede any older pending confirmation cards in history
-      for (int i = 0; i < _chatHistory.length; i++) {
-        if (_chatHistory[i].pendingPeriodDate != null &&
-            _chatHistory[i].periodDateConfirmed == null) {
-          _chatHistory[i] =
-              _chatHistory[i].copyWith(periodDateConfirmed: false);
-        }
-      }
-      _pendingPeriodDate = requestedPeriodDate;
       final dateStr = _formatPeriodDate(requestedPeriodDate);
-      final lower = cleanResponse.toLowerCase();
-      if (!lower.contains('?') && !lower.contains(dateStr.toLowerCase())) {
-        cleanResponse +=
-            '\n\nWould you like me to update your period start date to $dateStr?';
+      if (isDirectCommand) {
+        // Clear any older pending confirmation cards
+        for (int i = 0; i < _chatHistory.length; i++) {
+          if (_chatHistory[i].pendingPeriodDate != null &&
+              _chatHistory[i].periodDateConfirmed == null) {
+            _chatHistory[i] =
+                _chatHistory[i].copyWith(periodDateConfirmed: false);
+          }
+        }
+        _pendingPeriodDate = null;
+      } else {
+        // Supersede any older pending confirmation cards in history
+        for (int i = 0; i < _chatHistory.length; i++) {
+          if (_chatHistory[i].pendingPeriodDate != null &&
+              _chatHistory[i].periodDateConfirmed == null) {
+            _chatHistory[i] =
+                _chatHistory[i].copyWith(periodDateConfirmed: false);
+          }
+        }
+        _pendingPeriodDate = requestedPeriodDate;
+        final lower = cleanResponse.toLowerCase();
+        if (!lower.contains('?') && !lower.contains(dateStr.toLowerCase())) {
+          cleanResponse +=
+              '\n\nWould you like me to update your period start date to $dateStr?';
+        }
       }
     }
 
@@ -447,8 +488,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           text: cleanResponse,
           isUser: false,
           time: DateTime.now(),
-          autoLogNote: autoLogSummary,
+          autoLogNote: isDirectCommand
+              ? (autoLogSummary != null
+                  ? '$autoLogSummary · Period start updated'
+                  : 'Period start updated 🩸')
+              : autoLogSummary,
           pendingPeriodDate: requestedPeriodDate,
+          periodDateConfirmed: isDirectCommand ? true : null,
         ),
       );
       _chatLoading = false;

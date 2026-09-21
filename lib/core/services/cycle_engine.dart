@@ -111,16 +111,16 @@ class CycleEngine {
       isPeriodSoon: daysUntilNextPeriod >= 0 && daysUntilNextPeriod <= 3, isAnchored: true);
   }
 
-  static CyclePhase phaseForDate(DateTime date, UserProfile profile,
+  static CyclePhase? phaseForDate(DateTime date, UserProfile profile,
       {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false}) {
-    if (profile.lastPeriodStart == null) return CyclePhase.follicular;
+    if (profile.lastPeriodStart == null) return null;
     final normDate = DateTime(date.year, date.month, date.day);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final cycleStart = _findCycleStart(normDate, profile, periodHistory);
-    if (cycleStart == null) return CyclePhase.follicular;
+    if (cycleStart == null) return null;
     final daysSinceStart = normDate.calendarDaysDifference(cycleStart);
-    if (daysSinceStart < 0) return CyclePhase.follicular;
+    if (daysSinceStart < 0) return null;
     final cycleLength = profile.averageCycleLength;
     if (!normDate.isAfter(today)) {
       final dayOfCycle = daysSinceStart + 1;
@@ -128,7 +128,7 @@ class CycleEngine {
       return PhaseConstants.phaseFromDay(phaseDay, cycleLength);
     }
     final historyCount = periodHistory?.length ?? 1;
-    if (isCycleLengthUnknown && historyCount < 2) return CyclePhase.follicular;
+    if (isCycleLengthUnknown && historyCount < 2) return null;
     final futureDay = (daysSinceStart % cycleLength) + 1;
     return PhaseConstants.phaseFromDay(futureDay, cycleLength);
   }
@@ -152,9 +152,7 @@ class CycleEngine {
       nextPeriodDate = cycleStart.add(Duration(days: cycleLength));
     } else {
       if (isCycleLengthUnknown && historyCount < 2) {
-        return CycleState(dayOfCycle: daysSinceStart + 1, phase: CyclePhase.follicular,
-          phaseInfo: PhaseConstants.getPhaseInfo(CyclePhase.follicular),
-          daysUntilNextPeriod: 0, daysUntilPhaseChange: 0, isAnchored: true);
+        return null;
       }
       dayOfCycle = (daysSinceStart % cycleLength) + 1;
       final cyclesAhead = daysSinceStart ~/ cycleLength;

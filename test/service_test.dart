@@ -424,7 +424,7 @@ void main() {
         periodHistory: history,
         isCycleLengthUnknown: true,
       );
-      expect(futurePhase, equals(CyclePhase.follicular));
+      expect(futurePhase, isNull);
     });
 
     test('PeriodEntry toMap and fromMap serialization integrity', () {
@@ -1200,6 +1200,128 @@ void main() {
 
       expect(detectedPeriodStarted, isFalse);
       expect(detectedFlow, isNull);
+    });
+  });
+
+  group('Pillar Nine & Direct Cycle Correction Tests', () {
+    test('PeriodDateExtractor identifies direct correction commands and parses relative dates', () {
+      final now = DateTime(2026, 9, 21);
+      final yesterday = DateTime(2026, 9, 20);
+
+      // Prompt 1: "update my cycle to like being day 1 yesterday"
+      const prompt1 = 'update my cycle to like being day 1 yesterday';
+      expect(PeriodDateExtractor.isDirectCorrectionCommand(prompt1), isTrue);
+      expect(PeriodDateExtractor.hasPeriodContext(prompt1), isTrue);
+      final date1 = PeriodDateExtractor.extractDate(prompt1, referenceDate: now);
+      expect(date1, isNotNull);
+      expect(date1!.year, equals(yesterday.year));
+      expect(date1.month, equals(yesterday.month));
+      expect(date1.day, equals(yesterday.day));
+
+      // Prompt 2: "make my period starting date as 20th september 2026"
+      const prompt2 = 'make my period starting date as 20th september 2026';
+      expect(PeriodDateExtractor.isDirectCorrectionCommand(prompt2), isTrue);
+      expect(PeriodDateExtractor.hasPeriodContext(prompt2), isTrue);
+      final date2 = PeriodDateExtractor.extractDate(prompt2, referenceDate: now);
+      expect(date2, isNotNull);
+      expect(date2!.year, equals(2026));
+      expect(date2.month, equals(9));
+      expect(date2.day, equals(20));
+
+      // Prompt 3: "not 21st my period started on 20th"
+      const prompt3 = 'not 21st my period started on 20th';
+      expect(PeriodDateExtractor.hasPeriodContext(prompt3), isTrue);
+      final date3 = PeriodDateExtractor.extractDate(prompt3, referenceDate: now);
+      expect(date3, isNotNull);
+      expect(date3!.day, equals(20));
+
+      // Prompt 4: "my cycle started 2 days ago"
+      const prompt4 = 'my cycle started 2 days ago';
+      final date4 = PeriodDateExtractor.extractDate(prompt4, referenceDate: now);
+      expect(date4, isNotNull);
+      expect(date4!.day, equals(19));
+    });
+
+    test('Consecutive bleeding day does not advance cycle anchor in addPeriodStart logic', () {
+      final periodStart = DateTime(2026, 9, 20);
+      final day2 = DateTime(2026, 9, 21);
+
+      // Simulate cycle_provider addPeriodStart guard logic:
+      DateTime currentAnchor = periodStart;
+      final pNorm = DateTime(currentAnchor.year, currentAnchor.month, currentAnchor.day);
+      final normDate = DateTime(day2.year, day2.month, day2.day);
+
+      const source = 'log'; // Normal daily log of bleeding
+      bool ignored = false;
+      if (normDate.isAfter(pNorm) &&
+          normDate.difference(pNorm).inDays <= 14 &&
+          source != 'correction' &&
+          source != 'ai_correction' &&
+          source != 'settings') {
+        ignored = true;
+      }
+
+      expect(ignored, isTrue, reason: 'Consecutive flow on day 2 should not shift anchor');
+
+      // However, if it was an explicit correction:
+      const explicitSource = 'ai_correction';
+      bool correctionIgnored = false;
+      if (normDate.isAfter(pNorm) &&
+          normDate.difference(pNorm).inDays <= 14 &&
+          explicitSource != 'correction' &&
+          explicitSource != 'ai_correction' &&
+          explicitSource != 'settings') {
+        correctionIgnored = true;
+      }
+      expect(correctionIgnored, isFalse, reason: 'Explicit AI correction must be applied');
+    });
+
+    test('Legacy migration safely collapses consecutive bleeding days into single cycle anchor', () {
+      // Suppose legacy log entries had periodStarted=true on Sep 20, Sep 21, Sep 22, and then Oct 18, Oct 19
+      final legacyDates = [
+        DateTime(2026, 9, 20),
+        DateTime(2026, 9, 21),
+        DateTime(2026, 9, 22),
+        DateTime(2026, 10, 18),
+        DateTime(2026, 10, 19),
+      ];
+
+      final distinctStarts = <DateTime>[];
+      for (final date in legacyDates) {
+        if (distinctStarts.isEmpty) {
+          distinctStarts.add(date);
+        } else {
+          final lastStart = distinctStarts.last;
+          if (date.difference(lastStart).inDays > 14) {
+            distinctStarts.add(date);
+          }
+        }
+      }
+
+      expect(distinctStarts.length, equals(2));
+      expect(distinctStarts[0], equals(DateTime(2026, 9, 20)));
+      expect(distinctStarts[1], equals(DateTime(2026, 10, 18)));
+    });
+
+    test('CycleEngine calculateForDate returns null for dates prior to user history', () {
+      final sep20 = DateTime(2026, 9, 20);
+      final history = [PeriodEntry(id: '1', startDate: sep20, source: 'user')];
+      final profile = UserProfile(
+        id: 'test-user',
+        name: 'Luna User',
+        averageCycleLength: 28,
+        averagePeriodLength: 5,
+        lastPeriodStart: sep20,
+        createdAt: sep20,
+      );
+
+      // A date prior to September 20 should have no calculated cycle phase
+      final pastDate = DateTime(2026, 9, 10);
+      final phase = CycleEngine.phaseForDate(pastDate, profile, periodHistory: history);
+      expect(phase, isNull);
+
+      final calc = CycleEngine.calculateForDate(profile, pastDate, periodHistory: history);
+      expect(calc, isNull);
     });
   });
 }

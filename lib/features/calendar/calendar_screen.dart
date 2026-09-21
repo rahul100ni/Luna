@@ -522,8 +522,8 @@ class _CalendarGrid extends StatelessWidget {
               periodHistory: periodHistory,
               isCycleLengthUnknown: isCycleLengthUnknown,
             )
-          : CyclePhase.follicular;
-      final phaseColor = _phaseColor(phase);
+          : null;
+      final phaseColor = phase != null ? _phaseColor(phase) : colors.accent.withValues(alpha: 0.3);
       final isMenstrual = hasAnchor && (phase == CyclePhase.menstrual || isConfirmedStart);
       final isOvulation = hasAnchor && phase == CyclePhase.ovulatory && !isConfirmedStart;
 
@@ -603,7 +603,7 @@ class _CalendarGrid extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (hasAnchor)
+                  if (hasAnchor && phase != null)
                     Container(
                       width: 4.5,
                       height: 4.5,
@@ -692,29 +692,33 @@ class _SelectedDayCard extends ConsumerWidget {
       }
     }
 
-    final phase = state?.phase ?? CyclePhase.follicular;
-    final phaseInfo = PhaseConstants.getPhaseInfo(phase);
+    final phase = state?.phase;
+    final phaseInfo = phase != null ? PhaseConstants.getPhaseInfo(phase) : null;
 
     Color phaseAccent;
-    switch (phase) {
-      case CyclePhase.menstrual:
-        phaseAccent = const Color(0xFFD94F6E);
-        break;
-      case CyclePhase.follicular:
-        phaseAccent = const Color(0xFF4CAF87);
-        break;
-      case CyclePhase.ovulatory:
-        phaseAccent = const Color(0xFFF2B43A);
-        break;
-      case CyclePhase.earlyLuteal:
-        phaseAccent = const Color(0xFFE8A87C);
-        break;
-      case CyclePhase.lateLuteal:
-        phaseAccent = const Color(0xFF9B84D4);
-        break;
+    if (phase != null) {
+      switch (phase) {
+        case CyclePhase.menstrual:
+          phaseAccent = const Color(0xFFD94F6E);
+          break;
+        case CyclePhase.follicular:
+          phaseAccent = const Color(0xFF4CAF87);
+          break;
+        case CyclePhase.ovulatory:
+          phaseAccent = const Color(0xFFF2B43A);
+          break;
+        case CyclePhase.earlyLuteal:
+          phaseAccent = const Color(0xFFE8A87C);
+          break;
+        case CyclePhase.lateLuteal:
+          phaseAccent = const Color(0xFF9B84D4);
+          break;
+      }
+    } else {
+      phaseAccent = colors.accent;
     }
     final dayNumber = state?.dayOfCycle ?? 0;
-    final dayGuidance = CycleDailyIntelligence.getGuidance(dayNumber, phase);
+    final dayGuidance = phase != null ? CycleDailyIntelligence.getGuidance(dayNumber, phase) : null;
 
     final isConfirmedStart = CycleEngine.isConfirmedPeriodStart(selectedDay, periodHistory);
     final anchor = profile.lastPeriodStart;
@@ -770,27 +774,27 @@ class _SelectedDayCard extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
                 decoration: BoxDecoration(
-                  color: (hasAnchor ? phaseAccent : colors.accent).withValues(alpha: 0.15),
+                  color: (hasAnchor && phase != null ? phaseAccent : colors.accent).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: (hasAnchor ? phaseAccent : colors.accent).withValues(alpha: 0.25),
+                    color: (hasAnchor && phase != null ? phaseAccent : colors.accent).withValues(alpha: 0.25),
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(hasAnchor ? phaseInfo.emoji : '✨', style: const TextStyle(fontSize: 12)),
+                    Text(phaseInfo != null ? phaseInfo.emoji : '✨', style: const TextStyle(fontSize: 12)),
                     const SizedBox(width: 5),
                     Text(
-                      hasAnchor
+                      phaseInfo != null
                           ? (isFuture
                               ? 'Est. ${phaseInfo.name}'
                               : '${phaseInfo.name} · Day ${state?.dayOfCycle ?? 0}')
-                          : 'Day View',
+                          : (hasAnchor ? 'Unrecorded Cycle' : 'Day View'),
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: hasAnchor ? phaseAccent : colors.accent,
+                        color: hasAnchor && phase != null ? phaseAccent : colors.accent,
                       ),
                     ),
                   ],
@@ -980,7 +984,7 @@ class _SelectedDayCard extends ConsumerWidget {
           ],
 
           // ── Biological Attunement / Foresight ───────────────────────────
-          if (!hasAnchor) ...[
+          if (!hasAnchor || state == null || dayGuidance == null) ...[
             Text(
               'Cycle Blueprint',
               style: GoogleFonts.cormorantGaramond(
@@ -991,7 +995,9 @@ class _SelectedDayCard extends ConsumerWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              'No cycle anchor recorded yet. Mark your period start date to unlock hormonal guidance and accurate rhythm predictions.',
+              hasAnchor
+                  ? 'This date is before your earliest recorded cycle. Record a log or period start to track this date.'
+                  : 'No cycle anchor recorded yet. Mark your period start date to unlock hormonal guidance and accurate rhythm predictions.',
               style: GoogleFonts.dmSans(
                 fontSize: 12,
                 color: colors.onSurface.withValues(alpha: 0.5),
@@ -1020,7 +1026,7 @@ class _SelectedDayCard extends ConsumerWidget {
             const SizedBox(height: 12),
           ] else ...[
             Text(
-              isFuture ? 'Predicted ${phaseInfo.name} Window' : dayGuidance.dayHighlight,
+              isFuture ? 'Predicted ${phaseInfo!.name} Window' : dayGuidance.dayHighlight,
               style: GoogleFonts.cormorantGaramond(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -1175,7 +1181,7 @@ class _SelectedDayCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-              if (!isConfirmedStart)
+              if (!isConfirmedStart && !isInPeriodDays)
                 GestureDetector(
                   onTap: () async {
                     await ref.read(periodHistoryProvider.notifier).addPeriodStart(selectedDay, source: 'calendar');
@@ -1241,7 +1247,7 @@ class _SelectedDayCard extends ConsumerWidget {
                               Icon(Icons.edit_calendar_rounded, size: 13, color: colors.accent),
                               const SizedBox(width: 5),
                               Text(
-                                'Record Past Log',
+                                isInPeriodDays ? 'Record Day Flow' : 'Record Past Log',
                                 style: GoogleFonts.dmSans(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w700,
@@ -1253,54 +1259,56 @@ class _SelectedDayCard extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () async {
-                          await ref.read(periodHistoryProvider.notifier).addPeriodStart(selectedDay, source: 'calendar');
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Period start recorded: ${DateFormat('MMMM d').format(selectedDay)} 🩸',
-                                  style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+                    if (!isInPeriodDays) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            await ref.read(periodHistoryProvider.notifier).addPeriodStart(selectedDay, source: 'calendar');
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Period start recorded: ${DateFormat('MMMM d').format(selectedDay)} 🩸',
+                                    style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+                                  ),
+                                  backgroundColor: const Color(0xFF2A1F3D),
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
-                                backgroundColor: const Color(0xFF2A1F3D),
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(seconds: 2),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            );
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFD94F6E).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.25)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text('🩸', style: TextStyle(fontSize: 11)),
-                              const SizedBox(width: 5),
-                              Text(
-                                'Period Start',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: colors.accent,
+                              );
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD94F6E).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.25)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text('🩸', style: TextStyle(fontSize: 11)),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Period Start',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: colors.accent,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 )
-              else if (!isConfirmedStart)
+              else if (!isConfirmedStart && !isInPeriodDays)
                 GestureDetector(
                   onTap: () async {
                     await ref.read(periodHistoryProvider.notifier).addPeriodStart(selectedDay, source: 'calendar');

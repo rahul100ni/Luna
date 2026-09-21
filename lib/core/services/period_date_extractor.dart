@@ -45,19 +45,22 @@ class PeriodDateExtractor {
     'sun': DateTime.sunday,
   };
 
+  /// Checks whether text contains period, bleeding, or cycle adjustment context.
+  static bool hasPeriodContext(String text) {
+    final lower = text.toLowerCase().trim();
+    return RegExp(
+      r'\b(period|cycle|bleed|bleeding|started|start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here|day\s*1)\b',
+      caseSensitive: false,
+    ).hasMatch(lower);
+  }
+
   /// Extracts a period start date from conversational user text.
   /// Returns null if no period-related date intent is found.
   static DateTime? extractDate(String text, {DateTime? referenceDate}) {
     final now = referenceDate ?? DateTime.now();
     final lower = text.toLowerCase().trim();
 
-    // Context check: Must be related to period, bleeding, or cycle date adjustment
-    final hasPeriodContext = RegExp(
-      r'\b(period|cycle|bleed|bleeding|started|start\s*date|change\s*date|fix\s*date|update\s*date|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here)\b',
-      caseSensitive: false,
-    ).hasMatch(lower);
-
-    if (!hasPeriodContext) return null;
+    if (!hasPeriodContext(text)) return null;
 
     // 1. Relative: day before yesterday
     if (RegExp(r'\b(day\s+before\s+yesterday)\b').hasMatch(lower)) {
@@ -115,41 +118,43 @@ class PeriodDateExtractor {
       }
     }
 
-    // 7. Pattern: Month Name + Day (e.g. "Sep 18", "September 18th", "August 20")
+    // 7. Pattern: Month Name + Day + optional Year (e.g. "Sep 18", "September 18th", "September 20th 2026")
     final monthDayMatch = RegExp(
-      r'\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?\b',
+      r'\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b',
     ).firstMatch(lower);
 
     if (monthDayMatch != null) {
       final mStr = monthDayMatch.group(1)!;
       final dStr = monthDayMatch.group(2)!;
+      final yStr = monthDayMatch.group(3);
       final m = _monthMap[mStr];
       final d = int.tryParse(dStr);
       if (m != null && d != null && d >= 1 && d <= 31) {
-        int y = now.year;
+        int y = yStr != null ? (int.tryParse(yStr) ?? now.year) : now.year;
         DateTime candidate = DateTime(y, m, d);
-        if (candidate.isAfter(now)) {
-          // If candidate is in the future, it was from last year
+        if (yStr == null && candidate.isAfter(now)) {
+          // If candidate is in the future and no explicit year given, it was from last year
           candidate = DateTime(y - 1, m, d);
         }
         return candidate;
       }
     }
 
-    // 8. Pattern: Day + Month Name (e.g. "18th September", "18th of Sep", "20 August")
+    // 8. Pattern: Day + Month Name + optional Year (e.g. "18th September", "20th september 2026")
     final dayMonthMatch = RegExp(
-      r'\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b',
+      r'\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s*,?\s*(\d{4}))?\b',
     ).firstMatch(lower);
 
     if (dayMonthMatch != null) {
       final dStr = dayMonthMatch.group(1)!;
       final mStr = dayMonthMatch.group(2)!;
+      final yStr = dayMonthMatch.group(3);
       final m = _monthMap[mStr];
       final d = int.tryParse(dStr);
       if (m != null && d != null && d >= 1 && d <= 31) {
-        int y = now.year;
+        int y = yStr != null ? (int.tryParse(yStr) ?? now.year) : now.year;
         DateTime candidate = DateTime(y, m, d);
-        if (candidate.isAfter(now)) {
+        if (yStr == null && candidate.isAfter(now)) {
           candidate = DateTime(y - 1, m, d);
         }
         return candidate;
@@ -196,6 +201,16 @@ class PeriodDateExtractor {
     }
 
     return null;
+  }
+
+  /// Checks if user text is an explicit direct command to set or correct period/cycle start date,
+  /// meaning it should be applied immediately without requiring a secondary confirmation dialog.
+  static bool isDirectCorrectionCommand(String text) {
+    final lower = text.toLowerCase().trim();
+    return RegExp(
+      r'\b(update|change|fix|redo|make|set|started\s+on|started|was\s+on|not\s+\d+|day\s*1)\b',
+      caseSensitive: false,
+    ).hasMatch(lower);
   }
 
   /// Checks if user text is confirming a pending date question

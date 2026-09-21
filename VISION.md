@@ -272,7 +272,26 @@ Luna speaks like a friend who also happens to have a medical degree and actually
 
 ### Cycle Phase Colours
 
-Each phase must have a distinct, thoughtfully chosen colour palette that feels right for that phase emotionally and scientifically. No phase shares another's palette. The neutral (no-data) state has its own identity — periwinkle slate. Menstruation is warm coral and rose.
+Each phase must have a distinct, thoughtfully chosen colour palette that feels right for that phase emotionally and scientifically. No phase shares another's palette. The neutral (no-data) state has its own identity: periwinkle slate. Menstruation is warm coral and rose.
+
+---
+
+## Pillar Nine: Sacred Data Integrity & Backward Compatibility
+
+### Her History Is Permanent and Sacred
+
+A woman's cycle history is deeply personal medical and emotional memory. No update to Luna shall ever corrupt, invalidate, wipe out, or misinterpret historical user data.
+
+### Non-Negotiable Rules of Data Integrity
+
+1. **Lossless Legacy Schema Migrations:**
+   Whenever the database schema evolves, all historical data from legacy tables (including legacy `log_entries` where `periodStarted == 1` or historical bleeding dates) must be automatically and losslessly migrated into modern cycle stores on the very first launch.
+2. **Never Break History on Upgrade:**
+   Updating the app must never cause past months or calendar dates to lose their phase history, reset their anchors, or default to arbitrary phases (such as Follicular). The calendar must faithfully reflect every recorded period start across all time.
+3. **Consecutive Flow Is Not a Period Start:**
+   A period is a multi-day biological rhythm. Tracking flow (Light, Medium, Heavy) on Day 2, 3, or 4 of an active menstrual phase must NEVER overwrite or advance the cycle start date (Day 1). Day 1 is sacred and only moves when explicitly corrected by the user.
+4. **Zero Accidental Overwriting:**
+   The single source of truth must prevent background mechanisms from silently modifying or resetting past period entries. Corrections require explicit intent.
 
 ---
 

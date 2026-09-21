@@ -110,7 +110,8 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
           if (existing.notes != null) {
             _notesController.text = existing.notes!;
           }
-          _periodAlreadyLoggedToday = existing.periodStarted || isAnchoredTarget;
+          // Strictly true only if this target date is the true anchored cycle start
+          _periodAlreadyLoggedToday = isAnchoredTarget;
           _periodStarted = _periodAlreadyLoggedToday;
         });
       } else if (isAnchoredTarget) {
@@ -172,6 +173,20 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
 
     try {
       final entryId = _existingEntryId ?? const Uuid().v4();
+      final profile = ref.read(profileProvider);
+      final lastPeriod = profile?.lastPeriodStart;
+      final daysSinceAnchor = lastPeriod != null
+          ? _targetDate.calendarDaysDifference(lastPeriod)
+          : null;
+
+      // An active flow creates a new cycle start ONLY if no active cycle anchor exists
+      // or if the previous period start was >= 14 days ago (brand new cycle).
+      // Consecutive bleeding days (Day 2..13) are ongoing flow, NOT a new cycle start! (VISION Pillar Nine)
+      final isNewCycleStartFromFlow =
+          _flow != null && (daysSinceAnchor == null || daysSinceAnchor >= 14);
+
+      final shouldMarkPeriodStarted = _periodStarted || isNewCycleStartFromFlow;
+
       final entry = LogEntry(
         id: entryId,
         date: _targetDate,
@@ -182,12 +197,12 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
         sleepQuality: _sleep,
         symptoms: _symptoms,
         notes: _notesController.text.isEmpty ? null : _notesController.text,
-        periodStarted: _periodStarted || _flow != null,
+        periodStarted: shouldMarkPeriodStarted,
       );
       await ref.read(logEntriesProvider.notifier).addEntry(entry);
 
-      // Update cycle anchor and history when period started is marked or active flow logged
-      if (_periodStarted || _flow != null) {
+      // Update cycle anchor and history ONLY when explicitly marked or a genuine new cycle starts
+      if (shouldMarkPeriodStarted) {
         await ref.read(periodHistoryProvider.notifier).addPeriodStart(
           _targetDate,
           source: 'logged',
@@ -518,7 +533,10 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
     // and hasn't toggled it today.
     final lastPeriod = profile?.lastPeriodStart;
     final now = DateTime.now();
-    final daysSinceAnchor = lastPeriod != null ? now.calendarDaysDifference(lastPeriod) : null;
+    final isToday = _targetDate.year == now.year &&
+        _targetDate.month == now.month &&
+        _targetDate.day == now.day;
+    final daysSinceAnchor = lastPeriod != null ? _targetDate.calendarDaysDifference(lastPeriod) : null;
     final periodLength = profile?.averagePeriodLength ?? 5;
     final isMidPeriodDay2Plus = daysSinceAnchor != null &&
         daysSinceAnchor >= 1 &&
@@ -759,8 +777,8 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                                   Expanded(
                                     child: Text(
                                       _periodStarted
-                                          ? 'Period started today'
-                                          : 'My period started today',
+                                          ? (isToday ? 'Period started today' : 'Period started on this day')
+                                          : (isToday ? 'My period started today' : 'My period started on this day'),
                                       style: GoogleFonts.dmSans(
                                         fontSize: 13.5,
                                         fontWeight: _periodStarted ? FontWeight.w600 : FontWeight.w500,

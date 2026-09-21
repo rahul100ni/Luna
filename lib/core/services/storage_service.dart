@@ -87,6 +87,8 @@ class StorageService {
             )
           ''');
         } catch (_) {}
+        // Automatic lossless migration of legacy period starts from log_entries (VISION Pillar Nine)
+        await migrateLegacyPeriodStarts();
       }
     } catch (e) {
       _db = null;
@@ -348,6 +350,63 @@ class StorageService {
     if (_db == null) return;
     try {
       await _db!.delete('period_history');
+    } catch (_) {}
+  }
+
+  /// Lossless migration of historical cycle starts from legacy log_entries into period_history.
+  /// Enforces VISION.md Pillar Nine: Her history is sacred and must never be lost across app updates.
+  static Future<void> migrateLegacyPeriodStarts() async {
+    if (_db == null) return;
+    try {
+      // Find all log entries that have periodStarted = 1 or true
+      final legacyRows = await _db!.rawQuery('''
+        SELECT date FROM log_entries 
+        WHERE periodStarted = 1 OR periodStarted = 'true'
+        ORDER BY date ASC
+      ''');
+
+      if (legacyRows.isEmpty) return;
+
+      // Fetch existing period_history start dates normalized to YYYY-MM-DD
+      final existingRows = await _db!.rawQuery('SELECT start_date FROM period_history');
+      final existingDateStrs = <String>{};
+      for (final r in existingRows) {
+        final s = r['start_date'] as String?;
+        if (s != null && s.length >= 10) {
+          existingDateStrs.add(s.substring(0, 10));
+        }
+      }
+
+      // Group consecutive bleeding days within 14 days so we only insert the TRUE Day 1 of each cycle
+      DateTime? lastCycleStart;
+      for (final row in legacyRows) {
+        final dStr = row['date'] as String?;
+        if (dStr == null) continue;
+        final d = DateTime.tryParse(dStr);
+        if (d == null) continue;
+        final normDate = DateTime(d.year, d.month, d.day);
+        final dateKey = normDate.toIso8601String().substring(0, 10);
+
+        // If this date is already within 14 days of an existing cycle start, it is Day 2+ of that cycle
+        if (lastCycleStart != null && normDate.difference(lastCycleStart).inDays.abs() < 14) {
+          continue;
+        }
+
+        lastCycleStart = normDate;
+        if (!existingDateStrs.contains(dateKey)) {
+          final id = 'legacy_${normDate.millisecondsSinceEpoch}';
+          await _db!.insert(
+            'period_history',
+            {
+              'id': id,
+              'start_date': normDate.toIso8601String(),
+              'source': 'legacy_log',
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+          existingDateStrs.add(dateKey);
+        }
+      }
     } catch (_) {}
   }
 

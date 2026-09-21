@@ -76,6 +76,7 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
   }
 
   Future<void> _load() async {
+    await StorageService.migrateLegacyPeriodStarts();
     state = await StorageService.getPeriodHistory();
     _isLoaded = true;
 
@@ -115,15 +116,31 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     }
 
     // Check if there is an existing entry within 14 days
-    // Biological human cycles cannot be < 14 days. If someone logs a period date within 14 days
-    // of an existing period start, it's a correction of that cycle start date!
+    // Biological human cycles cannot be < 14 days.
     final nearby = state.where((p) {
       final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
       return (pNorm.difference(normDate).inDays.abs()) < 14;
     }).firstOrNull;
 
     if (nearby != null) {
-      await editPeriodEntry(nearby.id, normDate);
+      final pNorm = DateTime(nearby.startDate.year, nearby.startDate.month, nearby.startDate.day);
+      final isExplicitCorrection = source == 'correction' ||
+          source == 'ai_correction' ||
+          source == 'settings';
+
+      if (isExplicitCorrection) {
+        await editPeriodEntry(nearby.id, normDate);
+        return;
+      }
+
+      // If user marks an earlier date (e.g. correcting start date backwards from 21st to 20th)
+      if (normDate.isBefore(pNorm)) {
+        await editPeriodEntry(nearby.id, normDate);
+        return;
+      }
+
+      // If normDate is after an existing period start within 14 days, it is consecutive bleeding / Day 2+
+      // It must NEVER overwrite or push forward Day 1 of the period! (VISION Pillar Nine)
       return;
     }
 

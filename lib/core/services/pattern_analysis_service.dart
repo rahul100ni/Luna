@@ -92,7 +92,9 @@ class PatternAnalysisService {
         energyCount++;
       }
       final phase = CycleEngine.phaseForDate(log.date, profile, periodHistory: periodHistory);
-      phaseLogs[phase]?.add(log);
+      if (phase != null) {
+        phaseLogs[phase]?.add(log);
+      }
 
       // Estimate cycle day if anchor exists
       if (profile.lastPeriodStart != null) {
