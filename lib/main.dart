@@ -89,7 +89,7 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/luna',
-      pageBuilder: (_, __) => const MaterialPage(child: LunaAiScreen()),
+      pageBuilder: (_, __) => const NoTransitionPage(child: LunaAiScreen()),
     ),
     GoRoute(
       path: '/knowledge',
@@ -103,7 +103,10 @@ final _router = GoRouter(
     // Pushable modal / utility screens
     GoRoute(
       path: '/log',
-      pageBuilder: (_, __) => const MaterialPage(child: LogScreen()),
+      pageBuilder: (_, state) {
+        final date = state.extra as DateTime?;
+        return NoTransitionPage(child: LogScreen(initialDate: date));
+      },
     ),
     GoRoute(
       path: '/comfort',

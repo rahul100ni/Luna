@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
@@ -16,19 +17,32 @@ class KnowledgeScreen extends ConsumerStatefulWidget {
 }
 
 class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  @override
+  Future<bool> didPopRoute() async {
+    if (!mounted) return false;
+    if (context.canPop()) {
+      context.pop();
+      return true;
+    }
+    context.go('/home');
+    return true;
   }
 
   @override

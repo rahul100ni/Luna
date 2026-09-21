@@ -10,7 +10,29 @@ import '../../core/models/luna_memory_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/deepseek_service.dart';
+import '../../core/services/period_date_extractor.dart';
 import '../../core/services/storage_service.dart';
+import '../../shared/widgets/bottom_nav.dart';
+
+String _monthName(int m) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (m >= 1 && m <= 12) return months[m - 1];
+  return '';
+}
+
+String _formatPeriodDate(DateTime d) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final target = DateTime(d.year, d.month, d.day);
+  final diff = today.difference(target).inDays;
+  if (diff == 0) return 'today (${_monthName(d.month)} ${d.day})';
+  if (diff == 1) return 'yesterday (${_monthName(d.month)} ${d.day})';
+  if (diff == 2) return '2 days ago (${_monthName(d.month)} ${d.day})';
+  if (d.year == now.year) {
+    return '${_monthName(d.month)} ${d.day}';
+  }
+  return '${_monthName(d.month)} ${d.day}, ${d.year}';
+}
 
 class LunaAiScreen extends ConsumerStatefulWidget {
   const LunaAiScreen({super.key});
@@ -20,7 +42,26 @@ class LunaAiScreen extends ConsumerStatefulWidget {
 }
 
 class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+
+  @override
+  Future<bool> didPopRoute() async {
+    if (!mounted) return false;
+    if (_chatMode) {
+      setState(() {
+        _chatMode = false;
+        _chatLoading = false;
+      });
+      return true;
+    }
+    if (context.canPop()) {
+      context.pop();
+      return true;
+    }
+    context.go('/home');
+    return true;
+  }
+
   MoodLevel? _selectedMood;
   final Set<String> _selectedSymptoms = {};
   final _textController = TextEditingController();
@@ -36,6 +77,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   bool _isCheckInLogExpanded = false;
   final Set<int> _expandedChatLogIndices = {};
   List<_ChatMessage> _chatHistory = [];
+  DateTime? _pendingPeriodDate;
   late AnimationController _pulseController;
 
   static const List<String> _quickSymptoms = [
@@ -54,6 +96,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -77,10 +120,18 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final raw = StorageService.getLastChatSession();
     if (raw.isNotEmpty) {
       try {
+        final messages = raw.map(_ChatMessage.fromMap).toList();
+        DateTime? pending;
+        for (int i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].pendingPeriodDate != null &&
+              messages[i].periodDateConfirmed == null) {
+            pending = messages[i].pendingPeriodDate;
+            break;
+          }
+        }
         setState(() {
-          _chatHistory = raw.map(_ChatMessage.fromMap).toList();
-          // If there's a persisted chat history, jump straight to chat mode
-          if (_chatHistory.isNotEmpty) _chatMode = true;
+          _chatHistory = messages;
+          _pendingPeriodDate = pending;
         });
       } catch (_) {}
     }
@@ -93,6 +144,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _textController.dispose();
     _chatController.dispose();
     _scrollController.dispose();
@@ -210,12 +262,104 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     _scrollToBottom();
   }
 
+  Future<void> _confirmPeriodDateUpdate(DateTime date, [int? msgIndex]) async {
+    await ref.read(periodHistoryProvider.notifier).updatePeriodStart(date);
+
+    final currentToday = ref.read(todayLogProvider);
+    final now = DateTime.now();
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
+    if (!isToday && currentToday?.periodStarted == true) {
+      final updatedToday = currentToday!.copyWith(periodStarted: false);
+      await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+    }
+
+    setState(() {
+      if (msgIndex != null && msgIndex < _chatHistory.length) {
+        _chatHistory[msgIndex] =
+            _chatHistory[msgIndex].copyWith(periodDateConfirmed: true);
+      } else {
+        for (int i = _chatHistory.length - 1; i >= 0; i--) {
+          if (_chatHistory[i].pendingPeriodDate != null &&
+              _chatHistory[i].periodDateConfirmed == null) {
+            _chatHistory[i] =
+                _chatHistory[i].copyWith(periodDateConfirmed: true);
+            break;
+          }
+        }
+      }
+      final dateStr = _formatPeriodDate(date);
+      _chatHistory.add(
+        _ChatMessage(
+          text:
+              'Done! I\'ve updated your period start date to $dateStr. Your cycle days and phase calculations are now aligned 🌙',
+          isUser: false,
+          time: DateTime.now(),
+        ),
+      );
+      _pendingPeriodDate = null;
+    });
+
+    _persistChatHistory();
+    _scrollToBottom();
+  }
+
+  Future<void> _rejectPeriodDateUpdate([int? msgIndex]) async {
+    setState(() {
+      if (msgIndex != null && msgIndex < _chatHistory.length) {
+        _chatHistory[msgIndex] =
+            _chatHistory[msgIndex].copyWith(periodDateConfirmed: false);
+      } else {
+        for (int i = _chatHistory.length - 1; i >= 0; i--) {
+          if (_chatHistory[i].pendingPeriodDate != null &&
+              _chatHistory[i].periodDateConfirmed == null) {
+            _chatHistory[i] =
+                _chatHistory[i].copyWith(periodDateConfirmed: false);
+            break;
+          }
+        }
+      }
+      _chatHistory.add(
+        _ChatMessage(
+          text: 'Understood, I\'ve kept your cycle dates as they were.',
+          isUser: false,
+          time: DateTime.now(),
+        ),
+      );
+      _pendingPeriodDate = null;
+    });
+
+    _persistChatHistory();
+    _scrollToBottom();
+  }
+
   Future<void> _sendChatMessage([String? prefilledText]) async {
     final text = prefilledText ?? _chatController.text.trim();
     if (text.isEmpty || _chatLoading) return;
     if (prefilledText == null) {
       _chatController.clear();
     }
+
+    // ── Pending Date Confirmation Interception ─────────────────────────────
+    if (_pendingPeriodDate != null) {
+      if (PeriodDateExtractor.isConfirmation(text)) {
+        setState(() {
+          _chatHistory.add(
+              _ChatMessage(text: text, isUser: true, time: DateTime.now()));
+        });
+        await _confirmPeriodDateUpdate(_pendingPeriodDate!);
+        return;
+      } else if (PeriodDateExtractor.isCancellation(text)) {
+        setState(() {
+          _chatHistory.add(
+              _ChatMessage(text: text, isUser: true, time: DateTime.now()));
+        });
+        await _rejectPeriodDateUpdate();
+        return;
+      }
+    }
+
+    final requestedPeriodDate = PeriodDateExtractor.extractDate(text);
 
     setState(() {
       _chatHistory.add(
@@ -271,12 +415,31 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final autoLogSummary = await _processAutoLog(
       rawAiLog: rawLog,
       userText: text,
+      hasSpecificDateRequest: requestedPeriodDate != null,
     );
 
     // Safety clean: strip any dangling [LOG:... or trailing brackets from text
     cleanResponse =
         cleanResponse.replaceAll(RegExp(r'\s*\[LOG:[^\]]*\]?'), '').trim();
     cleanResponse = cleanResponse.replaceAll(RegExp(r'\]+$'), '').trim();
+
+    if (requestedPeriodDate != null) {
+      // Supersede any older pending confirmation cards in history
+      for (int i = 0; i < _chatHistory.length; i++) {
+        if (_chatHistory[i].pendingPeriodDate != null &&
+            _chatHistory[i].periodDateConfirmed == null) {
+          _chatHistory[i] =
+              _chatHistory[i].copyWith(periodDateConfirmed: false);
+        }
+      }
+      _pendingPeriodDate = requestedPeriodDate;
+      final dateStr = _formatPeriodDate(requestedPeriodDate);
+      final lower = cleanResponse.toLowerCase();
+      if (!lower.contains('?') && !lower.contains(dateStr.toLowerCase())) {
+        cleanResponse +=
+            '\n\nWould you like me to update your period start date to $dateStr?';
+      }
+    }
 
     setState(() {
       _chatHistory.add(
@@ -285,6 +448,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           isUser: false,
           time: DateTime.now(),
           autoLogNote: autoLogSummary,
+          pendingPeriodDate: requestedPeriodDate,
         ),
       );
       _chatLoading = false;
@@ -302,6 +466,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     required String userText,
     MoodLevel? fallbackMood,
     List<String>? fallbackSymptoms,
+    bool hasSpecificDateRequest = false,
   }) async {
     bool? detectedPeriodStarted;
     FlowLevel? detectedFlow;
@@ -635,13 +800,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     // 4. CRITICAL BIOLOGICAL MANDATE:
-    // Menstrual flow strictly implies period has started!
-    if (detectedFlow != null) {
+    // If the user has a specific past date request, NEVER infer period started or flow for today!
+    if (hasSpecificDateRequest) {
+      detectedPeriodStarted = false;
+      detectedFlow = null;
+    } else if (detectedFlow != null) {
+      // Menstrual flow strictly implies period has started (for today only)
       detectedPeriodStarted = true;
     }
 
-    // 5. Execute period start anchor if detected
-    if (detectedPeriodStarted == true) {
+    // 5. Execute period start anchor if detected (only when no specific past date requested)
+    if (detectedPeriodStarted == true && !hasSpecificDateRequest) {
       final now = DateTime.now();
       await ref.read(periodHistoryProvider.notifier).addPeriodStart(now, source: 'ai');
     }
@@ -658,23 +827,54 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       );
     }
 
-    // 7. Save to LogEntry if ANY biomarker exists
-    if (detectedPeriodStarted == true ||
-        detectedFlow != null ||
-        detectedCramps != null ||
-        detectedMood != null ||
-        detectedEnergy != null ||
-        detectedSleep != null ||
-        (detectedNotes != null && detectedNotes.isNotEmpty) ||
-        detectedSymptoms.isNotEmpty) {
-      final currentToday = ref.read(todayLogProvider);
-      final entryId = currentToday?.id ?? const Uuid().v4();
-      final updatedSymptoms = {
-        ...?currentToday?.symptoms,
-        ...detectedSymptoms
-      }.toList();
+    // 7. DIFFING ENGINE (VISION Pillar One, Two & Three):
+    // Only treat biomarkers as NEW if they actually differ from what was ALREADY logged today!
+    final currentToday = ref.read(todayLogProvider);
 
-      final updatedNotes = detectedNotes != null && detectedNotes.isNotEmpty
+    final isNewMood = detectedMood != null && detectedMood != currentToday?.mood;
+    final isNewEnergy = detectedEnergy != null && detectedEnergy != currentToday?.energyLevel;
+    final isNewSleep = detectedSleep != null && detectedSleep != currentToday?.sleepQuality;
+    final isNewFlow = detectedFlow != null && detectedFlow != currentToday?.flow && !hasSpecificDateRequest;
+    final isNewCramps = detectedCramps != null &&
+        detectedCramps != CrampLevel.none &&
+        detectedCramps != currentToday?.cramps;
+    final isNewPeriodStarted = detectedPeriodStarted == true &&
+        !hasSpecificDateRequest &&
+        (currentToday?.periodStarted != true);
+
+    final existingSymptoms =
+        LogEntry.canonicalizeSymptoms(currentToday?.symptoms ?? []);
+    final newSymptoms = <String>[];
+    for (final s in LogEntry.canonicalizeSymptoms(detectedSymptoms)) {
+      if (!existingSymptoms.contains(s) && !newSymptoms.contains(s)) {
+        newSymptoms.add(s);
+      }
+    }
+
+    final isNewNotes = detectedNotes != null &&
+        detectedNotes.isNotEmpty &&
+        !(currentToday?.notes?.contains(detectedNotes) ?? false);
+
+    final isNewMemory = detectedMemoryNote != null && detectedMemoryNote.isNotEmpty;
+
+    final hasNewData = isNewMood ||
+        isNewEnergy ||
+        isNewSleep ||
+        isNewFlow ||
+        isNewCramps ||
+        isNewPeriodStarted ||
+        newSymptoms.isNotEmpty ||
+        isNewNotes;
+
+    // Save to LogEntry ONLY if there is genuinely new biomarker data
+    if (hasNewData) {
+      final entryId = currentToday?.id ?? const Uuid().v4();
+      final updatedSymptoms = LogEntry.canonicalizeSymptoms({
+        ...?currentToday?.symptoms,
+        ...newSymptoms,
+      });
+
+      final updatedNotes = isNewNotes
           ? (currentToday?.notes != null && currentToday!.notes!.isNotEmpty
               ? '${currentToday.notes} · $detectedNotes'
               : detectedNotes)
@@ -690,62 +890,43 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         cramps: detectedCramps ?? currentToday?.cramps,
         symptoms: updatedSymptoms,
         notes: updatedNotes,
-        periodStarted: (detectedPeriodStarted ?? false) ||
-            (currentToday?.periodStarted ?? false),
+        periodStarted: isNewPeriodStarted || (currentToday?.periodStarted ?? false),
       );
 
       await ref.read(logEntriesProvider.notifier).addEntry(newEntry);
     }
 
-    // 8. Generate summary badge
+    // 8. Generate summary badge ONLY with items that were newly captured in this interaction
     final parts = <String>[];
-    if (detectedPeriodStarted == true) parts.add('Period started 🩸');
-    if (detectedFlow != null) {
+    if (isNewPeriodStarted) {
+      parts.add('Period started 🩸');
+    }
+    if (isNewFlow) {
       parts.add(
           '${detectedFlow.name[0].toUpperCase()}${detectedFlow.name.substring(1)} flow');
     }
-    if (detectedCramps != null && detectedCramps != CrampLevel.none) {
+    if (isNewCramps) {
       parts.add(
           '${detectedCramps.name[0].toUpperCase()}${detectedCramps.name.substring(1)} cramps');
     }
-    if (detectedMood != null) parts.add(detectedMood.label);
-    if (detectedEnergy != null) parts.add('$detectedEnergy/5 energy');
-    if (detectedSleep != null) parts.add('${detectedSleep.label} sleep');
+    if (isNewMood) parts.add(detectedMood.label);
+    if (isNewEnergy) parts.add('$detectedEnergy/5 energy');
+    if (isNewSleep) parts.add('${detectedSleep.label} sleep');
 
-    // Individual, deduplicated symptoms in Title Case
-    final cleanedSymptoms = <String>[];
-    for (final s in detectedSymptoms) {
-      final trimmed = s.trim();
-      if (trimmed.isEmpty) continue;
-      final normalized =
-          trimmed[0].toUpperCase() + trimmed.substring(1).toLowerCase();
-      // Omit redundant symptom if already captured in dedicated flow/cramp badges
-      if (normalized == 'Cramps' &&
-          detectedCramps != null &&
-          detectedCramps != CrampLevel.none) {
-        continue;
-      }
-      if (normalized == 'Period' && detectedPeriodStarted == true) {
-        continue;
-      }
-      if (!cleanedSymptoms
-          .any((existing) => existing.toLowerCase() == normalized.toLowerCase())) {
-        cleanedSymptoms.add(normalized);
-      }
-    }
-    for (final s in cleanedSymptoms) {
+    // Individual, deduplicated canonical symptoms that are newly captured
+    for (final s in newSymptoms) {
+      if (s == 'Cramps' && isNewCramps) continue;
+      if (s == 'Period' && isNewPeriodStarted) continue;
       parts.add(s);
     }
 
     // Discreet memory note indicator (never dump raw paragraphs into chips)
-    if (detectedMemoryNote != null && detectedMemoryNote.isNotEmpty) {
+    if (isNewMemory) {
       parts.add('Remembered 💜');
     }
 
     return parts.isNotEmpty ? parts.join(' · ') : null;
   }
-
-
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -766,80 +947,102 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final cycleState = ref.watch(cycleStateProvider);
     final patternProfile = ref.watch(patternProfileProvider);
 
-    // Chat mode — full-screen chat UI
-    if (_chatMode) {
-      return _buildChatMode(context, colors, profile, cycleState);
-    }
-
-    // Check-in mode
-    return Scaffold(
-      backgroundColor: colors.background,
-      body: Stack(
-        children: [
-          // Ambient glow top-right
-          Positioned(
-            top: -80, right: -60,
-            child: Container(
-              width: 280, height: 280,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [
-                  colors.primary.withValues(alpha: 0.18), Colors.transparent,
-                ]),
-              ),
-            ),
-          ),
-          // Ambient glow bottom-left
-          Positioned(
-            bottom: 100, left: -80,
-            child: Container(
-              width: 220, height: 220,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [
-                  colors.secondary.withValues(alpha: 0.12), Colors.transparent,
-                ]),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.arrow_back_ios_rounded,
-                            color: colors.onSurface.withValues(alpha: 0.5), size: 20),
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/home');
-                          }
-                        },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          if (_chatMode) {
+            setState(() {
+              _chatMode = false;
+              _chatLoading = false;
+            });
+            return;
+          }
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/home');
+          }
+        },
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: _chatMode
+              ? KeyedSubtree(
+                  key: const ValueKey('luna_chat_mode'),
+                  child: _buildChatMode(context, colors, profile, cycleState),
+                )
+              : KeyedSubtree(
+                  key: const ValueKey('luna_checkin_mode'),
+                  child: Scaffold(
+              backgroundColor: colors.background,
+              body: Stack(
+                children: [
+                  // Ambient glow top-right
+                  Positioned(
+                    top: -80, right: -60,
+                    child: Container(
+                      width: 280, height: 280,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(colors: [
+                          colors.primary.withValues(alpha: 0.18), Colors.transparent,
+                        ]),
                       ),
-                      const Spacer(),
-                      Column(children: [
-                        Text('🌙 Luna',
-                            style: GoogleFonts.cormorantGaramond(
-                                fontSize: 22, fontWeight: FontWeight.w700, color: colors.onSurface)),
-                        Text('Your companion',
-                            style: GoogleFonts.dmSans(
-                                fontSize: 11, color: colors.onSurface.withValues(alpha: 0.4), letterSpacing: 0.5)),
-                      ]),
-                      const Spacer(),
-                      const SizedBox(width: 48),
-                    ],
+                    ),
                   ),
-                ),
+                  // Ambient glow bottom-left
+                  Positioned(
+                    bottom: 100, left: -80,
+                    child: Container(
+                      width: 220, height: 220,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(colors: [
+                          colors.secondary.withValues(alpha: 0.12), Colors.transparent,
+                        ]),
+                      ),
+                    ),
+                  ),
 
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.arrow_back_ios_rounded,
+                                    color: colors.onSurface.withValues(alpha: 0.5), size: 20),
+                                onPressed: () {
+                                  if (context.canPop()) {
+                                    context.pop();
+                                  } else {
+                                    context.go('/home');
+                                  }
+                                },
+                              ),
+                              const Spacer(),
+                              Column(children: [
+                                Text('🌙 Luna',
+                                    style: GoogleFonts.cormorantGaramond(
+                                        fontSize: 22, fontWeight: FontWeight.w700, color: colors.onSurface)),
+                                Text('Your companion',
+                                    style: GoogleFonts.dmSans(
+                                        fontSize: 11, color: colors.onSurface.withValues(alpha: 0.4), letterSpacing: 0.5)),
+                              ]),
+                              const Spacer(),
+                              const SizedBox(width: 48),
+                            ],
+                          ),
+                        ),
+
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -913,6 +1116,50 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                             ],
                           ]),
                         ).animate().fadeIn(duration: 500.ms),
+
+                        if (_chatHistory.isNotEmpty && _response == null && !_loading) ...[
+                          const SizedBox(height: 16),
+                          Center(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() => _chatMode = true);
+                                _scrollToBottom();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: colors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: colors.primary.withValues(alpha: 0.35)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: colors.primary.withValues(alpha: 0.1),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('💬', style: TextStyle(fontSize: 14)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Resume conversation with Luna',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: colors.accent,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Icon(Icons.arrow_forward_rounded, size: 14, color: colors.accent),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ).animate().fadeIn(delay: 80.ms),
+                        ],
 
                         const SizedBox(height: 32),
 
@@ -1372,10 +1619,19 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
               ],
             ),
           ),
+          const Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: LunaBottomNav(currentIndex: 2),
+          ),
         ],
       ),
-    );
-  }
+    ),
+  ),
+),
+);
+}
 
   Widget _buildChatMode(BuildContext context, dynamic colors, dynamic profile, dynamic cycleState) {
     return Scaffold(
@@ -1409,8 +1665,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                             color: colors.onSurface.withValues(alpha: 0.5), size: 20),
                         onPressed: () => setState(() {
                           _chatMode = false;
-                          _chatHistory = [];
-                          _chatController.clear();
                           _chatLoading = false;
                         }),
                       ),
@@ -1450,6 +1704,20 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                         ),
                       ]),
                       const Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.refresh_rounded,
+                            color: colors.onSurface.withValues(alpha: 0.45), size: 20),
+                        tooltip: 'New conversation',
+                        onPressed: () async {
+                          await StorageService.clearLastChatSession();
+                          setState(() {
+                            _chatHistory = [];
+                            _pendingPeriodDate = null;
+                            _lastAutoLogSummary = null;
+                            _expandedChatLogIndices.clear();
+                          });
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -1631,6 +1899,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                 if (msg.autoLogNote != null) ...[
                   _buildChatLogBadge(messageIndex, msg.autoLogNote!, colors),
                 ],
+                if (msg.pendingPeriodDate != null) ...[
+                  _buildPeriodDateConfirmationCard(msg, messageIndex, colors),
+                ],
               ],
             ),
           ),
@@ -1734,6 +2005,168 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodDateConfirmationCard(
+      _ChatMessage msg, int messageIndex, dynamic colors) {
+    final date = msg.pendingPeriodDate;
+    if (date == null) return const SizedBox.shrink();
+    final dateStr = _formatPeriodDate(date);
+
+    if (msg.periodDateConfirmed == true) {
+      return Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_rounded, size: 16, color: colors.accent),
+            const SizedBox(width: 8),
+            Text(
+              'Period start updated to $dateStr',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colors.onSurface,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (msg.periodDateConfirmed == false) {
+      return Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.onSurface.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.close_rounded,
+                size: 16, color: colors.onSurface.withValues(alpha: 0.4)),
+            const SizedBox(width: 8),
+            Text(
+              'Date update cancelled',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: colors.onSurface.withValues(alpha: 0.45),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Pending confirmation card with interactive buttons
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.accent.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: colors.primary.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('📅', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Update cycle start to $dateStr?',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'This will adjust your current cycle day and recalibrate phase timings.',
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              color: colors.onSurface.withValues(alpha: 0.55),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _confirmPeriodDateUpdate(date, messageIndex),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          colors: [colors.primary, colors.secondary]),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Yes, update',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _rejectPeriodDateUpdate(messageIndex),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: colors.surface.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: colors.onSurface.withValues(alpha: 0.12)),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Keep current',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1967,19 +2400,46 @@ class _ChatMessage {
   final bool isUser;
   final DateTime time;
   final String? autoLogNote;
+  final DateTime? pendingPeriodDate;
+  final bool? periodDateConfirmed;
 
   const _ChatMessage({
     required this.text,
     required this.isUser,
     required this.time,
     this.autoLogNote,
+    this.pendingPeriodDate,
+    this.periodDateConfirmed,
   });
+
+  _ChatMessage copyWith({
+    String? text,
+    bool? isUser,
+    DateTime? time,
+    String? autoLogNote,
+    DateTime? pendingPeriodDate,
+    bool? periodDateConfirmed,
+    bool clearPendingPeriodDate = false,
+  }) {
+    return _ChatMessage(
+      text: text ?? this.text,
+      isUser: isUser ?? this.isUser,
+      time: time ?? this.time,
+      autoLogNote: autoLogNote ?? this.autoLogNote,
+      pendingPeriodDate: clearPendingPeriodDate
+          ? null
+          : (pendingPeriodDate ?? this.pendingPeriodDate),
+      periodDateConfirmed: periodDateConfirmed ?? this.periodDateConfirmed,
+    );
+  }
 
   Map<String, dynamic> toMap() => {
         'text': text,
         'isUser': isUser,
         'time': time.toIso8601String(),
         'autoLogNote': autoLogNote,
+        'pendingPeriodDate': pendingPeriodDate?.toIso8601String(),
+        'periodDateConfirmed': periodDateConfirmed,
       };
 
   factory _ChatMessage.fromMap(Map<String, dynamic> map) => _ChatMessage(
@@ -1987,5 +2447,9 @@ class _ChatMessage {
         isUser: map['isUser'] as bool,
         time: DateTime.parse(map['time'] as String),
         autoLogNote: map['autoLogNote'] as String?,
+        pendingPeriodDate: map['pendingPeriodDate'] != null
+            ? DateTime.tryParse(map['pendingPeriodDate'] as String)
+            : null,
+        periodDateConfirmed: map['periodDateConfirmed'] as bool?,
       );
 }

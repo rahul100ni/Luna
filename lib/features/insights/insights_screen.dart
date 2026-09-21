@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/constants/phase_constants.dart';
 import '../../core/models/log_entry.dart';
+import '../../core/models/period_entry.dart';
 import '../../core/models/user_profile.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
@@ -36,7 +37,16 @@ class InsightsScreen extends ConsumerWidget {
     final currentPhase = ref.watch(currentPhaseProvider);
     final patternProfile = ref.watch(patternProfileProvider);
 
-    return Scaffold(
+    return BackButtonListener(
+      onBackButtonPressed: () async {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
+        return true;
+      },
+      child: Scaffold(
       backgroundColor: colors.background,
       body: Stack(
         children: [
@@ -170,8 +180,9 @@ class InsightsScreen extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1767,7 +1778,8 @@ class _SymptomsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final symptomCounts = <String, int>{};
     for (final l in logs) {
-      for (final s in l.symptoms) {
+      final daySymptoms = LogEntry.canonicalizeSymptoms(l.symptoms);
+      for (final s in daySymptoms) {
         symptomCounts[s] = (symptomCounts[s] ?? 0) + 1;
       }
     }
@@ -1936,10 +1948,18 @@ class _PeriodHistorySection extends ConsumerWidget {
 
   Future<void> _recordPeriodDate(BuildContext context, WidgetRef ref) async {
     final now = DateTime.now();
+    final profile = ref.read(profileProvider);
+    final history = ref.read(periodHistoryProvider);
+    final initial = profile?.lastPeriodStart ?? now;
+    final safeInitial = initial.isAfter(now) ? now : initial;
+    final firstDate = safeInitial.isBefore(now.subtract(const Duration(days: 730)))
+        ? safeInitial
+        : now.subtract(const Duration(days: 730));
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: profile?.lastPeriodStart ?? now,
-      firstDate: now.subtract(const Duration(days: 90)),
+      initialDate: safeInitial,
+      firstDate: firstDate,
       lastDate: now,
       builder: (ctx, child) {
         return Theme(
@@ -1957,13 +1977,85 @@ class _PeriodHistorySection extends ConsumerWidget {
     );
 
     if (picked != null) {
-      // addPeriodStart handles history, profile anchor, and LogEntry creation atomically
-      await ref.read(periodHistoryProvider.notifier).addPeriodStart(picked, source: 'insights');
+      final normPicked = DateTime(picked.year, picked.month, picked.day);
+      final nearby = history.where((p) {
+        final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+        return (pNorm.difference(normPicked).inDays.abs()) < 14;
+      }).firstOrNull;
+
+      if (nearby != null) {
+        await ref.read(periodHistoryProvider.notifier).editPeriodEntry(nearby.id, picked);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Period date updated: ${picked.day} ${_monthName(picked.month)} 🌙',
+                style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+              backgroundColor: const Color(0xFF2A1F3D),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+      } else {
+        await ref.read(periodHistoryProvider.notifier).addPeriodStart(picked, source: 'insights');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Period start logged: ${picked.day} ${_monthName(picked.month)} 🩸',
+                style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+              backgroundColor: const Color(0xFF2A1F3D),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _editExistingPeriodDate(BuildContext context, WidgetRef ref, PeriodEntry entry) async {
+    final now = DateTime.now();
+    final initial = entry.startDate.isAfter(now) ? now : entry.startDate;
+    final firstDate = initial.isBefore(now.subtract(const Duration(days: 730)))
+        ? initial
+        : now.subtract(const Duration(days: 730));
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: firstDate,
+      lastDate: now,
+      builder: (ctx, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: colors.primary,
+              onPrimary: Colors.white,
+              surface: colors.surface,
+              onSurface: colors.onSurface,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      final oldNorm = entry.startDate;
+      if (oldNorm.year == picked.year && oldNorm.month == picked.month && oldNorm.day == picked.day) {
+        return;
+      }
+
+      await ref.read(periodHistoryProvider.notifier).editPeriodEntry(entry.id, picked);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Period start logged: ${picked.day} ${_monthName(picked.month)} 🩸',
+              'Period date updated: ${picked.day} ${_monthName(picked.month)} 🌙',
               style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
             ),
             backgroundColor: const Color(0xFF2A1F3D),
@@ -2019,7 +2111,7 @@ class _PeriodHistorySection extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    'Set Date',
+                    '+ Log Period',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -2033,7 +2125,7 @@ class _PeriodHistorySection extends ConsumerWidget {
           const SizedBox(height: 14),
 
           if (deduplicatedHistory.isNotEmpty) ...[
-            ...deduplicatedHistory.take(4).toList().asMap().entries.map((entry) {
+            ...deduplicatedHistory.asMap().entries.map((entry) {
               final i = entry.key;
               final p = entry.value;
               final d = p.startDate;
@@ -2048,111 +2140,135 @@ class _PeriodHistorySection extends ConsumerWidget {
               }
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: colors.primary.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${d.day}',
-                          style: GoogleFonts.cormorantGaramond(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: colors.accent,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => _editExistingPeriodDate(context, ref, p),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                    child: Row(
                       children: [
-                        Text(
-                          '${_monthName(d.month)} ${d.day}, ${d.year}',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: colors.onSurface,
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ),
-                        Text(
-                          gapText ?? 'Period start',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 11,
-                            color: colors.onSurface.withValues(alpha: 0.4),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('🩸', style: TextStyle(fontSize: 15)),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (dlgCtx) => AlertDialog(
-                                backgroundColor: colors.surface,
-                                title: Text('Remove period record?',
-                                    style: GoogleFonts.cormorantGaramond(
-                                        color: colors.onSurface,
-                                        fontWeight: FontWeight.w700)),
-                                content: Text(
-                                    'Remove ${_monthName(d.month)} ${d.day}, ${d.year} from period history? Your cycle calculations will update.',
-                                    style: GoogleFonts.dmSans(
-                                        color: colors.onSurface.withValues(alpha: 0.8),
-                                        fontSize: 13)),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dlgCtx, false),
-                                    child: Text('Cancel',
-                                        style: GoogleFonts.dmSans(
-                                            color: colors.onSurface.withValues(alpha: 0.6))),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dlgCtx, true),
-                                    child: Text('Remove',
-                                        style: GoogleFonts.dmSans(
-                                            color: const Color(0xFFD94F6E),
-                                            fontWeight: FontWeight.w700)),
-                                  ),
-                                ],
+                          child: Center(
+                            child: Text(
+                              '${d.day}',
+                              style: GoogleFonts.cormorantGaramond(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: colors.accent,
                               ),
-                            );
-                            if (confirm == true) {
-                              await ref.read(periodHistoryProvider.notifier).removePeriodEntry(p.id);
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: colors.onSurface.withValues(alpha: 0.05),
-                            ),
-                            child: Icon(
-                              Icons.close_rounded,
-                              size: 13,
-                              color: colors.onSurface.withValues(alpha: 0.4),
                             ),
                           ),
                         ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${_monthName(d.month)} ${d.day}, ${d.year}',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: colors.onSurface,
+                                ),
+                              ),
+                              Text(
+                                gapText ?? (i == 0 ? 'Latest period start · Tap to edit' : 'Period start · Tap to edit'),
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 11,
+                                  color: colors.onSurface.withValues(alpha: 0.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _editExistingPeriodDate(context, ref, p),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: colors.onSurface.withValues(alpha: 0.05),
+                                ),
+                                child: Icon(
+                                  Icons.edit_calendar_rounded,
+                                  size: 14,
+                                  color: colors.accent.withValues(alpha: 0.8),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dlgCtx) => AlertDialog(
+                                    backgroundColor: colors.surface,
+                                    title: Text('Remove period record?',
+                                        style: GoogleFonts.cormorantGaramond(
+                                            color: colors.onSurface,
+                                            fontWeight: FontWeight.w700)),
+                                    content: Text(
+                                        'Remove ${_monthName(d.month)} ${d.day}, ${d.year} from period history? Your cycle calculations will update.',
+                                        style: GoogleFonts.dmSans(
+                                            color: colors.onSurface.withValues(alpha: 0.8),
+                                            fontSize: 13)),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dlgCtx, false),
+                                        child: Text('Cancel',
+                                            style: GoogleFonts.dmSans(
+                                                color: colors.onSurface.withValues(alpha: 0.6))),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dlgCtx, true),
+                                        child: Text('Remove',
+                                            style: GoogleFonts.dmSans(
+                                                color: const Color(0xFFD94F6E),
+                                                fontWeight: FontWeight.w700)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  await ref.read(periodHistoryProvider.notifier).removePeriodEntry(p.id);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: colors.onSurface.withValues(alpha: 0.05),
+                                ),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 13,
+                                  color: colors.onSurface.withValues(alpha: 0.4),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               );
             }),
           ] else ...[
             Text(
-              'No period start date recorded yet. Tap "Set Date" above whenever your cycle begins.',
+              'No period start date recorded yet. Tap "+ Log Period" above whenever your cycle begins.',
               style: GoogleFonts.dmSans(
                 fontSize: 12,
                 color: colors.onSurface.withValues(alpha: 0.55),

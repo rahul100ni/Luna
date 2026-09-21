@@ -4,20 +4,34 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import '../../core/constants/phase_constants.dart';
 import '../../core/models/log_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/cycle_engine.dart';
+import '../../shared/widgets/bottom_nav.dart';
 
 class LogScreen extends ConsumerStatefulWidget {
-  const LogScreen({super.key});
+  final DateTime? initialDate;
+  const LogScreen({super.key, this.initialDate});
 
   @override
   ConsumerState<LogScreen> createState() => _LogScreenState();
 }
 
-class _LogScreenState extends ConsumerState<LogScreen> {
+class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserver {
+  DateTime get _targetDate {
+    final d = widget.initialDate ?? DateTime.now();
+    return DateTime(d.year, d.month, d.day);
+  }
+
+  bool get _isLoggingToday {
+    final now = DateTime.now();
+    return _targetDate.year == now.year &&
+        _targetDate.month == now.month &&
+        _targetDate.day == now.day;
+  }
   MoodLevel _mood = MoodLevel.decent;
   bool _moodSelected = false;
   bool _saved = false;
@@ -58,37 +72,48 @@ class _LogScreenState extends ConsumerState<LogScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final todayEntry = ref.read(logEntriesProvider.notifier).todayEntry;
+      final entries = ref.read(logEntriesProvider);
+      final target = _targetDate;
+      LogEntry? targetEntry;
+      for (final e in entries) {
+        if (e.date.year == target.year &&
+            e.date.month == target.month &&
+            e.date.day == target.day) {
+          targetEntry = e;
+          break;
+        }
+      }
       final profile = ref.read(profileProvider);
-      final now = DateTime.now();
-      final isAnchoredToday = profile?.lastPeriodStart != null &&
-          profile!.lastPeriodStart!.year == now.year &&
-          profile.lastPeriodStart!.month == now.month &&
-          profile.lastPeriodStart!.day == now.day;
+      final isAnchoredTarget = profile?.lastPeriodStart != null &&
+          profile!.lastPeriodStart!.year == target.year &&
+          profile.lastPeriodStart!.month == target.month &&
+          profile.lastPeriodStart!.day == target.day;
 
-      if (todayEntry != null) {
+      if (targetEntry != null) {
+        final existing = targetEntry;
         setState(() {
-          _existingEntryId = todayEntry.id;
-          if (todayEntry.mood != null) {
-            _mood = todayEntry.mood!;
+          _existingEntryId = existing.id;
+          if (existing.mood != null) {
+            _mood = existing.mood!;
             _moodSelected = true;
           } else {
             _moodSelected = false;
           }
-          _energy = todayEntry.energyLevel;
-          _flow = todayEntry.flow;
-          _cramps = todayEntry.cramps;
-          _sleep = todayEntry.sleepQuality;
+          _energy = existing.energyLevel;
+          _flow = existing.flow;
+          _cramps = existing.cramps;
+          _sleep = existing.sleepQuality;
           _symptoms.clear();
-          _symptoms.addAll(todayEntry.symptoms);
-          if (todayEntry.notes != null) {
-            _notesController.text = todayEntry.notes!;
+          _symptoms.addAll(existing.symptoms);
+          if (existing.notes != null) {
+            _notesController.text = existing.notes!;
           }
-          _periodAlreadyLoggedToday = todayEntry.periodStarted || isAnchoredToday;
+          _periodAlreadyLoggedToday = existing.periodStarted || isAnchoredTarget;
           _periodStarted = _periodAlreadyLoggedToday;
         });
-      } else if (isAnchoredToday) {
+      } else if (isAnchoredTarget) {
         setState(() {
           _periodAlreadyLoggedToday = true;
           _periodStarted = true;
@@ -99,25 +124,20 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _notesController.dispose();
     super.dispose();
   }
 
-  String _getEnergyLabel(int? level) {
-    switch (level) {
-      case 1:
-        return 'Drained · Depleted';
-      case 2:
-        return 'Low · Slow rhythm';
-      case 3:
-        return 'Balanced · Steady';
-      case 4:
-        return 'High · Energized';
-      case 5:
-        return 'Peak · Radiant';
-      default:
-        return 'Slide to record';
+  @override
+  Future<bool> didPopRoute() async {
+    if (!mounted) return false;
+    if (context.canPop()) {
+      context.pop();
+      return true;
     }
+    context.go('/home');
+    return true;
   }
 
   bool get _canSave =>
@@ -154,7 +174,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       final entryId = _existingEntryId ?? const Uuid().v4();
       final entry = LogEntry(
         id: entryId,
-        date: DateTime.now(),
+        date: _targetDate,
         mood: _moodSelected ? _mood : null,
         energyLevel: _energy,
         flow: _flow,
@@ -169,7 +189,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       // Update cycle anchor and history when period started is marked or active flow logged
       if (_periodStarted || _flow != null) {
         await ref.read(periodHistoryProvider.notifier).addPeriodStart(
-          DateTime.now(),
+          _targetDate,
           source: 'logged',
         );
       }
@@ -469,13 +489,41 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     final hasCycleAnchor =
         profile?.lastPeriodStart != null && (cycleState?.dayOfCycle ?? 0) > 0;
 
+    // ── Phase & Pattern based energy suggestion (dynamic baseline) ─────────
+    final phase = cycleState?.phase;
+    final patternProfile = ref.watch(patternProfileProvider);
+    final bool isPersonalized = hasCycleAnchor &&
+        phase != null &&
+        patternProfile.hasSufficientData &&
+        patternProfile.phaseEnergyAverages.containsKey(phase);
+
+    final int suggestedEnergy;
+    if (!hasCycleAnchor || phase == null) {
+      suggestedEnergy = 3; // neutral middle
+    } else if (isPersonalized) {
+      final userAvg = patternProfile.phaseEnergyAverages[phase]!;
+      suggestedEnergy = userAvg.round().clamp(1, 5);
+    } else {
+      switch (phase) {
+        case CyclePhase.menstrual:    suggestedEnergy = 2; // typically lower
+        case CyclePhase.follicular:   suggestedEnergy = 4; // rising energy
+        case CyclePhase.ovulatory:    suggestedEnergy = 5; // peak
+        case CyclePhase.earlyLuteal:  suggestedEnergy = 4; // steady
+        case CyclePhase.lateLuteal:   suggestedEnergy = 2; // tends to dip
+      }
+    }
+
+    // Contextual period started toggle visibility:
+    // Hidden only when user is already in the middle of an active period (Day 2..periodLength)
+    // and hasn't toggled it today.
     final lastPeriod = profile?.lastPeriodStart;
     final now = DateTime.now();
-    final daysSinceAnchor =
-        lastPeriod != null ? now.calendarDaysDifference(lastPeriod) : null;
+    final daysSinceAnchor = lastPeriod != null ? now.calendarDaysDifference(lastPeriod) : null;
     final periodLength = profile?.averagePeriodLength ?? 5;
-    final isInActivePeriod =
-        daysSinceAnchor != null && daysSinceAnchor > 0 && daysSinceAnchor < periodLength;
+    final isMidPeriodDay2Plus = daysSinceAnchor != null &&
+        daysSinceAnchor >= 1 &&
+        daysSinceAnchor < periodLength;
+    final showPeriodStartedToggle = _periodStarted || !isMidPeriodDay2Plus;
 
     // Inline detail badge for summary
     final List<String> detailSet = [
@@ -484,33 +532,31 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       if (_cramps != null) ['No cramps', 'Mild cramps', 'Moderate cramps', 'Severe cramps'][_cramps!.index],
     ];
 
-    if (_saved) {
-      return Scaffold(
-        backgroundColor: colors.background,
-        body: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('💜', style: TextStyle(fontSize: 80))
-                .animate()
-                .scale(curve: Curves.elasticOut),
-            const SizedBox(height: 20),
-            Text(
-              'Logged 🌙',
-              style: GoogleFonts.cormorantGaramond(
-                  fontSize: 30, fontWeight: FontWeight.w700, color: colors.onSurface),
+    final mainScaffold = _saved
+        ? Scaffold(
+            backgroundColor: colors.background,
+            body: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('💜', style: TextStyle(fontSize: 80))
+                    .animate()
+                    .scale(curve: Curves.elasticOut),
+                const SizedBox(height: 20),
+                Text(
+                  'Logged 🌙',
+                  style: GoogleFonts.cormorantGaramond(
+                      fontSize: 30, fontWeight: FontWeight.w700, color: colors.onSurface),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'You\'re showing up for yourself. That counts.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.dmSans(
+                      fontSize: 14, color: colors.onSurface.withValues(alpha: 0.45)),
+                ),
+              ]),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'You\'re showing up for yourself. That counts.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.dmSans(
-                  fontSize: 14, color: colors.onSurface.withValues(alpha: 0.45)),
-            ),
-          ]),
-        ),
-      );
-    }
-
-    return Scaffold(
+          )
+        : Scaffold(
       backgroundColor: colors.background,
       body: Stack(
         children: [
@@ -549,7 +595,9 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                             border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
                           ),
                           child: Text(
-                            'Day ${cycleState.dayOfCycle} · ${cycleState.phaseInfo.name}',
+                            _isLoggingToday
+                                ? 'Day ${cycleState.dayOfCycle} · ${cycleState.phaseInfo.name}'
+                                : '${DateFormat('MMM d').format(_targetDate)} · ${cycleState.phaseInfo.name}',
                             style: GoogleFonts.dmSans(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -565,7 +613,9 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            'Today\'s check-in',
+                            _isLoggingToday
+                                ? 'Today\'s check-in'
+                                : 'Check-in · ${DateFormat('MMMM d').format(_targetDate)}',
                             style: GoogleFonts.dmSans(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -591,7 +641,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 32),
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 110),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -671,304 +721,80 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
                         const SizedBox(height: 24),
 
-                        // ── Energy Level (Adult Interactive Slider) ───
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'ENERGY LEVEL',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: colors.onSurface.withValues(alpha: 0.35),
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Text(
-                                  _getEnergyLabel(_energy),
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 12,
-                                    fontWeight: _energy != null
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                    color: _energy != null
-                                        ? colors.accent
-                                        : colors.onSurface.withValues(alpha: 0.35),
-                                  ),
-                                ),
-                                if (_energy != null) ...[
-                                  const SizedBox(width: 6),
-                                  GestureDetector(
-                                    onTap: () => setState(() => _energy = null),
-                                    child: Icon(Icons.close_rounded,
-                                        size: 14,
-                                        color: colors.onSurface.withValues(alpha: 0.35)),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ).animate().fadeIn(delay: 100.ms),
-                        const SizedBox(height: 10),
+                        // ── Energy Level (Dynamic Cycle & Pattern Slider) ───
+                        _EnergySection(
+                          energy: _energy,
+                          suggestedEnergy: suggestedEnergy,
+                          isPersonalized: isPersonalized,
+                          colors: colors,
+                          onChanged: (v) => setState(() => _energy = v),
+                        ),
 
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: colors.surface.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: _energy != null
-                                  ? colors.primary.withValues(alpha: 0.3)
-                                  : colors.onSurface.withValues(alpha: 0.06),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 8,
-                                  activeTrackColor: colors.accent,
-                                  inactiveTrackColor: colors.background.withValues(alpha: 0.8),
-                                  thumbColor: colors.accent,
-                                  overlayColor: colors.accent.withValues(alpha: 0.22),
-                                  thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 11,
-                                    elevation: 3,
-                                  ),
-                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
-                                  tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
-                                  activeTickMarkColor: Colors.white,
-                                  inactiveTickMarkColor: colors.onSurface.withValues(alpha: 0.2),
-                                ),
-                                child: Slider(
-                                  value: (_energy ?? 3).toDouble(),
-                                  min: 1,
-                                  max: 5,
-                                  divisions: 4,
-                                  onChanged: (val) {
-                                    setState(() => _energy = val.round());
-                                  },
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      '1 · Drained',
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 10.5,
-                                        fontWeight: _energy == 1 ? FontWeight.w700 : FontWeight.w500,
-                                        color: _energy == 1
-                                            ? colors.accent
-                                            : colors.onSurface.withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                    Text(
-                                      '3 · Balanced',
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 10.5,
-                                        fontWeight: _energy == 3 ? FontWeight.w700 : FontWeight.w500,
-                                        color: _energy == 3
-                                            ? colors.accent
-                                            : colors.onSurface.withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                    Text(
-                                      '5 · Peak',
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 10.5,
-                                        fontWeight: _energy == 5 ? FontWeight.w700 : FontWeight.w500,
-                                        color: _energy == 5
-                                            ? colors.accent
-                                            : colors.onSurface.withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ).animate().fadeIn(delay: 120.ms),
-
-                        const SizedBox(height: 22),
-
-                        // ── Period Status & Start Card ─────────────────
-                        // Thoughtful & context-aware:
-                        // 1. If period started today -> Confirmed state
-                        // 2. If currently in active period -> In-progress state
-                        // 3. Otherwise -> Clean, welcoming toggle to mark start
-                        Builder(builder: (_) {
-                          if (_periodStarted) {
-                            return GestureDetector(
-                              onTap: () => setState(() => _periodStarted = !_periodStarted),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFD94F6E).withValues(alpha: 0.16),
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: const Color(0xFFD94F6E).withValues(alpha: 0.5),
-                                    width: 1.5,
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Text('🩸', style: TextStyle(fontSize: 18)),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Period started today ✓',
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFFFF8FA3),
-                                            ),
-                                          ),
-                                          Text(
-                                            'Cycle Day 1 · All phases recalibrated to today',
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: 11,
-                                              color: colors.onSurface.withValues(alpha: 0.45),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      width: 22,
-                                      height: 22,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFD94F6E),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(Icons.check, size: 14, color: Colors.white),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          } else if (isInActivePeriod) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        // ── Contextual Period Started Toggle ───────────────
+                        if (showPeriodStartedToggle) ...[
+                          const SizedBox(height: 18),
+                          GestureDetector(
+                            onTap: () => setState(() => _periodStarted = !_periodStarted),
+                            behavior: HitTestBehavior.opaque,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeOut,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFD94F6E).withValues(alpha: 0.09),
-                                borderRadius: BorderRadius.circular(18),
+                                color: _periodStarted
+                                    ? const Color(0xFFD94F6E).withValues(alpha: 0.14)
+                                    : colors.surface.withValues(alpha: 0.40),
+                                borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: const Color(0xFFD94F6E).withValues(alpha: 0.25),
+                                  color: _periodStarted
+                                      ? const Color(0xFFD94F6E).withValues(alpha: 0.45)
+                                      : colors.onSurface.withValues(alpha: 0.08),
+                                  width: 1.2,
                                 ),
                               ),
                               child: Row(
                                 children: [
-                                  const Text('🩸', style: TextStyle(fontSize: 18)),
-                                  const SizedBox(width: 12),
+                                  const Text('🩸', style: TextStyle(fontSize: 15)),
+                                  const SizedBox(width: 10),
                                   Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Period · Day ${daysSinceAnchor + 1}',
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: const Color(0xFFFF8FA3),
-                                          ),
-                                        ),
-                                        Text(
-                                          'Active menstrual phase',
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 11,
-                                            color: colors.onSurface.withValues(alpha: 0.45),
-                                          ),
-                                        ),
-                                      ],
+                                    child: Text(
+                                      _periodStarted
+                                          ? 'Period started today'
+                                          : 'My period started today',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 13.5,
+                                        fontWeight: _periodStarted ? FontWeight.w600 : FontWeight.w500,
+                                        color: _periodStarted
+                                            ? const Color(0xFFFF8FA3)
+                                            : colors.onSurface.withValues(alpha: 0.75),
+                                      ),
                                     ),
                                   ),
-                                  GestureDetector(
-                                    onTap: () => setState(() => _periodStarted = true),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFD94F6E).withValues(alpha: 0.18),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        'Reset to today',
-                                        style: GoogleFonts.dmSans(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFFFF8FA3),
-                                        ),
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _periodStarted
+                                          ? const Color(0xFFD94F6E)
+                                          : Colors.transparent,
+                                      border: Border.all(
+                                        color: _periodStarted
+                                            ? const Color(0xFFD94F6E)
+                                            : colors.onSurface.withValues(alpha: 0.25),
+                                        width: 1.5,
                                       ),
                                     ),
+                                    child: _periodStarted
+                                        ? const Icon(Icons.check, size: 13, color: Colors.white)
+                                        : null,
                                   ),
                                 ],
                               ),
-                            );
-                          } else {
-                            // Cycle is ongoing / awaiting next period: Welcoming toggle
-                            return GestureDetector(
-                              onTap: () => setState(() => _periodStarted = !_periodStarted),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: colors.surface.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: colors.onSurface.withValues(alpha: 0.08),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Text('🩸', style: TextStyle(fontSize: 18)),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Period started today?',
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: colors.onSurface.withValues(alpha: 0.85),
-                                            ),
-                                          ),
-                                          Text(
-                                            'Tap to record Day 1 of your new cycle',
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: 11,
-                                              color: colors.onSurface.withValues(alpha: 0.4),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      width: 22,
-                                      height: 22,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: colors.onSurface.withValues(alpha: 0.25),
-                                          width: 1.5,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-                        }).animate().fadeIn(delay: 140.ms),
+                            ),
+                          ).animate().fadeIn(delay: 90.ms),
+                        ],
 
                         const SizedBox(height: 24),
 
@@ -1236,11 +1062,30 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                     ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+            const Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: LunaBottomNav(currentIndex: -1),
+            ),
+          ],
+        ),
+      );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
+      },
+      child: mainScaffold,
     );
   }
 }
@@ -1261,5 +1106,347 @@ class _SheetSectionLabel extends StatelessWidget {
         letterSpacing: 1.1,
       ),
     );
+  }
+}
+
+/// Clean, minimal energy slider with cycle-intelligent dynamic baseline.
+/// Pinned zero-drift readout, continuous non-jumping interpolation, sharp architectural thumb.
+class _EnergySection extends StatelessWidget {
+  final int? energy;
+  final int suggestedEnergy;
+  final bool isPersonalized;
+  final PhaseColors colors;
+  final ValueChanged<int?> onChanged;
+
+  const _EnergySection({
+    required this.energy,
+    required this.suggestedEnergy,
+    this.isPersonalized = false,
+    required this.colors,
+    required this.onChanged,
+  });
+
+  static const List<String> _words = [
+    'Drained',
+    'Low',
+    'Steady',
+    'High',
+    'Peak',
+  ];
+
+  static const List<String> _subs = [
+    'Running on empty · gentle rest',
+    'Low reserves · moving slowly',
+    'Steady · balanced & present',
+    'Good momentum · energized',
+    'Radiant · peak physical vitality',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final hasValue = energy != null;
+    final currentVal = (energy ?? suggestedEnergy).clamp(1, 5).toDouble();
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: hasValue ? 1.0 : 0.0),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      builder: (context, activeProgress, child) {
+        final activeTrackColor = Color.lerp(
+          colors.primary.withValues(alpha: 0.18),
+          colors.primary.withValues(alpha: 0.45),
+          activeProgress,
+        )!;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top row: Section title & pinned status readout (zero horizontal drift)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'ENERGY',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: colors.onSurface.withValues(alpha: 0.35),
+                  ),
+                ),
+                // Pinned right-aligned container with zero lateral drift or floating
+                SizedBox(
+                  height: 24,
+                  child: Stack(
+                    alignment: Alignment.centerRight,
+                    children: [
+                      // Predicted / Baseline readout
+                      AnimatedOpacity(
+                        opacity: hasValue ? 0.0 : 1.0,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        child: IgnorePointer(
+                          ignoring: hasValue,
+                          child: GestureDetector(
+                            onTap: () => onChanged(suggestedEnergy),
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 5,
+                                    height: 5,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: colors.accent.withValues(alpha: 0.70),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    isPersonalized
+                                        ? 'Your usual · ${_words[suggestedEnergy - 1]}'
+                                        : 'Predicted · ${_words[suggestedEnergy - 1]}',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: colors.accent.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Confirmed user readout (pinned to exact same right margin)
+                      AnimatedOpacity(
+                        opacity: hasValue ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        child: IgnorePointer(
+                          ignoring: !hasValue,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _words[(energy ?? suggestedEnergy).clamp(1, 5) - 1],
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: colors.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              GestureDetector(
+                                onTap: () => onChanged(null),
+                                behavior: HitTestBehavior.opaque,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 13,
+                                    color: colors.onSurface.withValues(alpha: 0.35),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            // Clean, non-jumping slider with sharp, architectural glowing thumb
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                if (!hasValue) {
+                  onChanged(suggestedEnergy);
+                }
+              },
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 6,
+                  activeTrackColor: activeTrackColor,
+                  inactiveTrackColor: colors.onSurface.withValues(alpha: 0.06),
+                  thumbShape: _LunaSliderThumbShape(
+                    radius: 10.0 + 1.5 * activeProgress,
+                    activeProgress: activeProgress,
+                    primaryColor: colors.primary,
+                    accentColor: colors.accent,
+                    surfaceColor: colors.surface,
+                    onSurfaceColor: colors.onSurface,
+                  ),
+                  tickMarkShape: SliderTickMarkShape.noTickMark,
+                  overlayShape: SliderComponentShape.noOverlay,
+                  trackShape: const RoundedRectSliderTrackShape(),
+                ),
+                child: Slider(
+                  value: currentVal,
+                  min: 1,
+                  max: 5,
+                  divisions: 4,
+                  onChanged: (v) => onChanged(v.round()),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 6),
+
+            // Bottom anchor hints & subtle feedback
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  Text(
+                    'Drained',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10,
+                      color: colors.onSurface.withValues(
+                        alpha: (hasValue && energy == 1) ? 0.65 : 0.22,
+                      ),
+                      fontWeight: (hasValue && energy == 1) ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      hasValue
+                          ? _subs[(energy ?? suggestedEnergy).clamp(1, 5) - 1]
+                          : (isPersonalized
+                              ? 'Matches your cycle pattern'
+                              : 'Slide or tap to record rhythm'),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        color: colors.onSurface.withValues(
+                          alpha: hasValue ? 0.45 : 0.25,
+                        ),
+                        fontStyle: hasValue ? FontStyle.normal : FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Peak',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10,
+                      color: colors.onSurface.withValues(
+                        alpha: (hasValue && energy == 5) ? 0.65 : 0.22,
+                      ),
+                      fontWeight: (hasValue && energy == 5) ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    ).animate().fadeIn(delay: 80.ms);
+  }
+}
+
+/// Custom slider thumb that preserves sharp, elegant architectural character in both states.
+/// Deep obsidian body, crisp precision rim, and blooming celestial jewel pip.
+class _LunaSliderThumbShape extends SliderComponentShape {
+  final double radius;
+  final double activeProgress; // 0.0 (unconfirmed baseline) to 1.0 (confirmed)
+  final Color primaryColor;
+  final Color accentColor;
+  final Color surfaceColor;
+  final Color onSurfaceColor;
+
+  const _LunaSliderThumbShape({
+    required this.radius,
+    required this.activeProgress,
+    required this.primaryColor,
+    required this.accentColor,
+    required this.surfaceColor,
+    required this.onSurfaceColor,
+  });
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => Size.fromRadius(radius + 3);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+
+    // 1. Crisp, subtle drop shadow (no loud blurry halo)
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.38)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawCircle(center.translate(0, 1.5), radius, shadowPaint);
+
+    // 2. Base body — stays dark, grounded, and sophisticated in both states
+    final bodyColor = Color.lerp(
+      surfaceColor,
+      Color.lerp(surfaceColor, primaryColor, 0.22)!,
+      activeProgress,
+    )!;
+    final bodyPaint = Paint()
+      ..color = bodyColor
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, radius, bodyPaint);
+
+    // 3. Crisp outer precision rim (1.5px) in accent color
+    final ringColor = Color.lerp(
+      accentColor.withValues(alpha: 0.55),
+      accentColor.withValues(alpha: 0.92),
+      activeProgress,
+    )!;
+    final ringPaint = Paint()
+      ..color = ringColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawCircle(center, radius, ringPaint);
+
+    // 4. Center jewel pip — blooms confidently from delicate dot to rich jewel core
+    final pipRadius = radius * (0.30 + 0.16 * activeProgress);
+    final pipColor = Color.lerp(
+      accentColor.withValues(alpha: 0.85),
+      accentColor,
+      activeProgress,
+    )!;
+    final pipPaint = Paint()
+      ..color = pipColor
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, pipRadius, pipPaint);
+
+    // 5. Subtle specular highlight on the jewel when active for sharp character
+    if (activeProgress > 0.25) {
+      final specAlpha = 0.52 * activeProgress;
+      final specPaint = Paint()
+        ..color = Colors.white.withValues(alpha: specAlpha)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        center.translate(-pipRadius * 0.25, -pipRadius * 0.25),
+        pipRadius * 0.32,
+        specPaint,
+      );
+    }
   }
 }

@@ -10,7 +10,85 @@ class LogEntry {
   final String? notes;
   final bool periodStarted;
 
-  const LogEntry({
+  /// Canonicalizes a symptom name to its official Title Case dictionary representation.
+  static String canonicalizeSymptom(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    final lower = trimmed.toLowerCase();
+
+    const canonicalMap = {
+      'craving': 'Cravings',
+      'cravings': 'Cravings',
+      'headache': 'Headache',
+      'headaches': 'Headache',
+      'migraine': 'Headache',
+      'cramp': 'Cramps',
+      'cramps': 'Cramps',
+      'cramping': 'Cramps',
+      'bloat': 'Bloating',
+      'bloated': 'Bloating',
+      'bloating': 'Bloating',
+      'fatigue': 'Fatigue',
+      'fatigued': 'Fatigue',
+      'tired': 'Fatigue',
+      'exhausted': 'Fatigue',
+      'brain fog': 'Brain fog',
+      'foggy': 'Brain fog',
+      'anxious': 'Anxious',
+      'anxiety': 'Anxious',
+      'panic': 'Anxious',
+      'irritable': 'Irritable',
+      'irritated': 'Irritable',
+      'angry': 'Irritable',
+      'moody': 'Irritable',
+      'backache': 'Backache',
+      'back pain': 'Backache',
+      'tender': 'Tender',
+      'tender breasts': 'Tender',
+      'breast pain': 'Tender',
+      'nausea': 'Nausea',
+      'nauseous': 'Nausea',
+      'hot flash': 'Hot flashes',
+      'hot flashes': 'Hot flashes',
+      'insomnia': 'Insomnia',
+      'poor sleep': 'Insomnia',
+      'acne': 'Acne',
+      'breakout': 'Acne',
+      'breakouts': 'Acne',
+      'feeling good': 'Feeling good',
+      'energetic': 'High Energy',
+      'high energy': 'High Energy',
+      'mental clarity': 'Mental Clarity',
+      'clear skin': 'Clear Skin',
+      'calm focus': 'Calm Focus',
+      'mood sensitivity': 'Mood Sensitivity',
+    };
+
+    if (canonicalMap.containsKey(lower)) {
+      return canonicalMap[lower]!;
+    }
+
+    // Default: Clean Title Case
+    return trimmed.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
+  }
+
+  /// Deduplicates and canonicalizes a collection of symptoms case-insensitively.
+  static List<String> canonicalizeSymptoms(Iterable<String> rawSymptoms) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final raw in rawSymptoms) {
+      final canonical = canonicalizeSymptom(raw);
+      if (canonical.isNotEmpty && seen.add(canonical.toLowerCase())) {
+        result.add(canonical);
+      }
+    }
+    return result;
+  }
+
+  LogEntry({
     required this.id,
     required this.date,
     this.mood,
@@ -18,10 +96,10 @@ class LogEntry {
     this.sleepQuality,
     this.flow,
     this.cramps,
-    required this.symptoms,
+    required List<String> symptoms,
     this.notes,
     this.periodStarted = false,
-  });
+  }) : symptoms = canonicalizeSymptoms(symptoms);
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -49,9 +127,10 @@ class LogEntry {
             : null,
         flow: map['flow'] != null ? FlowLevel.values[map['flow'] as int] : null,
         cramps: map['cramps'] != null ? CrampLevel.values[map['cramps'] as int] : null,
-        symptoms: (map['symptoms'] as String? ?? '').isEmpty
-            ? []
-            : (map['symptoms'] as String).split(','),
+        symptoms: (map['symptoms'] as String? ?? '')
+            .split(',')
+            .where((s) => s.trim().isNotEmpty)
+            .toList(),
         notes: map['notes'] as String?,
         periodStarted: (map['periodStarted'] as int? ?? 0) == 1,
       );

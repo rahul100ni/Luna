@@ -229,10 +229,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // ── 4. Log period start date ─────────────────────────────────────────────────
   Future<void> _showLogPeriodDate(PhaseColors colors) async {
     final profile = ref.read(profileProvider);
-    final hasExisting = profile?.lastPeriodStart != null;
+    final existingDate = profile?.lastPeriodStart;
+    final hasExisting = existingDate != null;
 
     if (hasExisting) {
-      final existingDate = profile!.lastPeriodStart!;
       final existingStr = '${existingDate.day}/${existingDate.month}/${existingDate.year}';
       final action = await showModalBottomSheet<String>(
         context: context,
@@ -322,11 +322,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
 
       if (action == 'clear') {
-        await ref.read(periodHistoryProvider.notifier).clearAll();
+        final history = ref.read(periodHistoryProvider);
+        if (history.length > 1) {
+          await ref.read(periodHistoryProvider.notifier).removePeriodEntry(history.first.id);
+        } else {
+          await ref.read(periodHistoryProvider.notifier).clearAll();
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('Period date cleared. Home screen reset.')),
+                content: Text('Period date cleared.')),
           );
         }
         return;
@@ -337,11 +342,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (!mounted) return;
 
+    final now = DateTime.now();
+    final initialDate = profile?.lastPeriodStart ?? now;
+    final safeInitial = initialDate.isAfter(now) ? now : initialDate;
+    final firstDate = safeInitial.isBefore(now.subtract(const Duration(days: 365)))
+        ? safeInitial
+        : now.subtract(const Duration(days: 365));
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: profile?.lastPeriodStart ?? DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 60)),
-      lastDate: DateTime.now(),
+      initialDate: safeInitial,
+      firstDate: firstDate,
+      lastDate: now,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -406,7 +418,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
 
     if (confirmed == true) {
-      await ref.read(periodHistoryProvider.notifier).addPeriodStart(picked, source: 'settings');
+      await ref.read(periodHistoryProvider.notifier).updatePeriodStart(
+        picked,
+        oldDate: existingDate,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Period start date updated to ${picked.day}/${picked.month}/${picked.year} 🌙',
+              style: GoogleFonts.dmSans(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: const Color(0xFF2A1F3D),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
 
 
@@ -506,7 +538,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         content: Text(
           'Luna is a cycle companion built with love, here to help you understand '
           'your body, honour your rhythms, and show up for yourself every '
-          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24.5',
+          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24.53',
           style: GoogleFonts.dmSans(
             fontSize: 14,
             color: colors.onSurface.withValues(alpha: 0.7),
@@ -704,7 +736,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.only(bottom: 32),
               child: Column(children: [
                 Text(
-                  'Luna v1.1.24.5',
+                  'Luna v1.1.24.53',
                   style: GoogleFonts.dmSans(
                     fontSize: 11,
                     color: colors.onSurface.withValues(alpha: 0.18),

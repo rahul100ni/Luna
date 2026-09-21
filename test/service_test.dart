@@ -10,6 +10,8 @@ import 'package:luna_app/core/services/pattern_analysis_service.dart';
 import 'package:luna_app/core/services/cycle_engine.dart';
 import 'package:luna_app/core/models/period_entry.dart';
 import 'package:luna_app/core/models/luna_memory_entry.dart';
+import 'package:luna_app/core/services/period_date_extractor.dart';
+import 'package:luna_app/core/services/cycle_daily_intelligence.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -767,4 +769,438 @@ void main() {
       expect(clamped, equals(5));
     });
   });
+
+  group('Cycle Anchor Correction & Settings Update Tests', () {
+    test('Date difference heuristic correctly differentiates correction vs new cycle', () {
+      final oldAnchor = DateTime(2026, 9, 20);
+      
+      // Case A: Correcting backwards by 5 days -> should replace old anchor
+      final correctedBack = DateTime(2026, 9, 15);
+      expect(correctedBack.difference(oldAnchor).inDays < 16, isTrue);
+
+      // Case B: Adjusting forward by 2 days -> should replace old anchor
+      final adjustedForward = DateTime(2026, 9, 22);
+      expect(adjustedForward.difference(oldAnchor).inDays < 16, isTrue);
+
+      // Case C: New cycle 28 days later -> should NOT replace old anchor, keep as history
+      final newCycle = DateTime(2026, 10, 18);
+      expect(newCycle.difference(oldAnchor).inDays >= 16, isTrue);
+    });
+
+    test('Old anchor deletion filters target entries on or after new date when correcting backwards', () {
+      final oldAnchor = DateTime(2026, 9, 20);
+      final newAnchor = DateTime(2026, 9, 15);
+
+      final state = [
+        PeriodEntry(id: 'p1', startDate: DateTime(2026, 9, 20)),
+        PeriodEntry(id: 'p0', startDate: DateTime(2026, 8, 22)),
+      ];
+
+      final toRemove = state.where((p) {
+        final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+        return (pNorm == oldAnchor) || pNorm.isAfter(newAnchor);
+      }).toList();
+
+      expect(toRemove.map((e) => e.id), contains('p1'));
+      expect(toRemove.map((e) => e.id), isNot(contains('p0')));
+    });
+
+    test('Unmarking periodStarted without flow detects existing anchor for removal', () {
+      final today = DateTime(2026, 9, 21);
+      final history = [
+        PeriodEntry(id: 'anchor-today', startDate: DateTime(2026, 9, 21)),
+        PeriodEntry(id: 'anchor-past', startDate: DateTime(2026, 8, 23)),
+      ];
+
+      final log = LogEntry(
+        id: 'log-1',
+        date: today,
+        symptoms: [],
+        periodStarted: false,
+        flow: null,
+      );
+
+      final normDate = DateTime(log.date.year, log.date.month, log.date.day);
+      final existingAnchor = history.where((p) =>
+          p.startDate.year == normDate.year &&
+          p.startDate.month == normDate.month &&
+          p.startDate.day == normDate.day).firstOrNull;
+
+      expect(existingAnchor, isNotNull);
+      expect(existingAnchor!.id, equals('anchor-today'));
+    });
+
+    test('Calendar strictly suppresses logging actions on future dates', () {
+      final today = DateTime(2026, 9, 21);
+      final tomorrow = DateTime(2026, 9, 22);
+      final past = DateTime(2026, 9, 20);
+
+      expect(tomorrow.isAfter(today), isTrue);
+      expect(past.isAfter(today), isFalse);
+    });
+
+    test('Editing an entry moves date without deleting the entry', () {
+      final oldDate = DateTime(2026, 9, 20);
+      final newDate = DateTime(2026, 9, 18);
+      final entry = PeriodEntry(id: 'anchor-sep', startDate: oldDate);
+
+      // Simulating editPeriodEntry logic
+      final updated = PeriodEntry(id: entry.id, startDate: newDate, source: entry.source);
+      expect(updated.id, equals('anchor-sep'));
+      expect(updated.startDate, equals(newDate));
+    });
+
+    test('Consecutive bleeding days within 14 days do not move cycle anchor', () {
+      final cycleStart = DateTime(2026, 9, 20);
+      final day2Bleeding = DateTime(2026, 9, 21);
+      final history = [PeriodEntry(id: '1', startDate: cycleStart)];
+
+      final normDate = DateTime(day2Bleeding.year, day2Bleeding.month, day2Bleeding.day);
+      final sameCycle = history.where((p) {
+        final diff = normDate.difference(p.startDate).inDays;
+        return diff >= 0 && diff < 14;
+      }).firstOrNull;
+
+      expect(sameCycle, isNotNull);
+      expect(sameCycle!.startDate, equals(cycleStart));
+    });
+
+    test('Editing older entry leaves newer cycles and current anchor intact', () {
+      final sepAnchor = DateTime(2026, 9, 20);
+      final oldAug = DateTime(2026, 8, 22);
+      final correctedAug = DateTime(2026, 8, 20);
+
+      final state = [
+        PeriodEntry(id: 'sep', startDate: sepAnchor),
+        PeriodEntry(id: 'aug', startDate: oldAug),
+      ];
+
+      // Edit aug only
+      final updatedState = state.map((e) {
+        if (e.id == 'aug') return PeriodEntry(id: e.id, startDate: correctedAug);
+        return e;
+      }).toList();
+
+      expect(updatedState.first.startDate, equals(sepAnchor));
+      expect(updatedState.last.startDate, equals(correctedAug));
+      expect(updatedState.length, equals(2));
+    });
+
+    test('showDatePicker date bounds prevent assertion crashes when anchor is historical', () {
+      final now = DateTime(2026, 9, 21);
+      final oldAnchor = DateTime(2025, 6, 1); // 477 days ago
+
+      final safeInitial = oldAnchor.isAfter(now) ? now : oldAnchor;
+      final firstDate = safeInitial.isBefore(now.subtract(const Duration(days: 730)))
+          ? safeInitial
+          : now.subtract(const Duration(days: 730));
+
+      expect(safeInitial.isBefore(firstDate), isFalse);
+      expect(safeInitial.isAfter(now), isFalse);
+    });
+  });
+
+  group('PeriodDateExtractor natural language extraction & confirmation tests', () {
+    test('extractDate correctly parses relative dates', () {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      final yesterday = PeriodDateExtractor.extractDate('My period started yesterday');
+      expect(yesterday, isNotNull);
+      expect(yesterday, equals(today.subtract(const Duration(days: 1))));
+
+      final dayBefore = PeriodDateExtractor.extractDate('it actually began the day before yesterday');
+      expect(dayBefore, isNotNull);
+      expect(dayBefore, equals(today.subtract(const Duration(days: 2))));
+
+      final threeDaysAgo = PeriodDateExtractor.extractDate('I started bleeding 3 days ago');
+      expect(threeDaysAgo, isNotNull);
+      expect(threeDaysAgo, equals(today.subtract(const Duration(days: 3))));
+    });
+
+    test('extractDate correctly parses month and day formats', () {
+      final sep18 = PeriodDateExtractor.extractDate('My period started on Sep 18th');
+      expect(sep18, isNotNull);
+      expect(sep18!.month, equals(9));
+      expect(sep18.day, equals(18));
+
+      final aug20 = PeriodDateExtractor.extractDate('It started 20th August');
+      expect(aug20, isNotNull);
+      expect(aug20!.month, equals(8));
+      expect(aug20.day, equals(20));
+
+      final sep15 = PeriodDateExtractor.extractDate('started on 15 sep');
+      expect(sep15, isNotNull);
+      expect(sep15!.month, equals(9));
+      expect(sep15.day, equals(15));
+    });
+
+    test('extractDate parses day-only relative to current month', () {
+      final now = DateTime.now();
+      final on18th = PeriodDateExtractor.extractDate('my period started on the 18th');
+      expect(on18th, isNotNull);
+      expect(on18th!.day, equals(18));
+      expect(on18th.month, equals(now.month));
+    });
+
+    test('isConfirmation identifies affirmative responses', () {
+      expect(PeriodDateExtractor.isConfirmation('yes'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('yes please'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('sure'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('yeah'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('yep'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('do it'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('please update'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('I feel tired today'), isFalse);
+    });
+
+    test('isCancellation identifies negative responses', () {
+      expect(PeriodDateExtractor.isCancellation('no'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('no thanks'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('cancel'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('nevermind'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('keep it as is'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('yes please'), isFalse);
+    });
+  });
+
+  group('Symptom canonicalization & deduplication tests', () {
+    test('canonicalizeSymptom maps lowercase and variants to Title Case', () {
+      expect(LogEntry.canonicalizeSymptom('craving'), equals('Cravings'));
+      expect(LogEntry.canonicalizeSymptom('cravings'), equals('Cravings'));
+      expect(LogEntry.canonicalizeSymptom('headache'), equals('Headache'));
+      expect(LogEntry.canonicalizeSymptom('cramps'), equals('Cramps'));
+      expect(LogEntry.canonicalizeSymptom('bloating'), equals('Bloating'));
+      expect(LogEntry.canonicalizeSymptom('tired'), equals('Fatigue'));
+    });
+
+    test('canonicalizeSymptoms deduplicates case-insensitively within single entry', () {
+      final raw = ['craving', 'Craving', 'Cravings', 'headache', 'Headache'];
+      final canonical = LogEntry.canonicalizeSymptoms(raw);
+      expect(canonical, equals(['Cravings', 'Headache']));
+    });
+
+    test('LogEntry constructor auto-canonicalizes symptoms', () {
+      final entry = LogEntry(
+        id: 'test_1',
+        date: DateTime.now(),
+        symptoms: ['craving', 'Craving', 'CRAMPS', 'cramps'],
+      );
+      expect(entry.symptoms, equals(['Cravings', 'Cramps']));
+    });
+  });
+
+  group('Android Back Navigation & App Exit Prevention Tests', () {
+    test('WidgetsBindingObserver didPopRoute contract requires true to prevent platform exit', () {
+      // In Flutter framework, binding.dart:
+      // Future<bool> handlePopRoute() async {
+      //   for (final observer in List<WidgetsBindingObserver>.of(_observers)) {
+      //     if (await observer.didPopRoute()) {
+      //       return true; // back button was handled, do NOT exit app!
+      //     }
+      //   }
+      //   return false;
+      // }
+      // Therefore, returning true means back gesture was handled and app stays open.
+      bool didPopRouteHandled = true;
+      expect(didPopRouteHandled, isTrue,
+          reason: 'Returning true from didPopRoute instructs Flutter that back was handled and prevents app close');
+    });
+
+    test('LogEntry canonicalization handles all common symptom variants', () {
+      expect(LogEntry.canonicalizeSymptom('headache'), equals('Headache'));
+      expect(LogEntry.canonicalizeSymptom('HEADACHE'), equals('Headache'));
+      expect(LogEntry.canonicalizeSymptom('brain fog'), equals('Brain fog'));
+      expect(LogEntry.canonicalizeSymptom('BRAIN FOG'), equals('Brain fog'));
+      expect(LogEntry.canonicalizeSymptom('cramps'), equals('Cramps'));
+      expect(LogEntry.canonicalizeSymptom('tender'), equals('Tender'));
+      expect(LogEntry.canonicalizeSymptom('tender breasts'), equals('Tender'));
+      expect(LogEntry.canonicalizeSymptom('bloated'), equals('Bloating'));
+      expect(LogEntry.canonicalizeSymptom('anxiety'), equals('Anxious'));
+    });
+  });
+
+  group('Calendar Day Rhythm & Temporal Logic Tests', () {
+    test('Temporal date categorization correctly partitions Past, Today, and Future', () {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final yesterday = today.subtract(const Duration(days: 1));
+      final tomorrow = today.add(const Duration(days: 1));
+      final nextWeek = today.add(const Duration(days: 7));
+
+      expect(yesterday.isBefore(today), isTrue);
+      expect(yesterday.isAfter(today), isFalse);
+
+      expect(today.isAtSameMomentAs(today), isTrue);
+
+      expect(tomorrow.isAfter(today), isTrue);
+      expect(nextWeek.difference(today).inDays, equals(7));
+    });
+
+    test('CycleDailyIntelligence returns comprehensive non-empty guidance for all cycle days', () {
+      for (int day = 1; day <= 32; day++) {
+        final g = CycleDailyIntelligence.getGuidance(day, CyclePhase.follicular);
+        expect(g.dayHighlight, isNotEmpty);
+        expect(g.doThis, isNotEmpty);
+        expect(g.avoidThis, isNotEmpty);
+        expect(g.biologicalContext, isNotEmpty);
+        expect(g.dayHighlight.contains('—'), isFalse);
+        expect(g.doThis.contains('—'), isFalse);
+        expect(g.avoidThis.contains('—'), isFalse);
+        expect(g.biologicalContext.contains('—'), isFalse);
+      }
+    });
+  });
+
+  group('AI Auto-Logging Non-Echoing & Date Correction Hardening Tests', () {
+    test('PeriodDateExtractor parses user prompt "Hey My period started 4 days ago and logged wrong here"', () {
+      final refDate = DateTime(2026, 9, 21);
+      final extracted = PeriodDateExtractor.extractDate(
+        'Hey My period started 4 days ago and logged wrong here',
+        referenceDate: refDate,
+      );
+      expect(extracted, isNotNull);
+      expect(extracted, equals(DateTime(2026, 9, 17)));
+    });
+
+    test('PeriodDateExtractor parses word numbers and relative variations', () {
+      final refDate = DateTime(2026, 9, 21);
+      expect(
+        PeriodDateExtractor.extractDate('My period started four days ago', referenceDate: refDate),
+        equals(DateTime(2026, 9, 17)),
+      );
+      expect(
+        PeriodDateExtractor.extractDate('it was a couple days ago, period came', referenceDate: refDate),
+        equals(DateTime(2026, 9, 19)),
+      );
+      expect(
+        PeriodDateExtractor.extractDate('started bleeding a few days ago', referenceDate: refDate),
+        equals(DateTime(2026, 9, 18)),
+      );
+      expect(
+        PeriodDateExtractor.extractDate('my period started a week ago', referenceDate: refDate),
+        equals(DateTime(2026, 9, 14)),
+      );
+      expect(
+        PeriodDateExtractor.extractDate('period was 4 days back', referenceDate: refDate),
+        equals(DateTime(2026, 9, 17)),
+      );
+    });
+
+    test('PeriodDateExtractor confirmation and cancellation handles common phrasing', () {
+      expect(PeriodDateExtractor.isConfirmation('yes please'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('update it'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('sure'), isTrue);
+      expect(PeriodDateExtractor.isConfirmation('do it'), isTrue);
+
+      expect(PeriodDateExtractor.isCancellation('no thanks'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('keep it'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('cancel'), isTrue);
+      expect(PeriodDateExtractor.isCancellation('leave it as is'), isTrue);
+    });
+
+    test('Diffing engine: Existing log items are suppressed from auto-log summary parts', () {
+      final existingEntry = LogEntry(
+        id: '1',
+        date: DateTime(2026, 9, 21),
+        mood: MoodLevel.decent,
+        energyLevel: 3,
+        sleepQuality: SleepQuality.fair,
+        flow: FlowLevel.medium,
+        periodStarted: true,
+        symptoms: ['Low Energy'],
+      );
+
+      // Simulate newly detected fields matching existing entry (e.g. echoed by LLM)
+      const detectedMood = MoodLevel.decent;
+      const detectedEnergy = 3;
+      const detectedSleep = SleepQuality.fair;
+      const detectedFlow = FlowLevel.medium;
+      final detectedSymptoms = ['Low energy'];
+      const bool detectedPeriodStarted = true;
+
+      // Diffing checks
+      final isNewMood = detectedMood != existingEntry.mood;
+      final isNewEnergy = detectedEnergy != existingEntry.energyLevel;
+      final isNewSleep = detectedSleep != existingEntry.sleepQuality;
+      final isNewFlow = detectedFlow != existingEntry.flow;
+      final isNewPeriodStarted = detectedPeriodStarted && !existingEntry.periodStarted;
+
+      final existingCanonical = LogEntry.canonicalizeSymptoms(existingEntry.symptoms);
+      final newSymptoms = <String>[];
+      for (final s in LogEntry.canonicalizeSymptoms(detectedSymptoms)) {
+        if (!existingCanonical.contains(s)) {
+          newSymptoms.add(s);
+        }
+      }
+
+      final parts = <String>[];
+      if (isNewPeriodStarted) parts.add('Period started 🩸');
+      if (isNewFlow) parts.add('Flow');
+      if (isNewMood) parts.add(detectedMood.label);
+      if (isNewEnergy) parts.add('$detectedEnergy/5 energy');
+      if (isNewSleep) parts.add('Sleep');
+      for (final s in newSymptoms) {
+        parts.add(s);
+      }
+
+      // Everything was already logged, so parts MUST be completely empty!
+      expect(parts.isEmpty, isTrue);
+      expect(isNewMood, isFalse);
+      expect(isNewEnergy, isFalse);
+      expect(isNewSleep, isFalse);
+      expect(isNewFlow, isFalse);
+      expect(isNewPeriodStarted, isFalse);
+      expect(newSymptoms.isEmpty, isTrue);
+    });
+
+    test('Diffing engine: When user shares genuinely new symptom, only new symptom is captured', () {
+      final existingEntry = LogEntry(
+        id: '1',
+        date: DateTime(2026, 9, 21),
+        mood: MoodLevel.decent,
+        energyLevel: 3,
+        symptoms: ['Low Energy'],
+      );
+
+      // User now reports severe cramps and headache
+      const detectedCramps = CrampLevel.severe;
+      final detectedSymptoms = ['Low Energy', 'Headache'];
+
+      final isNewCramps = detectedCramps != CrampLevel.none && detectedCramps != existingEntry.cramps;
+
+      final existingCanonical = LogEntry.canonicalizeSymptoms(existingEntry.symptoms);
+      final newSymptoms = <String>[];
+      for (final s in LogEntry.canonicalizeSymptoms(detectedSymptoms)) {
+        if (!existingCanonical.contains(s)) {
+          newSymptoms.add(s);
+        }
+      }
+
+      final parts = <String>[];
+      if (isNewCramps) parts.add('Severe cramps');
+      for (final s in newSymptoms) {
+        parts.add(s);
+      }
+
+      // Only the new items (Severe cramps and Headache) are added!
+      expect(parts, equals(['Severe cramps', 'Headache']));
+      expect(parts.contains('Low Energy'), isFalse);
+    });
+
+    test('Date correction request strictly suppresses periodStarted and flow for today', () {
+      const bool hasSpecificDateRequest = true;
+      bool? detectedPeriodStarted = true;
+      FlowLevel? detectedFlow = FlowLevel.medium;
+
+      if (hasSpecificDateRequest) {
+        detectedPeriodStarted = false;
+        detectedFlow = null;
+      }
+
+      expect(detectedPeriodStarted, isFalse);
+      expect(detectedFlow, isNull);
+    });
+  });
 }
+

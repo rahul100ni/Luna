@@ -287,41 +287,32 @@ class StorageService {
   }
 
   // ── Period History ─────────────────────────────────────────────────
-  /// Saves a period start entry. Idempotent by calendar day: if an entry already
-  /// exists for this date (YYYY-MM-DD), it updates rather than adding a duplicate.
+  /// Saves a period start entry. Idempotent by calendar day: if another entry
+  /// already exists for this date (YYYY-MM-DD), it deletes the duplicate and replaces
+  /// this entry with its normalized start date.
   static Future<void> savePeriodEntry(PeriodEntry entry) async {
     if (_db == null) return;
     try {
       final normDate = DateTime(entry.startDate.year, entry.startDate.month, entry.startDate.day);
       final datePrefix = '${normDate.year.toString().padLeft(4, '0')}-${normDate.month.toString().padLeft(2, '0')}-${normDate.day.toString().padLeft(2, '0')}';
 
-      final existing = await _db!.query(
+      // Remove any conflicting entry for this same calendar day with a different ID
+      await _db!.delete(
         'period_history',
-        where: 'start_date LIKE ?',
-        whereArgs: ['$datePrefix%'],
+        where: 'id != ? AND start_date LIKE ?',
+        whereArgs: [entry.id, '$datePrefix%'],
       );
 
-      if (existing.isNotEmpty) {
-        await _db!.update(
-          'period_history',
-          {
-            'start_date': normDate.toIso8601String(),
-            'source': entry.source,
-          },
-          where: 'id = ?',
-          whereArgs: [existing.first['id']],
-        );
-      } else {
-        await _db!.insert(
-          'period_history',
-          {
-            'id': entry.id,
-            'start_date': normDate.toIso8601String(),
-            'source': entry.source,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
+      // Save/update this entry with primary key ID
+      await _db!.insert(
+        'period_history',
+        {
+          'id': entry.id,
+          'start_date': normDate.toIso8601String(),
+          'source': entry.source,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     } catch (_) {}
   }
 
@@ -339,6 +330,7 @@ class StorageService {
           uniqueEntries.add(entry);
         }
       }
+      uniqueEntries.sort((a, b) => b.startDate.compareTo(a.startDate));
       return uniqueEntries;
     } catch (_) {
       return [];

@@ -110,14 +110,18 @@ class DeepSeekService {
       buffer.writeln("=================================================");
     }
 
-    if (mood != null) {
-      buffer.writeln("- Today's Mood: ${mood.label} ${mood.emoji}");
-    }
-    if (energyLevel != null) {
-      buffer.writeln("- Today's Energy: $energyLevel/5");
-    }
-    if (symptoms != null && symptoms.isNotEmpty) {
-      buffer.writeln("- Tracked Symptoms: ${symptoms.join(', ')}");
+    final hasExistingLog = mood != null || energyLevel != null || (symptoms != null && symptoms.isNotEmpty);
+    if (hasExistingLog) {
+      buffer.writeln("USER'S ALREADY SAVED LOG FOR TODAY (FOR CONTEXT ONLY - DO NOT RE-LOG):");
+      if (mood != null) {
+        buffer.writeln("- Already Logged Mood: ${mood.label} ${mood.emoji}");
+      }
+      if (energyLevel != null) {
+        buffer.writeln("- Already Logged Energy: $energyLevel/5");
+      }
+      if (symptoms != null && symptoms.isNotEmpty) {
+        buffer.writeln("- Already Logged Symptoms: ${symptoms.join(', ')}");
+      }
     }
     if (additionalContext != null && additionalContext.trim().isNotEmpty) {
       buffer.writeln("- What she told you: \"$additionalContext\"");
@@ -159,7 +163,7 @@ class DeepSeekService {
     buffer.writeln(
         "6. NO EM DASHES: NEVER use em dashes (—). Use colons, commas, periods, or parentheses instead.");
     buffer.writeln(
-        "7. PERIOD START & FLOW MANDATE (CRITICAL): If she mentions bleeding, active flow (spotting, light, medium, heavy), or starting her period (even if phrasing is informal, emotionally distressed, or says 'period started tomorrow' or 'high flow'), you MUST set 'periodStarted': true and 'flow': '<light|medium|heavy>'. Active menstrual flow ALWAYS implies periodStarted: true.");
+        "7. PERIOD START & FLOW MANDATE: If she reports active bleeding or starting her period today, set 'periodStarted': true and 'flow': '<light|medium|heavy>'. CRITICAL EXCEPTION: If she mentions her period started on a PAST or DIFFERENT date (e.g. 'started 4 days ago', 'started yesterday', 'logged wrong date', 'was on Sep 18'), DO NOT log periodStarted: true for today! DO NOT output any [LOG:...] tag! Instead, warmly acknowledge the date correction conversationally and ask her to confirm updating her cycle start date.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -183,20 +187,28 @@ class DeepSeekService {
       buffer.writeln("    \"memory\": {\"category\": \"<preference|person|life_context|vulnerability|body_pattern>\", \"note\": \"<what to remember>\"}");
       buffer.writeln("  }");
       buffer.writeln("}");
-      buffer.writeln("If she shared any biomarkers, energy, cramps, flow, sleep, or mood, populate the 'log' object. If she shared none, omit 'log' or set it to null.");
+      buffer.writeln("If she shared any NEW biomarkers, energy, cramps, flow, sleep, or mood in this input, populate the 'log' object. If she shared none, omit 'log' or set it to null.");
     } else {
       buffer.writeln();
       buffer.writeln();
       buffer.writeln(
           "CHAT MODE GUIDELINES: Respond in natural, conversational texting style (2-4 sentences max). NO bullet points. Speak like a loving, perceptive friend.");
       buffer.writeln(
-          "AUTO-LOGGING & MEMORY HELPER (VISION Pillar One & Two):");
+          "CHAT MODE AUTO-LOGGING & MEMORY HELPER (VISION Pillar One & Two):");
       buffer.writeln(
-          "If she shares any personal body state, cycle update, energy level, sleep, cramps, flow, symptoms, life notes, or personal details, append a clean JSON tag strictly formatted as:");
+          "If she explicitly shares NEW personal body state, symptoms, sleep, cramps, or flow in HER VERY LATEST MESSAGE, append a clean JSON tag strictly formatted as:");
       buffer.writeln(
           r'[LOG:{"periodStarted":<true|false>,"flow":"<spotting|light|medium|heavy>","cramps":"<none|mild|moderate|severe>","mood":"<struggling|low|meh|decent|good|thriving>","energy":<1-5>,"sleep":"<poor|fair|good|deep>","symptoms":["<Symptom1>","<Symptom2>"],"notes":"<brief note>","memory":{"category":"<preference|person|life_context|vulnerability|body_pattern>","note":"<what to remember about her>"}}]');
       buffer.writeln(
-          "Include ONLY the fields she communicated! If she didn't mention period starting and had no flow, omit periodStarted. If she reported flow, set periodStarted: true. If she didn't share a new personal memory, omit memory. If she shared no loggable attributes or memory, do NOT include any [LOG:...] tag.");
+          "CRITICAL AUTO-LOG RESTRICTIONS:");
+      buffer.writeln(
+          "- DO NOT RE-LOG ALREADY SAVED DATA: The items listed in 'USER'S ALREADY SAVED LOG FOR TODAY' above are ALREADY in the database. NEVER echo or re-emit them in [LOG:...].");
+      buffer.writeln(
+          "- ONLY NEW INFORMATION: Include ONLY fields that she newly communicated in her latest text message. If she didn't mention cramps in this message, OMIT cramps. If she didn't mention mood, OMIT mood.");
+      buffer.writeln(
+          "- DATE CORRECTIONS ARE NOT TODAY LOGS: If she mentions a past or different period date (e.g. 'started 4 days ago', 'my period started on Monday', 'date was logged wrong'), DO NOT output [LOG:{\"periodStarted\":true}] and NEVER log anything for today.");
+      buffer.writeln(
+          "- If she shared no NEW loggable attributes or memory in this message, DO NOT append any [LOG:...] tag at all.");
     }
 
     return buffer.toString();

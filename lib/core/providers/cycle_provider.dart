@@ -78,6 +78,18 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
   Future<void> _load() async {
     state = await StorageService.getPeriodHistory();
     _isLoaded = true;
+
+    // Ensure profile anchor matches the most recent period start in history
+    final profile = _ref.read(profileProvider);
+    if (state.isNotEmpty) {
+      final mostRecent = state.first.startDate;
+      if (profile != null && profile.lastPeriodStart != mostRecent) {
+        await _ref.read(profileProvider.notifier).syncLastPeriod(mostRecent);
+      }
+    } else if (profile?.lastPeriodStart != null) {
+      // Migrate existing profile anchor into period_history if history was empty
+      await addPeriodStart(profile!.lastPeriodStart!, source: 'profile');
+    }
   }
 
   /// The single correct entry point for recording a period start anywhere in the app.
@@ -99,6 +111,19 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     if (alreadyExists) {
       final mostRecent = state.isNotEmpty ? state.first.startDate : normDate;
       await _ref.read(profileProvider.notifier).syncLastPeriod(mostRecent);
+      return;
+    }
+
+    // Check if there is an existing entry within 14 days
+    // Biological human cycles cannot be < 14 days. If someone logs a period date within 14 days
+    // of an existing period start, it's a correction of that cycle start date!
+    final nearby = state.where((p) {
+      final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+      return (pNorm.difference(normDate).inDays.abs()) < 14;
+    }).firstOrNull;
+
+    if (nearby != null) {
+      await editPeriodEntry(nearby.id, normDate);
       return;
     }
 
@@ -127,31 +152,127 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
       final mostRecent = state.isNotEmpty ? state.first.startDate : normDate;
       await _ref.read(profileProvider.notifier).syncLastPeriod(mostRecent);
 
-      // Ensure a LogEntry exists for this date with periodStarted = true
-      final logEntries = _ref.read(logEntriesProvider);
-      final logsForDate = logEntries.where((e) =>
-          e.date.year == normDate.year &&
-          e.date.month == normDate.month &&
-          e.date.day == normDate.day);
-
-      if (logsForDate.isEmpty) {
-        final newLog = LogEntry(
-          id: const Uuid().v4(),
-          date: normDate,
-          symptoms: [],
-          periodStarted: true,
-        );
-        await _ref.read(logEntriesProvider.notifier).addEntry(newLog);
-      } else if (!logsForDate.first.periodStarted) {
-        final updated = logsForDate.first.copyWith(periodStarted: true);
-        await _ref.read(logEntriesProvider.notifier).addEntry(updated);
-      }
+      // Ensure LogEntry for this date has periodStarted = true without cascading
+      await _ref.read(logEntriesProvider.notifier).setPeriodStartedForDate(normDate, true);
 
       // Recompute average cycle length from actual gap history
       _recomputeCycleLength();
     } finally {
       _isAdding = false;
     }
+  }
+
+  /// Updates a specific period entry by ID to a new date.
+  /// Works for ANY entry in history (current or past) without deleting adjacent cycles.
+  Future<void> editPeriodEntry(String id, DateTime newDate) async {
+    final normNew = DateTime(newDate.year, newDate.month, newDate.day);
+
+    if (!_isLoaded && _loadFuture != null) {
+      await _loadFuture;
+    }
+
+    final entry = state.where((e) => e.id == id).firstOrNull;
+    if (entry == null) return;
+
+    final oldNorm = DateTime(entry.startDate.year, entry.startDate.month, entry.startDate.day);
+
+    // If date didn't change, do nothing
+    if (oldNorm.year == normNew.year &&
+        oldNorm.month == normNew.month &&
+        oldNorm.day == normNew.day) {
+      return;
+    }
+
+    // 1. Remove any other entry that already exists on normNew to avoid duplicates
+    final duplicates = state.where((p) =>
+        p.id != id &&
+        p.startDate.year == normNew.year &&
+        p.startDate.month == normNew.month &&
+        p.startDate.day == normNew.day).toList();
+    for (final d in duplicates) {
+      await StorageService.deletePeriodEntry(d.id);
+    }
+
+    // 2. Update the entry with new date in storage
+    final updated = PeriodEntry(
+      id: id,
+      startDate: normNew,
+      source: entry.source,
+    );
+    await StorageService.savePeriodEntry(updated);
+
+    // 3. Unmark old LogEntry if no flow was logged (using non-cascading method)
+    await _ref.read(logEntriesProvider.notifier).setPeriodStartedForDate(oldNorm, false);
+
+    // 4. Ensure LogEntry for normNew has periodStarted = true (using non-cascading method)
+    await _ref.read(logEntriesProvider.notifier).setPeriodStartedForDate(normNew, true);
+
+    // 5. Reload fresh history from DB
+    state = await StorageService.getPeriodHistory();
+
+    // 6. Sync profile anchor to the most recent period start in history
+    final mostRecent = state.isNotEmpty ? state.first.startDate : null;
+    await _ref.read(profileProvider.notifier).syncLastPeriod(mostRecent);
+
+    // 7. Recompute cycle length
+    _recomputeCycleLength();
+  }
+
+  /// Explicitly updates or corrects the cycle period start date (e.g. from Settings or Calendar).
+  /// - If history is empty: inserts new entry for newDate and syncs profile.
+  /// - If newDate is a subsequent cycle (>= 14 days after latest anchor):
+  ///   appends new cycle entry, preserving previous history.
+  /// - Otherwise (correction of existing anchor):
+  ///   updates the anchor without wiping older history.
+  Future<void> updatePeriodStart(DateTime newDate, {DateTime? oldDate}) async {
+    final normNew = DateTime(newDate.year, newDate.month, newDate.day);
+    DateTime? normOld = oldDate != null ? DateTime(oldDate.year, oldDate.month, oldDate.day) : null;
+
+    if (!_isLoaded && _loadFuture != null) {
+      await _loadFuture;
+    }
+
+    // Always fetch fresh state from SQLite
+    state = await StorageService.getPeriodHistory();
+
+    if (state.isEmpty) {
+      await addPeriodStart(normNew, source: 'settings');
+      return;
+    }
+
+    normOld ??= state.first.startDate;
+
+    final latestDate = DateTime(state.first.startDate.year, state.first.startDate.month, state.first.startDate.day);
+
+    // If newDate is >= 14 days AFTER the latest date in history, it's a subsequent cycle
+    if (normNew.difference(latestDate).inDays >= 14) {
+      await addPeriodStart(normNew, source: 'settings');
+      return;
+    }
+
+    // Find the target entry to correct
+    final target = state.where((p) =>
+        p.startDate.year == normOld!.year &&
+        p.startDate.month == normOld.month &&
+        p.startDate.day == normOld.day).firstOrNull ??
+        state.where((p) {
+          final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+          return (pNorm.difference(normNew).inDays.abs()) < 14;
+        }).firstOrNull ??
+        state.first;
+
+    // Clean up any accidental entries strictly AFTER normNew in the same cycle
+    if (target.id == state.first.id) {
+      final phantomLater = state.where((p) {
+        final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+        return p.id != target.id && pNorm.isAfter(normNew);
+      }).toList();
+      for (final p in phantomLater) {
+        await StorageService.deletePeriodEntry(p.id);
+      }
+    }
+
+    await editPeriodEntry(target.id, normNew);
   }
 
   void _recomputeCycleLength() {
@@ -183,15 +304,7 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
 
     if (entry != null) {
       final normDate = DateTime(entry.startDate.year, entry.startDate.month, entry.startDate.day);
-      final logs = _ref.read(logEntriesProvider);
-      final matching = logs.where((e) =>
-          e.date.year == normDate.year &&
-          e.date.month == normDate.month &&
-          e.date.day == normDate.day).firstOrNull;
-      if (matching != null && matching.periodStarted) {
-        final updated = matching.copyWith(periodStarted: false);
-        await _ref.read(logEntriesProvider.notifier).addEntry(updated);
-      }
+      await _ref.read(logEntriesProvider.notifier).setPeriodStartedForDate(normDate, false);
     }
 
     _recomputeCycleLength();
@@ -279,6 +392,36 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
     _recomputePeriodLength();
   }
 
+  /// Sets periodStarted flag for a given calendar date directly without cascading to PeriodHistoryNotifier.
+  Future<void> setPeriodStartedForDate(DateTime date, bool started) async {
+    final normDate = DateTime(date.year, date.month, date.day);
+    final index = state.indexWhere((e) =>
+        e.date.year == normDate.year &&
+        e.date.month == normDate.month &&
+        e.date.day == normDate.day);
+
+    if (index != -1) {
+      final existing = state[index];
+      if (!started && existing.flow != null) return; // Retain periodStarted if flow is present
+      if (existing.periodStarted != started) {
+        final updated = existing.copyWith(periodStarted: started);
+        await StorageService.saveLogEntry(updated);
+        final updatedList = [...state];
+        updatedList[index] = updated;
+        state = updatedList;
+      }
+    } else if (started) {
+      final newLog = LogEntry(
+        id: const Uuid().v4(),
+        date: normDate,
+        symptoms: [],
+        periodStarted: true,
+      );
+      await StorageService.saveLogEntry(newLog);
+      state = [newLog, ...state];
+    }
+  }
+
   Future<void> addEntry(LogEntry entry) async {
     // Biological rule: active menstrual flow strictly implies period started
     LogEntry finalEntry = entry;
@@ -297,10 +440,29 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
           p.startDate.month == normDate.month &&
           p.startDate.day == normDate.day);
       if (!alreadyAnchored) {
-        await _ref.read(periodHistoryProvider.notifier).addPeriodStart(
-          normDate,
-          source: 'log_entry',
-        );
+        // If within 1 to 13 days of a recent period start, this is an active bleeding day in the same cycle.
+        // It must NOT move or create a new cycle anchor.
+        final sameCycle = history.where((p) {
+          final diff = normDate.difference(p.startDate).inDays;
+          return diff >= 0 && diff < 14;
+        }).firstOrNull;
+
+        if (sameCycle == null) {
+          await _ref.read(periodHistoryProvider.notifier).addPeriodStart(
+            normDate,
+            source: 'log_entry',
+          );
+        }
+      }
+    } else {
+      final history = _ref.read(periodHistoryProvider);
+      final normDate = DateTime(finalEntry.date.year, finalEntry.date.month, finalEntry.date.day);
+      final existingAnchor = history.where((p) =>
+          p.startDate.year == normDate.year &&
+          p.startDate.month == normDate.month &&
+          p.startDate.day == normDate.day).firstOrNull;
+      if (existingAnchor != null && finalEntry.flow == null) {
+        await _ref.read(periodHistoryProvider.notifier).removePeriodEntry(existingAnchor.id);
       }
     }
 
@@ -308,8 +470,20 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
   }
 
   Future<void> deleteEntry(String id) async {
+    final entry = state.where((e) => e.id == id).firstOrNull;
     await StorageService.deleteLogEntry(id);
     state = state.where((e) => e.id != id).toList();
+    if (entry != null && entry.periodStarted && entry.flow == null) {
+      final history = _ref.read(periodHistoryProvider);
+      final normDate = DateTime(entry.date.year, entry.date.month, entry.date.day);
+      final anchor = history.where((p) =>
+          p.startDate.year == normDate.year &&
+          p.startDate.month == normDate.month &&
+          p.startDate.day == normDate.day).firstOrNull;
+      if (anchor != null) {
+        await _ref.read(periodHistoryProvider.notifier).removePeriodEntry(anchor.id);
+      }
+    }
     _recomputePeriodLength();
   }
 
@@ -329,6 +503,16 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
             e.date.month == today.month &&
             e.date.day == today.day))
         .toList();
+
+    final history = _ref.read(periodHistoryProvider);
+    final anchor = history.where((p) =>
+        p.startDate.year == today.year &&
+        p.startDate.month == today.month &&
+        p.startDate.day == today.day).firstOrNull;
+    if (anchor != null) {
+      await _ref.read(periodHistoryProvider.notifier).removePeriodEntry(anchor.id);
+    }
+
     _recomputePeriodLength();
   }
 
