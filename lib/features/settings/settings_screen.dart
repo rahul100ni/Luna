@@ -1483,7 +1483,7 @@ class _SettingsTile extends StatelessWidget {
     const dangerColor = Color(0xFFE57373);
     final iconColor = isDestructive
         ? dangerColor
-        : colors.primary;
+        : colors.onSurface.withValues(alpha: 0.8);
     final labelColor = isDestructive
         ? dangerColor
         : colors.onSurface.withValues(alpha: 0.9);
@@ -1491,38 +1491,23 @@ class _SettingsTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: isDestructive
-              ? dangerColor.withValues(alpha: 0.04)
-              : colors.surface.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(24),
-          border: isDestructive
-              ? Border.all(color: dangerColor.withValues(alpha: 0.15), width: 1)
-              : Border.all(color: colors.primary.withValues(alpha: 0.08), width: 1),
-          boxShadow: [
-            if (!isDestructive)
-              BoxShadow(
-                color: colors.primary.withValues(alpha: 0.03),
-                blurRadius: 10,
-                spreadRadius: 2,
-                offset: const Offset(0, 4),
-              ),
-          ],
+              ? dangerColor.withValues(alpha: 0.03)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDestructive
+                ? dangerColor.withValues(alpha: 0.1)
+                : colors.onSurface.withValues(alpha: 0.08),
+            width: 0.5,
+          ),
         ),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isDestructive
-                    ? dangerColor.withValues(alpha: 0.1)
-                    : colors.primary.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
+            Icon(icon, color: iconColor, size: 18),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -1532,22 +1517,22 @@ class _SettingsTile extends StatelessWidget {
                   Text(
                     label,
                     style: GoogleFonts.dmSans(
-                      fontSize: 16,
+                      fontSize: 14,
                       color: labelColor,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.3,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.2,
                     ),
                   ),
                   if (sublabel != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       sublabel!,
                       style: GoogleFonts.dmSans(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: isDestructive
-                            ? dangerColor.withValues(alpha: 0.7)
-                            : colors.onSurface.withValues(alpha: 0.5),
-                        height: 1.4,
+                            ? dangerColor.withValues(alpha: 0.6)
+                            : colors.onSurface.withValues(alpha: 0.4),
+                        height: 1.3,
                       ),
                     ),
                   ],
@@ -1557,9 +1542,9 @@ class _SettingsTile extends StatelessWidget {
             const SizedBox(width: 8),
             Icon(Icons.arrow_forward_ios_rounded,
                 color: isDestructive
-                    ? dangerColor.withValues(alpha: 0.3)
-                    : colors.onSurface.withValues(alpha: 0.2),
-                size: 16),
+                    ? dangerColor.withValues(alpha: 0.2)
+                    : colors.onSurface.withValues(alpha: 0.15),
+                size: 14),
           ],
         ),
       ),
@@ -1655,35 +1640,35 @@ class _ResetOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const dangerColor = Color(0xFFE57373);
-    final baseColor = isDestructive ? dangerColor : colors.primary;
     
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: isDestructive 
-              ? dangerColor.withValues(alpha: 0.05)
-              : colors.background.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(20),
+              ? dangerColor.withValues(alpha: 0.03)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isDestructive 
-                ? dangerColor.withValues(alpha: 0.2)
-                : colors.onSurface.withValues(alpha: 0.05),
+                ? dangerColor.withValues(alpha: 0.1)
+                : colors.onSurface.withValues(alpha: 0.08),
+            width: 0.5,
           ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: baseColor.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(
+                icon, 
+                color: isDestructive ? dangerColor : colors.onSurface.withValues(alpha: 0.8), 
+                size: 18
               ),
-              child: Icon(icon, color: baseColor, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1691,18 +1676,18 @@ class _ResetOptionTile extends StatelessWidget {
                   Text(
                     title,
                     style: GoogleFonts.dmSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                       color: isDestructive ? dangerColor : colors.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      color: colors.onSurface.withValues(alpha: 0.5),
-                      height: 1.4,
+                      fontSize: 12,
+                      color: colors.onSurface.withValues(alpha: 0.4),
+                      height: 1.3,
                     ),
                   ),
                 ],
