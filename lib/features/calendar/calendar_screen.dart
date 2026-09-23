@@ -287,6 +287,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with WidgetsBin
                           )
                         : const SizedBox(),
                   ),
+
+                  // Bottom padding to clear floating nav bar
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
@@ -747,6 +750,12 @@ class _SelectedDayCard extends ConsumerWidget {
     final isEarlyStartCandidate = daysDiff != null &&
         daysDiff >= 14 &&
         (daysDiff + 1) < (profile.averageCycleLength - 2);
+    final isImmediateExtensionCandidate = !isFuture &&
+        !isConfirmedStart &&
+        (entry == null || entry.flow == null) &&
+        daysDiff != null &&
+        daysDiff == periodLen &&
+        periodLen < 12;
 
 
     return Container(
@@ -921,84 +930,6 @@ class _SelectedDayCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ] else if (daysDiff != null && daysDiff >= 1 && daysDiff <= 9 && (daysDiff + 1) > periodLen && !isFuture && !isConfirmedStart && (entry == null || entry.flow == null)) ...[
-            // Graceful, non-intrusive status for days beyond expected period length (e.g. Day 5 when average is 4)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFD94F6E).withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.15)),
-              ),
-              child: Row(
-                children: [
-                  const Text('🩸', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Day ${daysDiff + 1} · Still bleeding?',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: colors.onSurface.withValues(alpha: 0.85),
-                    ),
-                  ),
-                  const Spacer(),
-                  InkWell(
-                    onTap: () async {
-                      final entryId = entry?.id ?? 'log_${selectedDay.year}_${selectedDay.month}_${selectedDay.day}';
-                      final updated = (entry ?? LogEntry(id: entryId, date: selectedDay, symptoms: const [])).copyWith(
-                        flow: FlowLevel.medium,
-                      );
-                      await ref.read(logEntriesProvider.notifier).addEntry(updated);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Bleeding flow recorded for Day ${daysDiff + 1} 🩸 Menstrual phase extended.',
-                              style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
-                            ),
-                            backgroundColor: const Color(0xFF2A1F3D),
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 2),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                        );
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      child: Text(
-                        'Yes, log flow',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFFFF8FA3),
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () => _showPeriodEndedDialog(context, colors, ref, selectedDay, daysDiff + 1),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      child: Text(
-                        'Ended',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          color: colors.onSurface.withValues(alpha: 0.45),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1390,6 +1321,56 @@ class _SelectedDayCard extends ConsumerWidget {
                     ),
                   ),
                 ),
+
+              if (isImmediateExtensionCandidate)
+                GestureDetector(
+                  onTap: () async {
+                    final entryId = entry?.id ?? 'log_${selectedDay.year}_${selectedDay.month}_${selectedDay.day}';
+                    final updated = (entry ?? LogEntry(id: entryId, date: selectedDay, symptoms: const [])).copyWith(
+                      flow: FlowLevel.medium,
+                    );
+                    await ref.read(logEntriesProvider.notifier).addEntry(updated);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Bleeding flow recorded for Day ${daysDiff + 1} 🩸 Menstrual phase extended.',
+                            style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+                          ),
+                          backgroundColor: const Color(0xFF2A1F3D),
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    margin: EdgeInsets.only(top: entry == null ? 8 : 0),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD94F6E).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.22)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('🩸', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Still bleeding today · Log flow',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: colors.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ] else if (isPast) ...[
               // Past day actions
               if (entry == null && !isConfirmedStart)
@@ -1476,6 +1457,56 @@ class _SelectedDayCard extends ConsumerWidget {
                       ),
                     ],
                   ],
+                ),
+
+              if (isImmediateExtensionCandidate)
+                GestureDetector(
+                  onTap: () async {
+                    final entryId = entry?.id ?? 'log_${selectedDay.year}_${selectedDay.month}_${selectedDay.day}';
+                    final updated = (entry ?? LogEntry(id: entryId, date: selectedDay, symptoms: const [])).copyWith(
+                      flow: FlowLevel.medium,
+                    );
+                    await ref.read(logEntriesProvider.notifier).addEntry(updated);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Bleeding flow recorded for Day ${daysDiff + 1} 🩸 Menstrual phase extended.',
+                            style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+                          ),
+                          backgroundColor: const Color(0xFF2A1F3D),
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD94F6E).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.22)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('🩸', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Still bled on Day ${daysDiff + 1} · Log flow',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: colors.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 )
               else if (!isConfirmedStart && !isInPeriodDays)
                 GestureDetector(
