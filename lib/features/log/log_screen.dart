@@ -227,7 +227,7 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
     }
   }
 
-  void _openDetailSheet(PhaseColors colors) {
+  void _openDetailSheet(PhaseColors colors, {bool hideFlow = false}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -283,54 +283,55 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                 ),
                 const SizedBox(height: 22),
 
-                // ── Flow ──────────────────────────────────────────────
-                _SheetSectionLabel(label: 'Flow', colors: colors),
-                const SizedBox(height: 10),
-                Row(
-                  children: FlowLevel.values.map((f) {
-                    final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
-                    final sel = _flow == f;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          setSheetState(() => _flow = sel ? null : f);
-                          setState(() => _flow = sel ? null : f);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: sel
-                                ? colors.primary.withValues(alpha: 0.22)
-                                : colors.background.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
+                // ── Flow (omitted when already shown on the main screen) ──
+                if (!hideFlow) ...[
+                  _SheetSectionLabel(label: 'Flow', colors: colors),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: FlowLevel.values.map((f) {
+                      final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
+                      final sel = _flow == f;
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setSheetState(() => _flow = sel ? null : f);
+                            setState(() => _flow = sel ? null : f);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
                               color: sel
-                                  ? colors.primary
-                                  : colors.onSurface.withValues(alpha: 0.1),
-                              width: sel ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              labels[f.index],
-                              style: GoogleFonts.dmSans(
-                                fontSize: 12,
-                                fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                                  ? colors.primary.withValues(alpha: 0.22)
+                                  : colors.background.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
                                 color: sel
-                                    ? colors.accent
-                                    : colors.onSurface.withValues(alpha: 0.55),
+                                    ? colors.primary
+                                    : colors.onSurface.withValues(alpha: 0.1),
+                                width: sel ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                labels[f.index],
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 12,
+                                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                                  color: sel
+                                      ? colors.accent
+                                      : colors.onSurface.withValues(alpha: 0.55),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-
-                const SizedBox(height: 20),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                ],
 
                 // ── Sleep ─────────────────────────────────────────────
                 _SheetSectionLabel(label: 'Sleep last night', colors: colors),
@@ -540,11 +541,15 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
     final isMidCycleDay2To13 = daysSinceAnchor != null &&
         daysSinceAnchor >= 1 &&
         daysSinceAnchor < 14;
-    final showPeriodStartedToggle = _periodStarted || !isMidCycleDay2To13;
+    final isBleedWindow = daysSinceAnchor != null &&
+        daysSinceAnchor >= 0 &&
+        daysSinceAnchor <= 10;
+    final showFlowOnMainScreen = _periodStarted || isBleedWindow || _flow != null;
+    final showPeriodStartedToggle = !isMidCycleDay2To13;
 
-    // Inline detail badge for summary
+    // Inline detail badge for summary (no duplicate flow if shown on main)
     final List<String> detailSet = [
-      if (_flow != null) ['Spotting', 'Light', 'Medium', 'Heavy'][_flow!.index],
+      if (!showFlowOnMainScreen && _flow != null) ['Spotting', 'Light', 'Medium', 'Heavy'][_flow!.index],
       if (_sleep != null) _sleep!.label,
       if (_cramps != null) ['No cramps', 'Mild cramps', 'Moderate cramps', 'Severe cramps'][_cramps!.index],
     ];
@@ -747,7 +752,7 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                           onChanged: (v) => setState(() => _energy = v),
                         ),
 
-                        // ── Contextual Period Started Toggle (Day 1) ───────────────
+                        // ── Contextual Period Started Toggle (Day 1 / New Cycle) ───
                         if (showPeriodStartedToggle) ...[
                           const SizedBox(height: 18),
                           GestureDetector(
@@ -813,93 +818,79 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                           ).animate().fadeIn(delay: 90.ms),
                         ],
 
-                        // ── Ongoing Bleed & Flow Selector (Days 2 to 10) ───────────────
-                        if (isMidCycleDay2To13 && daysSinceAnchor != null && daysSinceAnchor <= 10) ...[
-                          const SizedBox(height: 18),
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: colors.surface.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: _flow != null
-                                    ? const Color(0xFFD94F6E).withValues(alpha: 0.35)
-                                    : colors.onSurface.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Text('🩸', style: TextStyle(fontSize: 14)),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'PERIOD FLOW · DAY ${daysSinceAnchor + 1}',
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFFD94F6E),
-                                        letterSpacing: 1.0,
+                        // ── Adaptive Period Flow (Only when in bleed window or active) ─
+                        if (showFlowOnMainScreen) ...[
+                          const SizedBox(height: 20),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'PERIOD FLOW · DAY ${daysSinceAnchor != null ? daysSinceAnchor + 1 : 1}',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: colors.onSurface.withValues(alpha: 0.35),
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (_flow != null)
+                                    GestureDetector(
+                                      onTap: () => setState(() => _flow = null),
+                                      child: Text(
+                                        'Clear',
+                                        style: GoogleFonts.dmSans(
+                                          fontSize: 11,
+                                          color: colors.onSurface.withValues(alpha: 0.4),
+                                          decoration: TextDecoration.underline,
+                                        ),
                                       ),
                                     ),
-                                    const Spacer(),
-                                    if (_flow != null)
-                                      GestureDetector(
-                                        onTap: () => setState(() => _flow = null),
-                                        child: Text(
-                                          'No flow / ended',
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 11,
-                                            color: colors.onSurface.withValues(alpha: 0.45),
-                                            decoration: TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  children: FlowLevel.values.map((f) {
-                                    final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
-                                    final sel = _flow == f;
-                                    return Expanded(
-                                      child: GestureDetector(
-                                        onTap: () => setState(() => _flow = sel ? null : f),
-                                        child: AnimatedContainer(
-                                          duration: const Duration(milliseconds: 180),
-                                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                                          padding: const EdgeInsets.symmetric(vertical: 8),
-                                          decoration: BoxDecoration(
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: FlowLevel.values.map((f) {
+                                  final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
+                                  final sel = _flow == f;
+                                  return Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => setState(() => _flow = sel ? null : f),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 180),
+                                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                                        padding: const EdgeInsets.symmetric(vertical: 9),
+                                        decoration: BoxDecoration(
+                                          color: sel
+                                              ? const Color(0xFFD94F6E).withValues(alpha: 0.18)
+                                              : colors.surface.withValues(alpha: 0.45),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
                                             color: sel
-                                                ? const Color(0xFFD94F6E).withValues(alpha: 0.22)
-                                                : colors.background.withValues(alpha: 0.5),
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(
-                                              color: sel
-                                                  ? const Color(0xFFD94F6E)
-                                                  : colors.onSurface.withValues(alpha: 0.1),
-                                              width: sel ? 1.4 : 1,
-                                            ),
+                                                ? const Color(0xFFD94F6E)
+                                                : colors.onSurface.withValues(alpha: 0.08),
+                                            width: sel ? 1.4 : 1,
                                           ),
-                                          child: Center(
-                                            child: Text(
-                                              labels[f.index],
-                                              style: GoogleFonts.dmSans(
-                                                fontSize: 11.5,
-                                                fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
-                                                color: sel ? const Color(0xFFFF8FA3) : colors.onSurface.withValues(alpha: 0.6),
-                                              ),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            labels[f.index],
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 11.5,
+                                              fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                                              color: sel ? const Color(0xFFFF8FA3) : colors.onSurface.withValues(alpha: 0.6),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ],
-                            ),
-                          ).animate().fadeIn(delay: 90.ms),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ).animate().fadeIn(delay: 100.ms),
                         ],
 
                         const SizedBox(height: 24),
@@ -1061,7 +1052,7 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
 
                         // ── Detail sheet trigger ──────────────────────
                         GestureDetector(
-                          onTap: () => _openDetailSheet(colors),
+                          onTap: () => _openDetailSheet(colors, hideFlow: showFlowOnMainScreen),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
                             decoration: BoxDecoration(
@@ -1089,7 +1080,9 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                                   child: Text(
                                     detailSet.isNotEmpty
                                         ? detailSet.join(' · ')
-                                        : 'Add flow, sleep & more (optional)',
+                                        : (showFlowOnMainScreen
+                                            ? 'Add sleep, cramps & notes (optional)'
+                                            : 'Add flow, sleep & notes (optional)'),
                                     style: GoogleFonts.dmSans(
                                       fontSize: 12,
                                       color: detailSet.isNotEmpty
