@@ -1284,19 +1284,10 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     DateTime targetDate;
     if (targetResult.isExplicit) {
       targetDate = DateTime(targetResult.date.year, targetResult.date.month, targetResult.date.day);
-    } else if (detectedDateStr != null && detectedDateStr.isNotEmpty) {
-      final parsed = DateTime.tryParse(detectedDateStr);
-      if (parsed != null) {
-        final parsedNorm = DateTime(parsed.year, parsed.month, parsed.day);
-        if (parsedNorm.isAfter(todayMidnight)) {
-          // Future date from AI: do not write to log database
-          return null;
-        }
-        targetDate = parsedNorm;
-      } else {
-        targetDate = todayMidnight;
-      }
     } else {
+      // CRITICAL BIOLOGICAL FIX: Never trust AI's `detectedDateStr` if the user didn't explicitly 
+      // state a target date. The AI often hallucinates the period start date (e.g. 3 days ago) 
+      // as the symptom log date. If user just says "Day 4, I have a headache", the headache is TODAY.
       targetDate = todayMidnight;
     }
 
