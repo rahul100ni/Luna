@@ -1268,8 +1268,8 @@ class _SelectedDayCard extends ConsumerWidget {
               if (canRecordOngoingBleed)
                 GestureDetector(
                   onTap: () async {
-                    final entryId = entry?.id ?? const Uuid().v4();
-                    final updated = (entry ?? LogEntry(id: entryId, date: selectedDay)).copyWith(
+                    final entryId = entry?.id ?? 'log_${selectedDay.year}_${selectedDay.month}_${selectedDay.day}';
+                    final updated = (entry ?? LogEntry(id: entryId, date: selectedDay, symptoms: const [])).copyWith(
                       flow: FlowLevel.medium,
                     );
                     await ref.read(logEntriesProvider.notifier).addEntry(updated);
@@ -1401,8 +1401,8 @@ class _SelectedDayCard extends ConsumerWidget {
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
-                            final entryId = entry?.id ?? const Uuid().v4();
-                            final updated = (entry ?? LogEntry(id: entryId, date: selectedDay)).copyWith(
+                            final entryId = entry?.id ?? 'log_${selectedDay.year}_${selectedDay.month}_${selectedDay.day}';
+                            final updated = (entry ?? LogEntry(id: entryId, date: selectedDay, symptoms: const [])).copyWith(
                               flow: FlowLevel.medium,
                             );
                             await ref.read(logEntriesProvider.notifier).addEntry(updated);
