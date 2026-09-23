@@ -705,144 +705,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // ── 7. Reset All Data (Two-tier choice: Device Only vs Device + Cloud) ─────
-  void _showResetConfirmation(PhaseColors colors) {
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: colors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(
-          'Reset Luna Data',
-          style: GoogleFonts.cormorantGaramond(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: colors.onSurface,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Choose how thoroughly you want to wipe your data:',
-              style: GoogleFonts.dmSans(
-                fontSize: 14,
-                color: colors.onSurface.withValues(alpha: 0.7),
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Option 1: Wipe Device Only
-            InkWell(
-              onTap: () async {
-                Navigator.of(dialogCtx).pop();
-                await _performDeviceWipe(wipeCloud: false);
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: colors.background,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: colors.onSurface.withValues(alpha: 0.1)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.phone_android_rounded, color: colors.accent, size: 24),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Wipe Device Only',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: colors.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Clears this phone. Your Cloud Vault remains safe for restore or multi-device use.',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 12,
-                              color: colors.onSurface.withValues(alpha: 0.5),
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Option 2: Wipe Everything (Device + Cloud)
-            InkWell(
-              onTap: () async {
-                Navigator.of(dialogCtx).pop();
-                await _performDeviceWipe(wipeCloud: true);
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD94F6E).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.delete_forever_rounded, color: Color(0xFFD94F6E), size: 24),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Wipe Everything (Device + Cloud)',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFD94F6E),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Irreversibly destroys both local storage and your private cloud vault.',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 12,
-                              color: colors.onSurface.withValues(alpha: 0.5),
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.dmSans(
-                color: colors.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
+  // ── 7. Reset All Data ─────────────────────────────────────────────────────────────
   Future<void> _performDeviceWipe({required bool wipeCloud}) async {
     final syncId = StorageService.getCloudSyncId();
     if (wipeCloud && syncId != null && syncId.isNotEmpty) {
@@ -1092,7 +955,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             sublabel: 'Wipe profile, logs, and start fresh',
             colors: colors,
             isDestructive: true,
-            onTap: () => _showResetConfirmation(colors),
+            onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (ctx) => _ResetDataSheet(colors: colors, onWipe: _performDeviceWipe)),
           ),
           const SizedBox(height: 40),
 
@@ -1617,32 +1480,50 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const dangerColor = Color(0xFFD94F6E);
+    const dangerColor = Color(0xFFE57373);
     final iconColor = isDestructive
-        ? dangerColor.withValues(alpha: 0.8)
-        : colors.onSurface.withValues(alpha: 0.6);
+        ? dangerColor
+        : colors.primary;
     final labelColor = isDestructive
         ? dangerColor
-        : colors.onSurface.withValues(alpha: 0.85);
+        : colors.onSurface.withValues(alpha: 0.9);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         decoration: BoxDecoration(
           color: isDestructive
-              ? dangerColor.withValues(alpha: 0.06)
-              : colors.surface,
-          borderRadius: BorderRadius.circular(16),
+              ? dangerColor.withValues(alpha: 0.04)
+              : colors.surface.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(24),
           border: isDestructive
-              ? Border.all(color: dangerColor.withValues(alpha: 0.15))
-              : null,
+              ? Border.all(color: dangerColor.withValues(alpha: 0.15), width: 1)
+              : Border.all(color: colors.primary.withValues(alpha: 0.08), width: 1),
+          boxShadow: [
+            if (!isDestructive)
+              BoxShadow(
+                color: colors.primary.withValues(alpha: 0.03),
+                blurRadius: 10,
+                spreadRadius: 2,
+                offset: const Offset(0, 4),
+              ),
+          ],
         ),
         child: Row(
           children: [
-            Icon(icon, color: iconColor, size: 20),
-            const SizedBox(width: 14),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDestructive
+                    ? dangerColor.withValues(alpha: 0.1)
+                    : colors.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1651,33 +1532,182 @@ class _SettingsTile extends StatelessWidget {
                   Text(
                     label,
                     style: GoogleFonts.dmSans(
-                      fontSize: 15,
+                      fontSize: 16,
                       color: labelColor,
-                      fontWeight: isDestructive
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.3,
                     ),
                   ),
                   if (sublabel != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       sublabel!,
                       style: GoogleFonts.dmSans(
-                        fontSize: 12,
+                        fontSize: 13,
                         color: isDestructive
-                            ? dangerColor.withValues(alpha: 0.55)
-                            : colors.onSurface.withValues(alpha: 0.4),
+                            ? dangerColor.withValues(alpha: 0.7)
+                            : colors.onSurface.withValues(alpha: 0.5),
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ],
               ),
             ),
-            Icon(Icons.chevron_right,
+            const SizedBox(width: 8),
+            Icon(Icons.arrow_forward_ios_rounded,
                 color: isDestructive
-                    ? dangerColor.withValues(alpha: 0.4)
-                    : colors.onSurface.withValues(alpha: 0.3),
-                size: 18),
+                    ? dangerColor.withValues(alpha: 0.3)
+                    : colors.onSurface.withValues(alpha: 0.2),
+                size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// ── Reset Data Sheet ─────────────────────────────────────────────────────────
+class _ResetDataSheet extends StatelessWidget {
+  final PhaseColors colors;
+  final Future<void> Function({required bool wipeCloud}) onWipe;
+
+  const _ResetDataSheet({required this.colors, required this.onWipe});
+
+  @override
+  Widget build(BuildContext context) {
+    const dangerColor = Color(0xFFE57373);
+    
+    return _BottomSheetContainer(
+      colors: colors,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Reset Luna',
+            style: GoogleFonts.cormorantGaramond(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: dangerColor,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'This action is irreversible. Choose how thoroughly you want to erase your footprint.',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              color: colors.onSurface.withValues(alpha: 0.7),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          _ResetOptionTile(
+            colors: colors,
+            icon: Icons.phone_android_rounded,
+            title: 'Wipe Device Only',
+            subtitle: 'Clears this phone. Your Cloud Vault remains safe for restore or multi-device use.',
+            isDestructive: false,
+            onTap: () {
+              Navigator.of(context).pop();
+              onWipe(wipeCloud: false);
+            },
+          ),
+          const SizedBox(height: 12),
+          
+          _ResetOptionTile(
+            colors: colors,
+            icon: Icons.delete_forever_rounded,
+            title: 'Wipe Everything (Device + Cloud)',
+            subtitle: 'Irreversibly destroys both local storage and your private cloud vault.',
+            isDestructive: true,
+            onTap: () {
+              Navigator.of(context).pop();
+              onWipe(wipeCloud: true);
+            },
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResetOptionTile extends StatelessWidget {
+  final PhaseColors colors;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isDestructive;
+  final VoidCallback onTap;
+
+  const _ResetOptionTile({
+    required this.colors,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isDestructive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const dangerColor = Color(0xFFE57373);
+    final baseColor = isDestructive ? dangerColor : colors.primary;
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: isDestructive 
+              ? dangerColor.withValues(alpha: 0.05)
+              : colors.background.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDestructive 
+                ? dangerColor.withValues(alpha: 0.2)
+                : colors.onSurface.withValues(alpha: 0.05),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: baseColor.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: baseColor, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: isDestructive ? dangerColor : colors.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      color: colors.onSurface.withValues(alpha: 0.5),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
