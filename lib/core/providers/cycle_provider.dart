@@ -292,24 +292,39 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     await editPeriodEntry(target.id, normNew);
   }
 
+  /// Recomputes average cycle length only when sufficient completed cycles exist.
+  /// Clinically guarded: Requires at least 2 completed physiological cycle gaps (21 to 38 days)
+  /// so that single-cycle anomalies or outlier gaps never overwrite baseline.
   void _recomputeCycleLength() {
-    if (state.length < 2) return;
+    if (state.length < 3) return; // At least 3 anchors needed for 2 completed cycles
     final sorted = [...state]..sort((a, b) => a.startDate.compareTo(b.startDate));
-    final gaps = <int>[];
+    final validGaps = <int>[];
     for (int i = 1; i < sorted.length; i++) {
       final a = DateTime.utc(sorted[i].startDate.year, sorted[i].startDate.month, sorted[i].startDate.day);
       final b = DateTime.utc(sorted[i - 1].startDate.year, sorted[i - 1].startDate.month, sorted[i - 1].startDate.day);
       final gap = a.difference(b).inDays;
-      if (gap >= 14 && gap <= 60) gaps.add(gap);
+      // Normal physiological cycle window: 21 to 38 days (ACOG / FIGO standard)
+      if (gap >= 21 && gap <= 38) {
+        validGaps.add(gap);
+      }
     }
-    if (gaps.isEmpty) return;
-    final recent = gaps.length > 3 ? gaps.sublist(gaps.length - 3) : gaps;
+    if (validGaps.length < 2) return;
+    final recent = validGaps.length > 3 ? validGaps.sublist(validGaps.length - 3) : validGaps;
     final avgCycle = (recent.reduce((a, b) => a + b) / recent.length).round();
     final profile = _ref.read(profileProvider);
     if (profile != null && avgCycle != profile.averageCycleLength) {
       _ref.read(profileProvider.notifier).updateCycleLengths(cycleLength: avgCycle);
       StorageService.setCycleLengthCalibrated();
     }
+  }
+
+  /// One-tap rollback of cycle anchor changes
+  Future<void> undoPeriodStartUpdate(DateTime previousAnchor) async {
+    final normPrev = DateTime(previousAnchor.year, previousAnchor.month, previousAnchor.day);
+    if (!_isLoaded && _loadFuture != null) {
+      await _loadFuture;
+    }
+    await updatePeriodStart(normPrev);
   }
 
   Future<void> removePeriodEntry(String id) async {
@@ -533,15 +548,67 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
     _recomputePeriodLength();
   }
 
-  void _recomputePeriodLength() {
-    final bleedingDays = state.where((e) =>
-      e.flow != null ||
-      e.periodStarted ||
-      e.symptoms.contains('Period')
-    ).toList();
-    if (bleedingDays.isEmpty) return;
+  /// Restores a previous snapshot of LogEntry for a specific date (Universal Undo).
+  Future<void> restoreSnapshot(DateTime date, LogEntry? previousEntry) async {
+    final normDate = DateTime(date.year, date.month, date.day);
+    final index = state.indexWhere((e) =>
+        e.date.year == normDate.year &&
+        e.date.month == normDate.month &&
+        e.date.day == normDate.day);
 
-    final sortedDates = bleedingDays
+    if (previousEntry == null) {
+      if (index != -1) {
+        final existingId = state[index].id;
+        await StorageService.deleteLogEntry(existingId);
+        final updatedList = [...state]..removeAt(index);
+        state = updatedList;
+      }
+    } else {
+      await StorageService.saveLogEntry(previousEntry);
+      if (index != -1) {
+        final updatedList = [...state];
+        updatedList[index] = previousEntry;
+        state = updatedList;
+      } else {
+        state = [previousEntry, ...state];
+      }
+    }
+    _recomputePeriodLength();
+  }
+
+  /// Clinically guarded period length calibration:
+  /// 1. Excludes bleeding from the current active cycle (ongoing bleeds must NEVER shrink period length).
+  /// 2. Requires at least 2 completed historical cycles before calibrating baseline.
+  /// 3. Treats single 1-2 day or 9+ day bleeds as individual anomalies, protecting baseline rhythm.
+  /// 4. Floor is strictly 3 days (normal physiological lower bound).
+  void _recomputePeriodLength() {
+    final history = _ref.read(periodHistoryProvider);
+    final latestAnchor = history.isNotEmpty ? history.first.startDate : null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final completedBleedingDays = state.where((e) {
+      final isBleed = e.flow != null || e.periodStarted || e.symptoms.contains('Period');
+      if (!isBleed) return false;
+
+      final d = DateTime(e.date.year, e.date.month, e.date.day);
+      if (latestAnchor != null) {
+        final diffFromAnchor = d.difference(latestAnchor).inDays;
+        if (diffFromAnchor >= 0 && diffFromAnchor < 14) {
+          // Belongs to the active ongoing cycle - bleed is not finished!
+          return false;
+        }
+      }
+      if (today.difference(d).inDays < 14) {
+        // Within current 14-day window: in progress!
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (completedBleedingDays.isEmpty) return;
+
+    final sortedDates = completedBleedingDays
         .map((e) => DateTime(e.date.year, e.date.month, e.date.day))
         .toSet()
         .toList()
@@ -556,19 +623,20 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       if (diff <= 2) {
         currentRunLength += 1;
       } else {
-        if (currentRunLength >= 2 && currentRunLength <= 10) {
-          runs.add(currentRunLength);
-        }
+        runs.add(currentRunLength);
         currentRunLength = 1;
       }
     }
-    if (currentRunLength >= 2 && currentRunLength <= 10) {
-      runs.add(currentRunLength);
-    }
+    runs.add(currentRunLength);
 
-    if (runs.isEmpty) return;
+    // Require at least 2 completed cycles to calibrate baseline
+    if (runs.length < 2) return;
 
-    final avgPeriod = (runs.reduce((a, b) => a + b) / runs.length).round().clamp(2, 9);
+    // Filter out acute anomalies (normal physiological window: 3 to 8 days)
+    final physiologicalRuns = runs.where((r) => r >= 3 && r <= 8).toList();
+    if (physiologicalRuns.length < 2) return;
+
+    final avgPeriod = (physiologicalRuns.reduce((a, b) => a + b) / physiologicalRuns.length).round().clamp(3, 8);
     final profile = _ref.read(profileProvider);
     if (profile != null) {
       if (profile.averagePeriodLength != avgPeriod) {

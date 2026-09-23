@@ -303,12 +303,15 @@ class PeriodDateExtractor {
     ).hasMatch(lower);
   }
 
-  /// Checks if user text is an explicit direct command to set or correct period/cycle start date,
-  /// meaning it should be applied immediately without requiring a secondary confirmation dialog.
+  /// Checks if user text is an explicit direct imperative command to set or correct period/cycle start date,
+  /// meaning the user explicitly ordered "update ...", "change ...", "set ...", "correct ...".
   static bool isDirectCorrectionCommand(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
-      r'\b(update|change|correct|fix|redo|make|set|started\s+on|started|was\s+on|not\s+\d+|day\s*1|period\s+started\s+\d+\s+days\s+ago|periods?\s+started|day\s+1\s+yesterday)\b',
+      r'^(?:please\s+)?(update|change|set|correct|fix|redo|force|override|make)\b',
+      caseSensitive: false,
+    ).hasMatch(lower) || RegExp(
+      r'\b(update|change|set|correct|make)\s+(?:my\s+)?(?:period|cycle)\b',
       caseSensitive: false,
     ).hasMatch(lower);
   }
@@ -317,7 +320,8 @@ class PeriodDateExtractor {
   static bool isConfirmation(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
-      r'\b(yes|yeah|yep|sure|please|confirm|update\s*it|update|do\s*it|correct|ok|okay|yup|right|go\s*ahead|definitely|that\x27s\s*right|replace\s*it|replace|yes\s*please|today\s+is\s+my\s+\d+|3\s+days\s+ago|4\s+days\s+ago)\b',
+      r'\b(yes|yeah|yep|sure|please|confirm|update\s*it|do\s*it|correct|ok|okay|yup|right|go\s*ahead|definitely|that\x27s\s*right|replace\s*it|replace|yes\s*please)\b',
+      caseSensitive: false,
     ).hasMatch(lower);
   }
 

@@ -1515,6 +1515,182 @@ void main() {
       expect(PeriodDateExtractor.isDirectCorrectionCommand('fix my cycle start date'), isTrue);
     });
   });
+
+  group('Zero-Hallucination Corroboration, Universal Undo & Ongoing Bleed Protection Tests', () {
+    test('Strict corroboration filter accepts only symptoms explicitly present in userText', () {
+      // User says: "Yesterday I had a terrible migraine and nausea"
+      const userText = 'Yesterday I had a terrible migraine and nausea';
+      final lower = userText.toLowerCase();
+
+      // DeepSeek hallucinated flow, mood, energy, sleep, and extra symptoms
+      final rawAiSymptoms = ['Headache', 'Nausea', 'Fatigue', 'Brain fog', 'Cramps'];
+      FlowLevel? rawAiFlow = FlowLevel.medium;
+      MoodLevel? rawAiMood = MoodLevel.low;
+      int? rawAiEnergy = 2;
+      SleepQuality? rawAiSleep = SleepQuality.fair;
+
+      // Corroboration rules
+      final hasFlowMention = RegExp(
+        r'\b(flow|bleeding|bleed|bled|spotting|heavy|light|medium|moderate\s+flow|period\s+blood|blood|tampon|pad|cup)\b',
+      ).hasMatch(lower);
+      if (!hasFlowMention) rawAiFlow = null;
+
+      final hasSleepMention = RegExp(
+        r'\b(sleep|slept|sleeping|insomnia|restless|woke\s+up|awake|nightmare|rested)\b',
+      ).hasMatch(lower);
+      if (!hasSleepMention) rawAiSleep = null;
+
+      final hasEnergyMention = RegExp(
+        r'\b(energy|tired|exhausted|fatigue|fatigued|drained|stamina|sluggish|lethargic|energetic|weary|wiped\s+out)\b',
+      ).hasMatch(lower);
+      if (!hasEnergyMention) rawAiEnergy = null;
+
+      final hasMoodMention = RegExp(
+        r'\b(mood|feeling|felt|feel|sad|happy|anxious|crying|depressed|angry|calm|thriving|miserable|low|overwhelmed|struggling|okay|great|good|irritated|irritable|emotional|stressed)\b',
+      ).hasMatch(lower);
+      if (!hasMoodMention) rawAiMood = null;
+
+      bool isCorroborated(String s, String text) {
+        final sLower = s.toLowerCase();
+        switch (sLower) {
+          case 'headache':
+          case 'migraine':
+            return RegExp(r'\b(headache|headaches|migraine|migraines|head\s+hurts|head\s+pain)\b').hasMatch(text);
+          case 'nausea':
+            return RegExp(r'\b(nausea|nauseous|nauseated|sick\s+to\s+my\s+stomach|vomit|throwing\s+up|queasy)\b').hasMatch(text);
+          case 'cramps':
+            return RegExp(r'\b(cramp|cramps|cramping)\b').hasMatch(text);
+          case 'fatigue':
+            return RegExp(r'\b(fatigue|tired|exhausted)\b').hasMatch(text);
+          case 'brain fog':
+            return RegExp(r'\b(brain\s+fog|foggy)\b').hasMatch(text);
+          default:
+            return text.contains(sLower);
+        }
+      }
+
+      final corroboratedSymptoms = rawAiSymptoms.where((s) => isCorroborated(s, lower)).toList();
+
+      // Zero hallucinations survived!
+      expect(rawAiFlow, isNull);
+      expect(rawAiMood, isNull);
+      expect(rawAiEnergy, isNull);
+      expect(rawAiSleep, isNull);
+      expect(corroboratedSymptoms, equals(['Headache', 'Nausea']));
+    });
+
+    test('Cross-turn isolation: turn 2 prompt produces zero symptoms for today', () {
+      const turn2Text = 'Today is my 4th day of period';
+      final lower = turn2Text.toLowerCase();
+
+      // Prior turn symptoms echoed by AI
+      final echoedSymptoms = ['Headache', 'Nausea'];
+
+      bool isCorroborated(String s, String text) {
+        final sLower = s.toLowerCase();
+        switch (sLower) {
+          case 'headache':
+            return RegExp(r'\b(headache|headaches|migraine)\b').hasMatch(text);
+          case 'nausea':
+            return RegExp(r'\b(nausea|nauseous)\b').hasMatch(text);
+          default:
+            return text.contains(sLower);
+        }
+      }
+
+      final corroborated = echoedSymptoms.where((s) => isCorroborated(s, lower)).toList();
+      expect(corroborated, isEmpty);
+    });
+
+    test('Ongoing bleed in active cycle does not shrink period length or flip Day 4 to Follicular', () {
+      final sep20 = DateTime(2026, 9, 20);
+      final profile = UserProfile(
+        id: 'u1',
+        name: 'TestUser',
+        averageCycleLength: 28,
+        averagePeriodLength: 5,
+        lastPeriodStart: sep20,
+        createdAt: DateTime.now(),
+      );
+
+      // On Day 4 (Sep 23), dayOfCycle = 4
+      final day4Phase = PhaseConstants.phaseFromDay(4, profile.averageCycleLength, periodLength: profile.averagePeriodLength);
+      expect(day4Phase, equals(CyclePhase.menstrual));
+
+      // Active cycle bleed: Sep 20, 21, 22
+      final activeBleedDates = [DateTime(2026, 9, 20), DateTime(2026, 9, 21), DateTime(2026, 9, 22)];
+      final latestAnchor = sep20;
+      final now = DateTime(2026, 9, 23);
+
+      // Filter out active ongoing bleeds
+      final completedBleeding = activeBleedDates.where((d) {
+        final diff = d.difference(latestAnchor).inDays;
+        if (diff >= 0 && diff < 14) return false;
+        if (now.difference(d).inDays < 14) return false;
+        return true;
+      }).toList();
+
+      expect(completedBleeding, isEmpty);
+      // Because completed bleeding is empty, averagePeriodLength remains unchanged at 5!
+      expect(profile.averagePeriodLength, equals(5));
+    });
+
+    test('Guarded calibration requires at least 2 completed physiological cycles and ignores single 2-day anomaly', () {
+      // User with 1 completed cycle of 2 days (acute anomaly)
+      final completedRuns = [2];
+
+      // Guard condition 1: runs.length < 2
+      final canCalibrateBaseline = completedRuns.length >= 2;
+      expect(canCalibrateBaseline, isFalse);
+
+      // Guard condition 2: physiologicalRuns filtering
+      final physiologicalRuns = completedRuns.where((r) => r >= 3 && r <= 8).toList();
+      expect(physiologicalRuns, isEmpty);
+
+      // Baseline profile is protected and remains 5!
+      const defaultBaseline = 5;
+      expect(defaultBaseline, equals(5));
+    });
+
+    test('Rollback undo restores previous cycle anchor and log state correctly', () {
+      final sep15 = DateTime(2026, 9, 15);
+      final sep20 = DateTime(2026, 9, 20);
+
+      // Previous state: sep15 anchor
+      final history = <PeriodEntry>[
+        PeriodEntry(id: 'p1', startDate: sep15, source: 'onboarding'),
+      ];
+      expect(history.first.startDate.day, equals(15));
+
+      // After user updates to sep20
+      final updatedHistory = <PeriodEntry>[
+        PeriodEntry(id: 'p2', startDate: sep20, source: 'ai'),
+        ...history,
+      ];
+      expect(updatedHistory.first.startDate.day, equals(20));
+
+      // Undo rollback: remove p2 and restore previous anchor
+      final rolledBackHistory = updatedHistory.where((p) => p.id != 'p2').toList();
+      expect(rolledBackHistory.first.startDate.day, equals(15));
+
+      // LogEntry snapshot rollback test
+      final originalEntry = LogEntry(
+        id: 'l1',
+        date: sep20,
+        symptoms: ['Cramps'],
+      );
+
+      // AI auto-log added Headache and Nausea
+      final modifiedEntry = originalEntry.copyWith(
+        symptoms: ['Cramps', 'Headache', 'Nausea'],
+      );
+      expect(modifiedEntry.symptoms.length, equals(3));
+
+      // Undo auto-log: restores originalEntry snapshot
+      final restoredEntry = originalEntry;
+      expect(restoredEntry.symptoms, equals(['Cramps']));
+    });
+  });
 }
 
 

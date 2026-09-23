@@ -860,7 +860,7 @@ class _SelectedDayCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 10),
-          ] else if (isInPeriodDays && isPast) ...[
+          ] else if (isInPeriodDays && !isFuture) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -875,7 +875,9 @@ class _SelectedDayCard extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Text(
                     daysDiff != null
-                        ? 'Menstrual bleed · Day ${daysDiff + 1}'
+                        ? (daysDiff >= 5
+                            ? 'Extended bleed · Day ${daysDiff + 1}'
+                            : 'Menstrual bleed · Day ${daysDiff + 1}')
                         : 'Menstrual flow recorded',
                     style: GoogleFonts.dmSans(
                       fontSize: 11.5,
@@ -883,6 +885,31 @@ class _SelectedDayCard extends ConsumerWidget {
                       color: colors.onSurface.withValues(alpha: 0.8),
                     ),
                   ),
+                  if (daysDiff != null && daysDiff >= 1 && daysDiff <= 9) ...[
+                    const Spacer(),
+                    InkWell(
+                      onTap: () => _showPeriodEndedDialog(context, colors, ref, selectedDay, daysDiff + 1),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_rounded, size: 12, color: colors.onSurface.withValues(alpha: 0.45)),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Ended on this day',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 10.5,
+                                color: colors.onSurface.withValues(alpha: 0.45),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1444,6 +1471,82 @@ class _SelectedDayCard extends ConsumerWidget {
       );
       if (confirm == true) {
         await ref.read(periodHistoryProvider.notifier).removePeriodEntry(match.id);
+      }
+    }
+  }
+
+  Future<void> _showPeriodEndedDialog(
+    BuildContext context,
+    PhaseColors colors,
+    WidgetRef ref,
+    DateTime selectedDay,
+    int dayNumber,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: colors.surface,
+        title: Text(
+          'Bleeding ended on Day $dayNumber',
+          style: GoogleFonts.cormorantGaramond(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          'Shorter bleeds (2 to 3 days) can happen due to lighter shedding, stress, or mild hormonal variation. Luna records that bleeding ended on this day for this cycle while preserving your baseline rhythm.',
+          style: GoogleFonts.dmSans(
+            color: colors.onSurface.withValues(alpha: 0.8),
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.dmSans(color: colors.onSurface.withValues(alpha: 0.6)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            child: Text(
+              'Confirm End',
+              style: GoogleFonts.dmSans(
+                color: colors.accent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final allEntries = ref.read(logEntriesProvider);
+      final normSelected = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+      for (final e in allEntries) {
+        final eNorm = DateTime(e.date.year, e.date.month, e.date.day);
+        if (eNorm.isAfter(normSelected) && eNorm.difference(normSelected).inDays < 14) {
+          if (e.flow != null || e.periodStarted) {
+            final updated = e.copyWith(flow: null, periodStarted: false);
+            await ref.read(logEntriesProvider.notifier).addEntry(updated);
+          }
+        }
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Bleeding ended on Day $dayNumber recorded 🌸',
+              style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+            ),
+            backgroundColor: const Color(0xFF2A1F3D),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
       }
     }
   }

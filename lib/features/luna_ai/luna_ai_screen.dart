@@ -219,7 +219,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     // Auto-log immediately on check-in from the Luna Home Screen Phase!
-    final autoLogSummary = await _processAutoLog(
+    final autoLogResult = await _processAutoLog(
       logMap: response.logMap,
       userText: userText,
       fallbackMood: _selectedMood,
@@ -230,7 +230,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     _lastUserText = userText;
     setState(() {
       _response = response;
-      _lastAutoLogSummary = autoLogSummary;
+      _lastAutoLogSummary = autoLogResult?.summary;
       _loading = false;
     });
   }
@@ -252,7 +252,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           text: _response!.validation,
           isUser: false,
           time: DateTime.now(),
-          autoLogNote: null,
+          autoLogNote: _lastAutoLogSummary,
         ),
       ];
       _chatMode = true;
@@ -265,6 +265,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   }
 
   Future<void> _confirmPeriodDateUpdate(DateTime date, [int? msgIndex]) async {
+    final previousAnchor = ref.read(profileProvider)?.lastPeriodStart;
     await ref.read(periodHistoryProvider.notifier).updatePeriodStart(date);
 
     final currentToday = ref.read(todayLogProvider);
@@ -279,13 +280,19 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     setState(() {
       if (msgIndex != null && msgIndex < _chatHistory.length) {
         _chatHistory[msgIndex] =
-            _chatHistory[msgIndex].copyWith(periodDateConfirmed: true);
+            _chatHistory[msgIndex].copyWith(
+              periodDateConfirmed: true,
+              previousPeriodDate: previousAnchor,
+            );
       } else {
         for (int i = _chatHistory.length - 1; i >= 0; i--) {
           if (_chatHistory[i].pendingPeriodDate != null &&
               _chatHistory[i].periodDateConfirmed == null) {
             _chatHistory[i] =
-                _chatHistory[i].copyWith(periodDateConfirmed: true);
+                _chatHistory[i].copyWith(
+                  periodDateConfirmed: true,
+                  previousPeriodDate: previousAnchor,
+                );
             break;
           }
         }
@@ -297,6 +304,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
               'Done! I\'ve updated your period start date to $dateStr. Your cycle days and phase calculations are now aligned 🌙',
           isUser: false,
           time: DateTime.now(),
+          previousPeriodDate: previousAnchor,
         ),
       );
       _pendingPeriodDate = null;
@@ -304,6 +312,48 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
     _persistChatHistory();
     _scrollToBottom();
+  }
+
+  Future<void> _undoPeriodDateUpdate(DateTime previousDate, int msgIndex) async {
+    await ref.read(periodHistoryProvider.notifier).undoPeriodStartUpdate(previousDate);
+    setState(() {
+      if (msgIndex < _chatHistory.length) {
+        _chatHistory[msgIndex] = _chatHistory[msgIndex].copyWith(periodDateUndone: true);
+      }
+      _chatHistory.add(
+        _ChatMessage(
+          text: 'I\'ve reverted your period start date back to ${_formatPeriodDate(previousDate)} ↺',
+          isUser: false,
+          time: DateTime.now(),
+        ),
+      );
+    });
+    _persistChatHistory();
+    _scrollToBottom();
+  }
+
+  Future<void> _undoAutoLog(DateTime date, LogEntry? previousEntry, int msgIndex) async {
+    await ref.read(logEntriesProvider.notifier).restoreSnapshot(date, previousEntry);
+    setState(() {
+      if (msgIndex < _chatHistory.length) {
+        _chatHistory[msgIndex] = _chatHistory[msgIndex].copyWith(autoLogUndone: true);
+      }
+    });
+    _persistChatHistory();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Reverted log for ${_formatPeriodDate(date)} ↺',
+            style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+          ),
+          backgroundColor: const Color(0xFF2A1F3D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   Future<void> _rejectPeriodDateUpdate([int? msgIndex]) async {
@@ -439,9 +489,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final hasPeriodStop = PeriodDateExtractor.hasPeriodStopIntent(text);
 
     final isDirectCommand = requestedPeriodDate != null &&
-        (PeriodDateExtractor.isDirectCorrectionCommand(text) || cycleDay != null);
+        PeriodDateExtractor.isDirectCorrectionCommand(text);
 
+    DateTime? previousAnchorForCommand;
     if (isDirectCommand) {
+      previousAnchorForCommand = ref.read(profileProvider)?.lastPeriodStart;
       // Direct explicit user command: apply update to SQLite & Riverpod immediately
       await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
 
@@ -586,7 +638,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     // Process auto-log with multi-layer parsing (JSON + regex + userText heuristics)
-    final autoLogSummary = await _processAutoLog(
+    final autoLogResult = await _processAutoLog(
       rawAiLog: rawLog,
       userText: text,
       hasSpecificDateRequest: requestedPeriodDate != null,
@@ -621,8 +673,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         _pendingPeriodDate = requestedPeriodDate;
         final lower = cleanResponse.toLowerCase();
         if (!lower.contains('?') && !lower.contains(dateStr.toLowerCase())) {
-          cleanResponse +=
-              '\n\nWould you like me to update your period start date to $dateStr?';
+          cleanResponse += cycleDay != null
+              ? '\n\nIf today is your day $cycleDay, that places your period start at $dateStr. Would you like me to update your cycle anchor to $dateStr?'
+              : '\n\nWould you like me to update your period start date to $dateStr?';
         }
       }
     }
@@ -633,9 +686,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           text: cleanResponse,
           isUser: false,
           time: DateTime.now(),
-          autoLogNote: autoLogSummary,
+          autoLogNote: autoLogResult?.summary,
+          autoLogDate: autoLogResult?.date,
+          autoLogPreviousEntry: autoLogResult?.previousEntry,
           pendingPeriodDate: requestedPeriodDate,
           periodDateConfirmed: isDirectCommand ? true : null,
+          previousPeriodDate: isDirectCommand ? previousAnchorForCommand : null,
         ),
       );
       _chatLoading = false;
@@ -645,9 +701,56 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     _scrollToBottom();
   }
 
+  bool _isSymptomCorroborated(String symptom, String lowerText) {
+    final sLower = symptom.toLowerCase().trim();
+    switch (sLower) {
+      case 'headache':
+      case 'migraine':
+        return RegExp(r'\b(headache|headaches|migraine|migraines|head\s+hurts|head\s+pain)\b').hasMatch(lowerText);
+      case 'nausea':
+        return RegExp(r'\b(nausea|nauseous|nauseated|sick\s+to\s+my\s+stomach|vomit|throwing\s+up|queasy)\b').hasMatch(lowerText);
+      case 'cramps':
+      case 'cramp':
+        return RegExp(r'\b(cramp|cramps|cramping|period\s+pain|pelvic\s+pain)\b').hasMatch(lowerText);
+      case 'bloating':
+      case 'bloat':
+        return RegExp(r'\b(bloat|bloated|bloating|puffy|water\s+retention)\b').hasMatch(lowerText);
+      case 'fatigue':
+        return RegExp(r'\b(fatigue|fatigued|tired|exhausted|drained|no\s+energy|weary|wiped\s+out)\b').hasMatch(lowerText);
+      case 'brain fog':
+      case 'brainfog':
+        return RegExp(r'\b(brain\s+fog|foggy|can\x27?t\s+focus|unfocused|hazy)\b').hasMatch(lowerText);
+      case 'anxious':
+      case 'anxiety':
+        return RegExp(r'\b(anxious|anxiety|panic|worried|nervous|on\s+edge)\b').hasMatch(lowerText);
+      case 'irritable':
+      case 'irritability':
+        return RegExp(r'\b(irritable|irritated|irritability|angry|cranky|moody|short\s+tempered)\b').hasMatch(lowerText);
+      case 'cravings':
+      case 'craving':
+        return RegExp(r'\b(craving|cravings|hungry|snack|chocolate|sweet|salty)\b').hasMatch(lowerText);
+      case 'backache':
+      case 'back pain':
+        return RegExp(r'\b(backache|back\s+pain|lower\s+back)\b').hasMatch(lowerText);
+      case 'tender':
+      case 'tender breasts':
+      case 'breast tenderness':
+        return RegExp(r'\b(tender|sore\s+breasts?|breast\s+pain|breasts?\s+hurt)\b').hasMatch(lowerText);
+      case 'acne':
+      case 'breakouts':
+        return RegExp(r'\b(acne|breakout|breakouts|pimple|pimples|skin)\b').hasMatch(lowerText);
+      case 'insomnia':
+        return RegExp(r'\b(insomnia|can\x27?t\s+sleep|trouble\s+sleeping|sleepless)\b').hasMatch(lowerText);
+      case 'period':
+        return RegExp(r'\b(period|bleeding|started\s+bleeding|got\s+my\s+period)\b').hasMatch(lowerText);
+      default:
+        return lowerText.contains(sLower);
+    }
+  }
+
   /// Unified multi-layer auto-logging engine:
   /// Combines AI structured JSON log, tag parsing, and deterministic text heuristics.
-  Future<String?> _processAutoLog({
+  Future<_AutoLogResult?> _processAutoLog({
     String? rawAiLog,
     Map<String, dynamic>? logMap,
     required String userText,
@@ -1003,6 +1106,51 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       checkSymptom(RegExp(r'\b(craving|cravings)\b'), 'Cravings');
       checkSymptom(RegExp(r'\b(backache|back\s+pain)\b'), 'Backache');
       checkSymptom(RegExp(r'\b(tender|breast\s+pain)\b'), 'Tender');
+
+      // Strict corroboration: verify every biomarker emitted against userText
+      final hasFlowMention = RegExp(
+        r'\b(flow|bleeding|bleed|bled|spotting|heavy|light|medium|moderate\s+flow|period\s+blood|blood|tampon|pad|cup)\b',
+      ).hasMatch(lower);
+      if (!hasFlowMention) {
+        detectedFlow = null;
+      }
+
+      final hasSleepMention = RegExp(
+        r'\b(sleep|slept|sleeping|insomnia|restless|woke\s+up|awake|nightmare|rested)\b',
+      ).hasMatch(lower);
+      if (!hasSleepMention) {
+        detectedSleep = null;
+      }
+
+      final hasEnergyMention = RegExp(
+        r'\b(energy|tired|exhausted|fatigue|fatigued|drained|stamina|sluggish|lethargic|energetic|weary|wiped\s+out)\b',
+      ).hasMatch(lower);
+      if (!hasEnergyMention) {
+        detectedEnergy = null;
+      }
+
+      final hasMoodMention = RegExp(
+        r'\b(mood|feeling|felt|feel|sad|happy|anxious|crying|depressed|angry|calm|thriving|miserable|low|overwhelmed|struggling|okay|great|good|irritated|irritable|emotional|stressed)\b',
+      ).hasMatch(lower);
+      if (!hasMoodMention && fallbackMood == null) {
+        detectedMood = null;
+      }
+
+      final hasCrampsMention = RegExp(
+        r'\b(cramp|cramps|cramping|uterine|pelvic\s+pain|period\s+pain)\b',
+      ).hasMatch(lower);
+      if (!hasCrampsMention) {
+        detectedCramps = null;
+      }
+
+      final corroborated = <String>[];
+      for (final s in detectedSymptoms) {
+        if (_isSymptomCorroborated(s, lower)) {
+          if (!corroborated.contains(s)) corroborated.add(s);
+        }
+      }
+      detectedSymptoms.clear();
+      detectedSymptoms.addAll(corroborated);
     }
 
     // Resolve target date from text or AI output
@@ -1176,11 +1324,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     if (parts.isEmpty) return null;
 
     final summary = parts.join(' · ');
+    String fullSummary = summary;
     if (!isToday) {
       final dateLabel = '${_monthName(targetDate.month)} ${targetDate.day}';
-      return '$summary ($dateLabel)';
+      fullSummary = '$summary ($dateLabel)';
     }
-    return summary;
+
+    return _AutoLogResult(
+      summary: fullSummary,
+      date: targetDate,
+      previousEntry: targetEntry,
+    );
   }
 
   void _scrollToBottom() {
@@ -2152,7 +2306,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                   ),
                 ),
                 if (msg.autoLogNote != null) ...[
-                  _buildChatLogBadge(messageIndex, msg.autoLogNote!, colors),
+                  _buildChatLogBadge(msg, messageIndex, colors),
                 ],
                 if (msg.pendingPeriodDate != null) ...[
                   _buildPeriodDateConfirmationCard(msg, messageIndex, colors),
@@ -2165,7 +2319,8 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05);
   }
 
-  Widget _buildChatLogBadge(int messageIndex, String summary, dynamic colors) {
+  Widget _buildChatLogBadge(_ChatMessage msg, int messageIndex, dynamic colors) {
+    final summary = msg.autoLogNote ?? '';
     final items = summary
         .split(' · ')
         .map((s) => s.trim())
@@ -2174,6 +2329,33 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     if (items.isEmpty) return const SizedBox.shrink();
 
     final isExpanded = _expandedChatLogIndices.contains(messageIndex);
+
+    if (msg.autoLogUndone) {
+      return Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: colors.onSurface.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.undo_rounded, size: 12, color: colors.onSurface.withValues(alpha: 0.5)),
+            const SizedBox(width: 5),
+            Text(
+              'Log entry reverted ↺',
+              style: GoogleFonts.dmSans(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w500,
+                color: colors.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: () {
@@ -2227,6 +2409,38 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                   size: 14,
                   color: colors.accent.withValues(alpha: 0.6),
                 ),
+                if (msg.autoLogDate != null) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _undoAutoLog(
+                      msg.autoLogDate!,
+                      msg.autoLogPreviousEntry,
+                      messageIndex,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.undo_rounded, size: 10, color: colors.accent),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Undo',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: colors.accent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             if (isExpanded) ...[
@@ -2271,6 +2485,34 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final dateStr = _formatPeriodDate(date);
 
     if (msg.periodDateConfirmed == true) {
+      if (msg.periodDateUndone == true) {
+        return Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: colors.surface.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: colors.onSurface.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.undo_rounded, size: 14, color: colors.onSurface.withValues(alpha: 0.5)),
+              const SizedBox(width: 8),
+              Text(
+                msg.previousPeriodDate != null
+                    ? 'Reverted period start to ${_formatPeriodDate(msg.previousPeriodDate!)} ↺'
+                    : 'Date update reverted ↺',
+                style: GoogleFonts.dmSans(
+                  fontSize: 11.5,
+                  color: colors.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
       return Container(
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -2292,6 +2534,34 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                 color: colors.onSurface,
               ),
             ),
+            if (msg.previousPeriodDate != null) ...[
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: () => _undoPeriodDateUpdate(msg.previousPeriodDate!, messageIndex),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.undo_rounded, size: 11, color: colors.accent),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Undo',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: colors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );
@@ -2649,22 +2919,39 @@ class _DotPulseState extends State<_DotPulse> with SingleTickerProviderStateMixi
   }
 }
 
+class _AutoLogResult {
+  final String summary;
+  final DateTime date;
+  final LogEntry? previousEntry;
+  const _AutoLogResult({required this.summary, required this.date, this.previousEntry});
+}
+
 /// Chat message model
 class _ChatMessage {
   final String text;
   final bool isUser;
   final DateTime time;
   final String? autoLogNote;
+  final DateTime? autoLogDate;
+  final LogEntry? autoLogPreviousEntry;
+  final bool autoLogUndone;
   final DateTime? pendingPeriodDate;
   final bool? periodDateConfirmed;
+  final DateTime? previousPeriodDate;
+  final bool periodDateUndone;
 
   const _ChatMessage({
     required this.text,
     required this.isUser,
     required this.time,
     this.autoLogNote,
+    this.autoLogDate,
+    this.autoLogPreviousEntry,
+    this.autoLogUndone = false,
     this.pendingPeriodDate,
     this.periodDateConfirmed,
+    this.previousPeriodDate,
+    this.periodDateUndone = false,
   });
 
   _ChatMessage copyWith({
@@ -2672,8 +2959,13 @@ class _ChatMessage {
     bool? isUser,
     DateTime? time,
     String? autoLogNote,
+    DateTime? autoLogDate,
+    LogEntry? autoLogPreviousEntry,
+    bool? autoLogUndone,
     DateTime? pendingPeriodDate,
     bool? periodDateConfirmed,
+    DateTime? previousPeriodDate,
+    bool? periodDateUndone,
     bool clearPendingPeriodDate = false,
   }) {
     return _ChatMessage(
@@ -2681,10 +2973,15 @@ class _ChatMessage {
       isUser: isUser ?? this.isUser,
       time: time ?? this.time,
       autoLogNote: autoLogNote ?? this.autoLogNote,
+      autoLogDate: autoLogDate ?? this.autoLogDate,
+      autoLogPreviousEntry: autoLogPreviousEntry ?? this.autoLogPreviousEntry,
+      autoLogUndone: autoLogUndone ?? this.autoLogUndone,
       pendingPeriodDate: clearPendingPeriodDate
           ? null
           : (pendingPeriodDate ?? this.pendingPeriodDate),
       periodDateConfirmed: periodDateConfirmed ?? this.periodDateConfirmed,
+      previousPeriodDate: previousPeriodDate ?? this.previousPeriodDate,
+      periodDateUndone: periodDateUndone ?? this.periodDateUndone,
     );
   }
 
@@ -2693,8 +2990,13 @@ class _ChatMessage {
         'isUser': isUser,
         'time': time.toIso8601String(),
         'autoLogNote': autoLogNote,
+        'autoLogDate': autoLogDate?.toIso8601String(),
+        'autoLogPreviousEntry': autoLogPreviousEntry?.toMap(),
+        'autoLogUndone': autoLogUndone,
         'pendingPeriodDate': pendingPeriodDate?.toIso8601String(),
         'periodDateConfirmed': periodDateConfirmed,
+        'previousPeriodDate': previousPeriodDate?.toIso8601String(),
+        'periodDateUndone': periodDateUndone,
       };
 
   factory _ChatMessage.fromMap(Map<String, dynamic> map) => _ChatMessage(
@@ -2702,9 +3004,20 @@ class _ChatMessage {
         isUser: map['isUser'] as bool,
         time: DateTime.parse(map['time'] as String),
         autoLogNote: map['autoLogNote'] as String?,
+        autoLogDate: map['autoLogDate'] != null
+            ? DateTime.tryParse(map['autoLogDate'] as String)
+            : null,
+        autoLogPreviousEntry: map['autoLogPreviousEntry'] != null
+            ? LogEntry.fromMap(map['autoLogPreviousEntry'] as Map<String, dynamic>)
+            : null,
+        autoLogUndone: map['autoLogUndone'] as bool? ?? false,
         pendingPeriodDate: map['pendingPeriodDate'] != null
             ? DateTime.tryParse(map['pendingPeriodDate'] as String)
             : null,
         periodDateConfirmed: map['periodDateConfirmed'] as bool?,
+        previousPeriodDate: map['previousPeriodDate'] != null
+            ? DateTime.tryParse(map['previousPeriodDate'] as String)
+            : null,
+        periodDateUndone: map['periodDateUndone'] as bool? ?? false,
       );
 }
