@@ -537,11 +537,10 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
         _targetDate.month == now.month &&
         _targetDate.day == now.day;
     final daysSinceAnchor = lastPeriod != null ? _targetDate.calendarDaysDifference(lastPeriod) : null;
-    final periodLength = profile?.averagePeriodLength ?? 5;
-    final isMidPeriodDay2Plus = daysSinceAnchor != null &&
+    final isMidCycleDay2To13 = daysSinceAnchor != null &&
         daysSinceAnchor >= 1 &&
-        daysSinceAnchor < periodLength;
-    final showPeriodStartedToggle = _periodStarted || !isMidPeriodDay2Plus;
+        daysSinceAnchor < 14;
+    final showPeriodStartedToggle = _periodStarted || !isMidCycleDay2To13;
 
     // Inline detail badge for summary
     final List<String> detailSet = [

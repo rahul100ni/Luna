@@ -735,6 +735,10 @@ class _SelectedDayCard extends ConsumerWidget {
     final periodLen = profile.averagePeriodLength;
     final isInPeriodDays = (daysDiff != null && daysDiff >= 0 && daysDiff < periodLen) ||
         (entry != null && (entry.flow != null || entry.periodStarted));
+    final canStartNewPeriodToday = !isConfirmedStart &&
+        (closestAnchor == null || daysDiff == null || daysDiff < 0 || daysDiff >= 14);
+    final canMarkPastStart = !isConfirmedStart &&
+        (closestAnchor == null || daysDiff == null || daysDiff <= 0 || daysDiff >= 14);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1191,7 +1195,7 @@ class _SelectedDayCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-              if (!isConfirmedStart && !isInPeriodDays)
+              if (canStartNewPeriodToday)
                 GestureDetector(
                   onTap: () async {
                     await ref.read(periodHistoryProvider.notifier).addPeriodStart(selectedDay, source: 'calendar');
@@ -1269,7 +1273,7 @@ class _SelectedDayCard extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    if (!isInPeriodDays) ...[
+                    if (canMarkPastStart) ...[
                       const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(

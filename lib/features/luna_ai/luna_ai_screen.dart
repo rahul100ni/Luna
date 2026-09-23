@@ -9,6 +9,7 @@ import '../../core/models/log_entry.dart';
 import '../../core/models/luna_memory_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/cycle_engine.dart';
 import '../../core/services/deepseek_service.dart';
 import '../../core/services/period_date_extractor.dart';
 import '../../core/services/storage_service.dart';
@@ -78,6 +79,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   final Set<int> _expandedChatLogIndices = {};
   List<_ChatMessage> _chatHistory = [];
   DateTime? _pendingPeriodDate;
+  DateTime? _pendingStopDate;
   late AnimationController _pulseController;
 
   static const List<String> _quickSymptoms = [
@@ -250,7 +252,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           text: _response!.validation,
           isUser: false,
           time: DateTime.now(),
-          autoLogNote: _lastAutoLogSummary,
+          autoLogNote: null,
         ),
       ];
       _chatMode = true;
@@ -333,11 +335,83 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     _scrollToBottom();
   }
 
+  Future<void> _confirmPeriodStop(DateTime stopDate) async {
+    final allEntries = ref.read(logEntriesProvider);
+    final stopEntry = allEntries.where((e) =>
+        e.date.year == stopDate.year &&
+        e.date.month == stopDate.month &&
+        e.date.day == stopDate.day).firstOrNull;
+
+    if (stopEntry != null) {
+      final updated = stopEntry.copyWith(flow: null, periodStarted: false);
+      await ref.read(logEntriesProvider.notifier).addEntry(updated);
+    }
+
+    final profile = ref.read(profileProvider);
+    final history = ref.read(periodHistoryProvider);
+    final anchor = profile != null ? CycleEngine.findCycleStart(stopDate, profile, history) : null;
+    int? durationDays;
+    if (anchor != null) {
+      durationDays = stopDate.calendarDaysDifference(anchor) + 1;
+    }
+
+    final stopStr = _formatPeriodDate(stopDate);
+    setState(() {
+      _chatHistory.add(
+        _ChatMessage(
+          text: durationDays != null
+              ? 'Recorded: bleeding has ended on $stopStr ($durationDays-day duration). I\'ve updated your cycle tracking 🌸'
+              : 'Recorded: bleeding has ended on $stopStr. I\'ve updated your cycle tracking 🌸',
+          isUser: false,
+          time: DateTime.now(),
+        ),
+      );
+      _pendingStopDate = null;
+    });
+
+    _persistChatHistory();
+    _scrollToBottom();
+  }
+
+  Future<void> _rejectPeriodStop() async {
+    setState(() {
+      _chatHistory.add(
+        _ChatMessage(
+          text: 'Understood, I\'ve kept your bleeding logs as they were.',
+          isUser: false,
+          time: DateTime.now(),
+        ),
+      );
+      _pendingStopDate = null;
+    });
+    _persistChatHistory();
+    _scrollToBottom();
+  }
+
   Future<void> _sendChatMessage([String? prefilledText]) async {
     final text = prefilledText ?? _chatController.text.trim();
     if (text.isEmpty || _chatLoading) return;
     if (prefilledText == null) {
       _chatController.clear();
+    }
+
+    // ── Pending Stop Interception ──────────────────────────────────────────
+    if (_pendingStopDate != null) {
+      if (PeriodDateExtractor.isConfirmation(text)) {
+        setState(() {
+          _chatHistory.add(
+              _ChatMessage(text: text, isUser: true, time: DateTime.now()));
+        });
+        await _confirmPeriodStop(_pendingStopDate!);
+        return;
+      } else if (PeriodDateExtractor.isCancellation(text)) {
+        setState(() {
+          _chatHistory.add(
+              _ChatMessage(text: text, isUser: true, time: DateTime.now()));
+        });
+        await _rejectPeriodStop();
+        return;
+      }
     }
 
     // ── Pending Date Confirmation Interception ─────────────────────────────
@@ -359,9 +433,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
     }
 
+    final targetResult = PeriodDateExtractor.extractTargetDate(text);
     final requestedPeriodDate = PeriodDateExtractor.extractDate(text);
+    final cycleDay = PeriodDateExtractor.extractCycleDay(text);
+    final hasPeriodStop = PeriodDateExtractor.hasPeriodStopIntent(text);
+
     final isDirectCommand = requestedPeriodDate != null &&
-        PeriodDateExtractor.isDirectCorrectionCommand(text);
+        (PeriodDateExtractor.isDirectCorrectionCommand(text) || cycleDay != null);
 
     if (isDirectCommand) {
       // Direct explicit user command: apply update to SQLite & Riverpod immediately
@@ -377,6 +455,37 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
       }
       _pendingPeriodDate = null;
+    }
+
+    if (targetResult.isFuture) {
+      // Save expectation in companion memory so Luna can check in tomorrow!
+      await StorageService.saveMemory(
+        LunaMemoryEntry(
+          id: LunaMemoryEntry.newId(),
+          category: 'body_pattern',
+          content: 'Expected to experience: ${text.trim()}',
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    if (hasPeriodStop) {
+      final stopDate = targetResult.date;
+      final allEntries = ref.read(logEntriesProvider);
+      final stopEntry = allEntries.where((e) =>
+          e.date.year == stopDate.year &&
+          e.date.month == stopDate.month &&
+          e.date.day == stopDate.day).firstOrNull;
+
+      final hadHeavyOrMediumFlow = stopEntry?.flow == FlowLevel.heavy || stopEntry?.flow == FlowLevel.medium;
+      if (hadHeavyOrMediumFlow && !PeriodDateExtractor.isConfirmation(text)) {
+        _pendingStopDate = stopDate;
+      } else {
+        if (stopEntry != null) {
+          final updated = stopEntry.copyWith(flow: null, periodStarted: false);
+          await ref.read(logEntriesProvider.notifier).addEntry(updated);
+        }
+      }
     }
 
     setState(() {
@@ -413,8 +522,44 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       conversationMessages.add({
         'role': 'system',
         'content':
-            'SYSTEM CONFIRMATION: The app has already directly updated her cycle start date to $dateStr. Her cycle is now aligned to Day ${cycleState.dayOfCycle} • Menstrual. Acknowledge this with sisterly warmth and reassure her that her cycle is aligned.',
+            'SYSTEM CONFIRMATION: The app has already directly updated her cycle start date to $dateStr. Her cycle is now aligned to Day ${cycleState.dayOfCycle} · Menstrual. Acknowledge this with sisterly warmth and reassure her that her cycle is aligned.',
       });
+    }
+
+    if (targetResult.isFuture) {
+      conversationMessages.add({
+        'role': 'system',
+        'content':
+            'SYSTEM INSTRUCTION: The user mentioned a future date (${targetResult.futureSummary ?? 'in the future'}). Luna strictly cannot log future dates. Playfully, warmly and gently explain that you can\'t see the future yet, but reassure her you have remembered her prediction so you can check in on her then! DO NOT output any [LOG:...] tag.',
+      });
+    }
+
+    if (hasPeriodStop) {
+      final stopDate = targetResult.date;
+      final allEntries = ref.read(logEntriesProvider);
+      final stopEntry = allEntries.where((e) =>
+          e.date.year == stopDate.year &&
+          e.date.month == stopDate.month &&
+          e.date.day == stopDate.day).firstOrNull;
+      final hadHeavyOrMediumFlow = stopEntry?.flow == FlowLevel.heavy || stopEntry?.flow == FlowLevel.medium;
+      if (hadHeavyOrMediumFlow && !PeriodDateExtractor.isConfirmation(text)) {
+        conversationMessages.add({
+          'role': 'system',
+          'content':
+              'SYSTEM CONTRADICTION: The user indicates her bleeding stopped, but she previously logged ${stopEntry!.flow!.name} flow for this day. Ask her gently with sisterly warmth if bleeding has fully ended now, so you can update her cycle record.',
+        });
+      } else {
+        final anchor = CycleEngine.findCycleStart(stopDate, profile, ref.read(periodHistoryProvider));
+        int? durationDays;
+        if (anchor != null) {
+          durationDays = stopDate.calendarDaysDifference(anchor) + 1;
+        }
+        conversationMessages.add({
+          'role': 'system',
+          'content':
+              'SYSTEM CONFIRMATION: The app has recorded that bleeding ended on ${_formatPeriodDate(stopDate)}${durationDays != null ? ' (duration: $durationDays days)' : ''}. ${durationDays != null && durationDays <= 3 ? 'This 3-day bleed is shorter than her typical rhythm. Acknowledge this variation with biological warmth (stress, lower estrogen peak, or lighter cycle).' : 'Acknowledge this with sisterly warmth.'}',
+        });
+      }
     }
 
     final response = await DeepSeekService.getChatMessage(
@@ -488,11 +633,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           text: cleanResponse,
           isUser: false,
           time: DateTime.now(),
-          autoLogNote: isDirectCommand
-              ? (autoLogSummary != null
-                  ? '$autoLogSummary · Period start updated'
-                  : 'Period start updated 🩸')
-              : autoLogSummary,
+          autoLogNote: autoLogSummary,
           pendingPeriodDate: requestedPeriodDate,
           periodDateConfirmed: isDirectCommand ? true : null,
         ),
@@ -523,10 +664,16 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     String? detectedNotes;
     String? detectedMemoryCategory;
     String? detectedMemoryNote;
+    String? detectedDateStr;
     final detectedSymptoms = <String>[...?fallbackSymptoms];
 
     // 1. Process logMap (from AI JSON response)
     if (logMap != null) {
+      if (logMap['date'] is String) {
+        final dStr = (logMap['date'] as String).trim();
+        if (dStr.isNotEmpty) detectedDateStr = dStr;
+      }
+
       if (logMap['periodStarted'] is bool) {
         detectedPeriodStarted = logMap['periodStarted'] as bool;
       } else if (logMap['periodStarted'] is String) {
@@ -610,6 +757,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           final map = jsonDecode(trimmedLog) as Map<String, dynamic>;
           parsedAsJson = true;
 
+          if (map['date'] is String) {
+            final dStr = (map['date'] as String).trim();
+            if (dStr.isNotEmpty) detectedDateStr = dStr;
+          }
+
           if (map['periodStarted'] is bool) {
             detectedPeriodStarted = map['periodStarted'] as bool;
           } else if (map['periodStarted'] is String) {
@@ -682,6 +834,14 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
 
       if (!parsedAsJson) {
+        final dateMatch = RegExp(
+                r'["\x27]?date["\x27]?\s*[:=]\s*["\x27]([^"\x27]+)["\x27]',
+                caseSensitive: false)
+            .firstMatch(trimmedLog);
+        if (dateMatch != null) {
+          detectedDateStr = dateMatch.group(1)?.trim();
+        }
+
         final pMatch = RegExp(r'periodStarted\s*[:=]\s*(true|false)',
                 caseSensitive: false)
             .firstMatch(trimmedLog);
@@ -845,20 +1005,58 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       checkSymptom(RegExp(r'\b(tender|breast\s+pain)\b'), 'Tender');
     }
 
+    // Resolve target date from text or AI output
+    final targetResult = PeriodDateExtractor.extractTargetDate(userText);
+    if (targetResult.isFuture) {
+      // Future dates are stored in companion memory, NEVER logged to database.
+      return null;
+    }
+
+    final now = DateTime.now();
+    final todayMidnight = DateTime(now.year, now.month, now.day);
+    DateTime targetDate;
+    if (targetResult.isExplicit) {
+      targetDate = DateTime(targetResult.date.year, targetResult.date.month, targetResult.date.day);
+    } else if (detectedDateStr != null && detectedDateStr.isNotEmpty) {
+      final parsed = DateTime.tryParse(detectedDateStr);
+      if (parsed != null) {
+        final parsedNorm = DateTime(parsed.year, parsed.month, parsed.day);
+        if (parsedNorm.isAfter(todayMidnight)) {
+          // Future date from AI: do not write to log database
+          return null;
+        }
+        targetDate = parsedNorm;
+      } else {
+        targetDate = todayMidnight;
+      }
+    } else {
+      targetDate = todayMidnight;
+    }
+
+    final isToday = targetDate.year == now.year &&
+        targetDate.month == now.month &&
+        targetDate.day == now.day;
+
     // 4. CRITICAL BIOLOGICAL MANDATE:
-    // If the user has a specific past date request, NEVER infer period started or flow for today!
-    if (hasSpecificDateRequest) {
-      detectedPeriodStarted = false;
-      detectedFlow = null;
+    // If the log is for a past date, or user specified a specific period date,
+    // do NOT anchor period start to TODAY.
+    if (!isToday || hasSpecificDateRequest) {
+      if (isToday) {
+        detectedPeriodStarted = false;
+        detectedFlow = null;
+      }
     } else if (detectedFlow != null) {
       // Menstrual flow strictly implies period has started (for today only)
       detectedPeriodStarted = true;
     }
 
-    // 5. Execute period start anchor if detected (only when no specific past date requested)
+    // 5. Execute period start anchor if detected
     if (detectedPeriodStarted == true && !hasSpecificDateRequest) {
-      final now = DateTime.now();
-      await ref.read(periodHistoryProvider.notifier).addPeriodStart(now, source: 'ai');
+      if (isToday) {
+        await ref.read(periodHistoryProvider.notifier).addPeriodStart(now, source: 'ai');
+      } else {
+        await ref.read(periodHistoryProvider.notifier).updatePeriodStart(targetDate);
+      }
     }
 
     // 6. Persist memory if captured
@@ -874,22 +1072,26 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     // 7. DIFFING ENGINE (VISION Pillar One, Two & Three):
-    // Only treat biomarkers as NEW if they actually differ from what was ALREADY logged today!
-    final currentToday = ref.read(todayLogProvider);
+    // Only treat biomarkers as NEW if they actually differ from what was ALREADY logged on targetDate!
+    final allEntries = ref.read(logEntriesProvider);
+    final targetEntry = allEntries.where((e) =>
+        e.date.year == targetDate.year &&
+        e.date.month == targetDate.month &&
+        e.date.day == targetDate.day).firstOrNull;
 
-    final isNewMood = detectedMood != null && detectedMood != currentToday?.mood;
-    final isNewEnergy = detectedEnergy != null && detectedEnergy != currentToday?.energyLevel;
-    final isNewSleep = detectedSleep != null && detectedSleep != currentToday?.sleepQuality;
-    final isNewFlow = detectedFlow != null && detectedFlow != currentToday?.flow && !hasSpecificDateRequest;
+    final isNewMood = detectedMood != null && detectedMood != targetEntry?.mood;
+    final isNewEnergy = detectedEnergy != null && detectedEnergy != targetEntry?.energyLevel;
+    final isNewSleep = detectedSleep != null && detectedSleep != targetEntry?.sleepQuality;
+    final isNewFlow = detectedFlow != null && detectedFlow != targetEntry?.flow && (isToday ? !hasSpecificDateRequest : true);
     final isNewCramps = detectedCramps != null &&
         detectedCramps != CrampLevel.none &&
-        detectedCramps != currentToday?.cramps;
+        detectedCramps != targetEntry?.cramps;
     final isNewPeriodStarted = detectedPeriodStarted == true &&
-        !hasSpecificDateRequest &&
-        (currentToday?.periodStarted != true);
+        (isToday ? !hasSpecificDateRequest : true) &&
+        (targetEntry?.periodStarted != true);
 
     final existingSymptoms =
-        LogEntry.canonicalizeSymptoms(currentToday?.symptoms ?? []);
+        LogEntry.canonicalizeSymptoms(targetEntry?.symptoms ?? []);
     final newSymptoms = <String>[];
     for (final s in LogEntry.canonicalizeSymptoms(detectedSymptoms)) {
       if (!existingSymptoms.contains(s) && !newSymptoms.contains(s)) {
@@ -899,7 +1101,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
     final isNewNotes = detectedNotes != null &&
         detectedNotes.isNotEmpty &&
-        !(currentToday?.notes?.contains(detectedNotes) ?? false);
+        !(targetEntry?.notes?.contains(detectedNotes) ?? false);
 
     final isNewMemory = detectedMemoryNote != null && detectedMemoryNote.isNotEmpty;
 
@@ -914,29 +1116,29 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
     // Save to LogEntry ONLY if there is genuinely new biomarker data
     if (hasNewData) {
-      final entryId = currentToday?.id ?? const Uuid().v4();
+      final entryId = targetEntry?.id ?? const Uuid().v4();
       final updatedSymptoms = LogEntry.canonicalizeSymptoms({
-        ...?currentToday?.symptoms,
+        ...?targetEntry?.symptoms,
         ...newSymptoms,
       });
 
       final updatedNotes = isNewNotes
-          ? (currentToday?.notes != null && currentToday!.notes!.isNotEmpty
-              ? '${currentToday.notes} · $detectedNotes'
+          ? (targetEntry?.notes != null && targetEntry!.notes!.isNotEmpty
+              ? '${targetEntry.notes} · $detectedNotes'
               : detectedNotes)
-          : currentToday?.notes;
+          : targetEntry?.notes;
 
       final newEntry = LogEntry(
         id: entryId,
-        date: DateTime.now(),
-        mood: detectedMood ?? currentToday?.mood,
-        energyLevel: detectedEnergy ?? currentToday?.energyLevel,
-        sleepQuality: detectedSleep ?? currentToday?.sleepQuality,
-        flow: detectedFlow ?? currentToday?.flow,
-        cramps: detectedCramps ?? currentToday?.cramps,
+        date: targetEntry?.date ?? targetDate,
+        mood: detectedMood ?? targetEntry?.mood,
+        energyLevel: detectedEnergy ?? targetEntry?.energyLevel,
+        sleepQuality: detectedSleep ?? targetEntry?.sleepQuality,
+        flow: detectedFlow ?? targetEntry?.flow,
+        cramps: detectedCramps ?? targetEntry?.cramps,
         symptoms: updatedSymptoms,
         notes: updatedNotes,
-        periodStarted: isNewPeriodStarted || (currentToday?.periodStarted ?? false),
+        periodStarted: isNewPeriodStarted || (targetEntry?.periodStarted ?? false),
       );
 
       await ref.read(logEntriesProvider.notifier).addEntry(newEntry);
@@ -971,7 +1173,14 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       parts.add('Remembered 💜');
     }
 
-    return parts.isNotEmpty ? parts.join(' · ') : null;
+    if (parts.isEmpty) return null;
+
+    final summary = parts.join(' · ');
+    if (!isToday) {
+      final dateLabel = '${_monthName(targetDate.month)} ${targetDate.day}';
+      return '$summary ($dateLabel)';
+    }
+    return summary;
   }
 
   void _scrollToBottom() {

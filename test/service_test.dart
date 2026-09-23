@@ -1413,5 +1413,108 @@ void main() {
       expect(currentRunLength, equals(2));
     });
   });
+
+  group('Conversational AI Logging, Target Date Resolution, and Period Stop Tests', () {
+    final referenceDate = DateTime(2026, 9, 23, 12, 0); // Wednesday, Sep 23, 2026
+    final refToday = DateTime(2026, 9, 23);
+
+    test('extractTargetDate resolves past relative and explicit dates accurately', () {
+      final yesterday = PeriodDateExtractor.extractTargetDate('Yesterday I was feeling bad cramps and 0 energy', referenceDate: referenceDate);
+      expect(yesterday.isExplicit, isTrue);
+      expect(yesterday.isFuture, isFalse);
+      expect(yesterday.relativeDaysAgo, equals(1));
+      expect(yesterday.date, equals(refToday.subtract(const Duration(days: 1))));
+
+      final fourDaysAgo = PeriodDateExtractor.extractTargetDate('4 days ago I was exhausted', referenceDate: referenceDate);
+      expect(fourDaysAgo.isExplicit, isTrue);
+      expect(fourDaysAgo.isFuture, isFalse);
+      expect(fourDaysAgo.relativeDaysAgo, equals(4));
+      expect(fourDaysAgo.date, equals(refToday.subtract(const Duration(days: 4))));
+
+      final dayBefore = PeriodDateExtractor.extractTargetDate('Day before yesterday I had headache', referenceDate: referenceDate);
+      expect(dayBefore.isExplicit, isTrue);
+      expect(dayBefore.isFuture, isFalse);
+      expect(dayBefore.relativeDaysAgo, equals(2));
+      expect(dayBefore.date, equals(refToday.subtract(const Duration(days: 2))));
+
+      final coupleDays = PeriodDateExtractor.extractTargetDate('a couple of days ago I had bloating', referenceDate: referenceDate);
+      expect(coupleDays.isExplicit, isTrue);
+      expect(coupleDays.isFuture, isFalse);
+      expect(coupleDays.relativeDaysAgo, equals(2));
+
+      final fewDays = PeriodDateExtractor.extractTargetDate('a few days ago I had low energy', referenceDate: referenceDate);
+      expect(fewDays.isExplicit, isTrue);
+      expect(fewDays.isFuture, isFalse);
+      expect(fewDays.relativeDaysAgo, equals(3));
+    });
+
+    test('extractTargetDate detects future dates and sets isFuture flag', () {
+      final tomorrow = PeriodDateExtractor.extractTargetDate('Tomorrow I might have cramps', referenceDate: referenceDate);
+      expect(tomorrow.isFuture, isTrue);
+      expect(tomorrow.isExplicit, isTrue);
+      expect(tomorrow.futureSummary, equals('tomorrow'));
+
+      final inThreeDays = PeriodDateExtractor.extractTargetDate('in 3 days I expect my period', referenceDate: referenceDate);
+      expect(inThreeDays.isFuture, isTrue);
+      expect(inThreeDays.futureSummary, equals('in 3 days'));
+
+      final dayAfterTomorrow = PeriodDateExtractor.extractTargetDate('day after tomorrow will be rough', referenceDate: referenceDate);
+      expect(dayAfterTomorrow.isFuture, isTrue);
+      expect(dayAfterTomorrow.futureSummary, equals('in 2 days'));
+
+      final nextWeek = PeriodDateExtractor.extractTargetDate('next week I am traveling', referenceDate: referenceDate);
+      expect(nextWeek.isFuture, isTrue);
+      expect(nextWeek.futureSummary, equals('next week'));
+    });
+
+    test('extractCycleDay parses ordinal numbers and calculates cycle start date', () {
+      expect(PeriodDateExtractor.extractCycleDay('Today is my 4th day'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('it is my 1st day'), equals(1));
+      expect(PeriodDateExtractor.extractCycleDay('it\'s my second day'), equals(2));
+      expect(PeriodDateExtractor.extractCycleDay('day 3 of my period'), equals(3));
+      expect(PeriodDateExtractor.extractCycleDay('day 5 of my cycle'), equals(5));
+
+      // With "today is my 4th day", period start must be today - 3 days
+      final calcDate = PeriodDateExtractor.extractDate('Today is my 4th day of period', referenceDate: referenceDate);
+      expect(calcDate, equals(refToday.subtract(const Duration(days: 3))));
+
+      // With "today is my 1st day", period start must be today
+      final day1Date = PeriodDateExtractor.extractDate('Today is my 1st day of period', referenceDate: referenceDate);
+      expect(day1Date, equals(refToday));
+    });
+
+    test('hasPeriodStopIntent accurately detects period stop expressions', () {
+      expect(PeriodDateExtractor.hasPeriodStopIntent('my period stopped today'), isTrue);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('bleeding has ended'), isTrue);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('my period ended yesterday'), isTrue);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('my period stopped 2 days ago'), isTrue);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('why was my period only 3 days'), isTrue);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('bleeding stopped completely'), isTrue);
+
+      // Must NOT match start intents
+      expect(PeriodDateExtractor.hasPeriodStopIntent('my period started yesterday'), isFalse);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('my period started today'), isFalse);
+      expect(PeriodDateExtractor.hasPeriodStopIntent('I have bad cramps today'), isFalse);
+    });
+
+    test('Confirmation and cancellation dictionaries recognize sisterly conversational terms', () {
+      for (final affirmative in ['yes', 'yes please', 'sure', 'confirm', 'update it', 'yeah please', 'yep', 'do it', 'correct', 'that is right', 'yes update it']) {
+        expect(PeriodDateExtractor.isConfirmation(affirmative), isTrue, reason: 'Failed for: $affirmative');
+      }
+
+      for (final negative in ['no', 'cancel', 'nevermind', 'keep it as is', 'leave it', 'nope', 'don\'t change it', 'no thanks', 'keep as is']) {
+        expect(PeriodDateExtractor.isCancellation(negative), isTrue, reason: 'Failed for: $negative');
+      }
+    });
+
+    test('isDirectCorrectionCommand recognizes explicit commands', () {
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('update my cycle to being day 1 yesterday'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('set my period start date to yesterday'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('change my cycle start to 20th'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('correct my period date to 2 days ago'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('fix my cycle start date'), isTrue);
+    });
+  });
 }
+
 
