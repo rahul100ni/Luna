@@ -538,7 +538,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         content: Text(
           'Luna is a cycle companion built with love, here to help you understand '
           'your body, honour your rhythms, and show up for yourself every '
-          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24.54',
+          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24.55',
           style: GoogleFonts.dmSans(
             fontSize: 14,
             color: colors.onSurface.withValues(alpha: 0.7),
@@ -736,7 +736,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.only(bottom: 32),
               child: Column(children: [
                 Text(
-                  'Luna v1.1.24.54',
+                  'Luna v1.1.24.55',
                   style: GoogleFonts.dmSans(
                     fontSize: 11,
                     color: colors.onSurface.withValues(alpha: 0.18),

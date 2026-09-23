@@ -281,12 +281,21 @@ class PhaseConstants {
 
   static PhaseInfo getPhaseInfo(CyclePhase phase) => phases[phase]!;
 
-  /// Determines cycle phase from day of cycle (1-indexed)
-  static CyclePhase phaseFromDay(int day, int cycleLength) {
+  /// Determines cycle phase from day of cycle (1-indexed), respecting individual period length.
+  static CyclePhase phaseFromDay(int day, int cycleLength, {int periodLength = 5}) {
     if (day <= 0) return CyclePhase.follicular; // guard for invalid input
-    if (day <= 5) return CyclePhase.menstrual;
-    if (day <= 13) return CyclePhase.follicular;
-    if (day <= 16) return CyclePhase.ovulatory;
+    final safePeriod = periodLength.clamp(1, (cycleLength - 8).clamp(1, 12));
+    if (day <= safePeriod) return CyclePhase.menstrual;
+
+    // Standard endocrinology:
+    // Luteal phase is relatively fixed (14 days, early luteal ~7 days, late luteal ~7 days).
+    // Ovulatory surge is centered ~14 days before end of cycle.
+    final ovulationDay = (cycleLength - 14).clamp(safePeriod + 2, cycleLength - 4);
+    final ovulatoryStart = ovulationDay;
+    final ovulatoryEnd = (ovulationDay + 2).clamp(ovulatoryStart, cycleLength - 8);
+
+    if (day < ovulatoryStart) return CyclePhase.follicular;
+    if (day <= ovulatoryEnd) return CyclePhase.ovulatory;
     if (day <= cycleLength - 7) return CyclePhase.earlyLuteal;
     return CyclePhase.lateLuteal;
   }

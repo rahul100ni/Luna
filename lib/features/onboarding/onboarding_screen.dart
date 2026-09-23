@@ -310,240 +310,501 @@ class _CycleLengthPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Cycle options: label, sub-text, days, badge
-    const cycleOptions = [
-      {'emoji': '🗓️', 'label': 'Every 3 weeks', 'sub': '21 days', 'days': 21, 'badge': ''},
-      {'emoji': '📅', 'label': 'Every 3–4 weeks', 'sub': '25 days', 'days': 25, 'badge': ''},
-      {'emoji': '🌙', 'label': 'Every 4 weeks', 'sub': '28 days', 'days': 28, 'badge': 'Most common'},
-      {'emoji': '📆', 'label': 'Every 4–5 weeks', 'sub': '32 days', 'days': 32, 'badge': ''},
-    ];
-
-    // Period options
-    const periodOptions = [
-      {'emoji': '⚡', 'label': '2–3 days', 'sub': 'Short', 'days': 2, 'badge': ''},
-      {'emoji': '🌸', 'label': '4–5 days', 'sub': 'Average', 'days': 5, 'badge': 'Average'},
-      {'emoji': '🌊', 'label': '6–7 days', 'sub': 'Longer', 'days': 7, 'badge': ''},
-      {'emoji': '🤷', 'label': 'Not sure', 'sub': 'Luna will learn', 'days': 5, 'badge': ''},
-    ];
+    const cyclePresets = [21, 24, 28, 30, 32, 35];
+    const periodPresets = [3, 4, 5, 6, 7];
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 40, 28, 28),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(22, 28, 22, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('📅', style: TextStyle(fontSize: 48)),
-          const SizedBox(height: 20),
+          const Text('🌙', style: TextStyle(fontSize: 38)),
+          const SizedBox(height: 14),
           Text(
             'Tell me about your cycle',
             style: GoogleFonts.cormorantGaramond(
-              fontSize: 34,
+              fontSize: 32,
               fontWeight: FontWeight.w700,
               color: Colors.white,
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
-            'Don\'t worry if you\'re not sure, just pick the closest option.',
-            style: GoogleFonts.dmSans(fontSize: 14, color: Colors.white54, height: 1.5),
+            'Luna personalizes every phase, notification, and body insight around your unique rhythm.',
+            style: GoogleFonts.dmSans(fontSize: 13.5, color: Colors.white54, height: 1.45),
           ),
+          const SizedBox(height: 24),
 
-          // ── Section 1: Cycle frequency ────────────────────────────────────
-          const SizedBox(height: 32),
-          Text(
-            'How often does your period come?',
-            style: GoogleFonts.dmSans(
-              fontSize: 13, fontWeight: FontWeight.w600,
-              color: Colors.white54, letterSpacing: 0.3),
-          ),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.55,
-            children: cycleOptions.map((opt) {
-              final days = opt['days'] as int;
-              final isSelected = !cycleLengthUnknown && cycleLength == days;
-              final badge = opt['badge'] as String;
-              return GestureDetector(
-                onTap: () {
-                  onCycleUnknownChanged(false);
-                  onCycleChanged(days);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? const Color(0xFF9B84D4).withValues(alpha: 0.15)
-                        : const Color(0xFF1E1530),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? const Color(0xFF9B84D4) : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Row(
-                        children: [
-                          Text(opt['emoji'] as String, style: const TextStyle(fontSize: 18)),
-                          if (badge.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF9B84D4).withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(badge,
-                                  style: GoogleFonts.dmSans(
-                                      fontSize: 9,
-                                      color: const Color(0xFF9B84D4),
-                                      fontWeight: FontWeight.w700)),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(opt['label'] as String,
-                          style: GoogleFonts.dmSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected ? Colors.white : Colors.white70)),
-                      Text(opt['sub'] as String,
-                          style: GoogleFonts.dmSans(
-                              fontSize: 11,
-                              color: isSelected
-                                  ? const Color(0xFF9B84D4)
-                                  : Colors.white38)),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: () => onCycleUnknownChanged(true),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
+          // ── Section 1: Cycle Length Card ─────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF191224),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
                 color: cycleLengthUnknown
                     ? const Color(0xFF9B84D4).withValues(alpha: 0.15)
-                    : const Color(0xFF1E1530),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: cycleLengthUnknown ? const Color(0xFF9B84D4) : Colors.transparent,
-                  width: 1.5,
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Text('🤷', style: TextStyle(fontSize: 18)),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Not sure',
-                          style: GoogleFonts.dmSans(
-                              fontSize: 13, fontWeight: FontWeight.w600,
-                              color: cycleLengthUnknown ? Colors.white : Colors.white70)),
-                      Text('Luna will learn your cycle',
-                          style: GoogleFonts.dmSans(
-                              fontSize: 11,
-                              color: cycleLengthUnknown ? const Color(0xFF9B84D4) : Colors.white38)),
-                    ],
-                  ),
-                ],
+                    : const Color(0xFF9B84D4).withValues(alpha: 0.28),
+                width: 1.2,
               ),
             ),
-          ),
-
-          // ── Section 2: Period duration ────────────────────────────────────
-          const SizedBox(height: 28),
-          Text(
-            'How long does it usually last?',
-            style: GoogleFonts.dmSans(
-              fontSize: 13, fontWeight: FontWeight.w600,
-              color: Colors.white54, letterSpacing: 0.3),
-          ),
-          const SizedBox(height: 12),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: periodOptions.map((opt) {
-                final days = opt['days'] as int;
-                final isNotSure = opt['label'] == 'Not sure';
-                final isSelected = isNotSure ? periodLengthUnknown : (!periodLengthUnknown && periodLength == days);
-                final badge = opt['badge'] as String;
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      if (isNotSure) {
-                        onPeriodUnknownChanged(true);
-                      } else {
-                        onPeriodUnknownChanged(false);
-                        onPeriodChanged(days);
-                      }
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFF9B84D4).withValues(alpha: 0.15)
-                            : const Color(0xFF1E1530),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isSelected ? const Color(0xFF9B84D4) : Colors.transparent,
-                          width: 1.5,
-                        ),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(opt['emoji'] as String, style: const TextStyle(fontSize: 16)),
-                          const SizedBox(height: 5),
-                          Text(opt['label'] as String,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.dmSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected ? Colors.white : Colors.white70)),
-                          if (badge.isNotEmpty)
-                            Text(badge,
-                                style: GoogleFonts.dmSans(
-                                    fontSize: 9,
-                                    color: isSelected
-                                        ? const Color(0xFF9B84D4)
-                                        : Colors.white38))
-                          else
-                            Text(opt['sub'] as String,
-                                style: GoogleFonts.dmSans(
-                                    fontSize: 9,
-                                    color: isSelected
-                                        ? const Color(0xFF9B84D4)
-                                        : Colors.white38)),
-                        ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.repeat_rounded, size: 14, color: Color(0xFF9B84D4)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CYCLE RHYTHM',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.1,
+                        color: const Color(0xFF9B84D4),
                       ),
                     ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF9B84D4).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        cycleLengthUnknown
+                            ? 'Auto-calibrating'
+                            : (cycleLength == 28 ? 'Typical · 4 weeks' : 'Every ${(cycleLength / 7).toStringAsFixed(1)} weeks'),
+                        style: GoogleFonts.dmSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF9B84D4),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Stepper Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _StepButton(
+                      icon: Icons.remove_rounded,
+                      enabled: !cycleLengthUnknown && cycleLength > 21,
+                      accentColor: const Color(0xFF9B84D4),
+                      onTap: () {
+                        if (cycleLengthUnknown) {
+                          onCycleUnknownChanged(false);
+                          onCycleChanged(27);
+                        } else if (cycleLength > 21) {
+                          onCycleChanged(cycleLength - 1);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 24),
+                    Column(
+                      children: [
+                        Text(
+                          cycleLengthUnknown ? '~28' : '$cycleLength',
+                          style: GoogleFonts.cormorantGaramond(
+                            fontSize: 46,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            height: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          cycleLengthUnknown ? 'calibrating baseline' : 'days between periods',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11.5,
+                            color: Colors.white54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 24),
+                    _StepButton(
+                      icon: Icons.add_rounded,
+                      enabled: !cycleLengthUnknown && cycleLength < 45,
+                      accentColor: const Color(0xFF9B84D4),
+                      onTap: () {
+                        if (cycleLengthUnknown) {
+                          onCycleUnknownChanged(false);
+                          onCycleChanged(29);
+                        } else if (cycleLength < 45) {
+                          onCycleChanged(cycleLength + 1);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Preset Pills
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: cyclePresets.map((days) {
+                      final isSelected = !cycleLengthUnknown && cycleLength == days;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () {
+                            onCycleUnknownChanged(false);
+                            onCycleChanged(days);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF9B84D4)
+                                  : const Color(0xFF221733),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF9B84D4)
+                                    : Colors.white.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: Text(
+                              '$days days',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? Colors.white : Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(height: 14),
+
+                // "Not sure" toggle banner
+                GestureDetector(
+                  onTap: () {
+                    if (cycleLengthUnknown) {
+                      onCycleUnknownChanged(false);
+                      onCycleChanged(28);
+                    } else {
+                      onCycleUnknownChanged(true);
+                      onCycleChanged(28);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: cycleLengthUnknown
+                          ? const Color(0xFF9B84D4).withValues(alpha: 0.14)
+                          : Colors.white.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: cycleLengthUnknown
+                            ? const Color(0xFF9B84D4).withValues(alpha: 0.4)
+                            : Colors.white.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          cycleLengthUnknown
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          size: 16,
+                          color: cycleLengthUnknown
+                              ? const Color(0xFF9B84D4)
+                              : Colors.white30,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            cycleLengthUnknown
+                                ? 'Not sure: Luna will learn and calibrate'
+                                : 'I am not sure yet, let Luna learn my pattern',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: cycleLengthUnknown ? FontWeight.w600 : FontWeight.w500,
+                              color: cycleLengthUnknown ? Colors.white : Colors.white60,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // ── Section 2: Period Duration Card ──────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF191224),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: periodLengthUnknown
+                    ? const Color(0xFFD94F6E).withValues(alpha: 0.15)
+                    : const Color(0xFFD94F6E).withValues(alpha: 0.28),
+                width: 1.2,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.water_drop_rounded, size: 14, color: Color(0xFFD94F6E)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'PERIOD DURATION',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.1,
+                        color: const Color(0xFFD94F6E),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD94F6E).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        periodLengthUnknown
+                            ? 'Auto-calibrating'
+                            : (periodLength == 5 ? 'Typical · 5 days' : '$periodLength days flow'),
+                        style: GoogleFonts.dmSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFFD94F6E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Stepper Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _StepButton(
+                      icon: Icons.remove_rounded,
+                      enabled: !periodLengthUnknown && periodLength > 2,
+                      accentColor: const Color(0xFFD94F6E),
+                      onTap: () {
+                        if (periodLengthUnknown) {
+                          onPeriodUnknownChanged(false);
+                          onPeriodChanged(4);
+                        } else if (periodLength > 2) {
+                          onPeriodChanged(periodLength - 1);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 24),
+                    Column(
+                      children: [
+                        Text(
+                          periodLengthUnknown ? '~5' : '$periodLength',
+                          style: GoogleFonts.cormorantGaramond(
+                            fontSize: 46,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            height: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          periodLengthUnknown ? 'calibrating baseline' : 'days of bleeding',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11.5,
+                            color: Colors.white54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 24),
+                    _StepButton(
+                      icon: Icons.add_rounded,
+                      enabled: !periodLengthUnknown && periodLength < 10,
+                      accentColor: const Color(0xFFD94F6E),
+                      onTap: () {
+                        if (periodLengthUnknown) {
+                          onPeriodUnknownChanged(false);
+                          onPeriodChanged(6);
+                        } else if (periodLength < 10) {
+                          onPeriodChanged(periodLength + 1);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Preset Pills
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: periodPresets.map((days) {
+                      final isSelected = !periodLengthUnknown && periodLength == days;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () {
+                            onPeriodUnknownChanged(false);
+                            onPeriodChanged(days);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFFD94F6E)
+                                  : const Color(0xFF221733),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFFD94F6E)
+                                    : Colors.white.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: Text(
+                              '$days days',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? Colors.white : Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // "Not sure" toggle banner
+                GestureDetector(
+                  onTap: () {
+                    if (periodLengthUnknown) {
+                      onPeriodUnknownChanged(false);
+                      onPeriodChanged(5);
+                    } else {
+                      onPeriodUnknownChanged(true);
+                      onPeriodChanged(5);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: periodLengthUnknown
+                          ? const Color(0xFFD94F6E).withValues(alpha: 0.14)
+                          : Colors.white.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: periodLengthUnknown
+                            ? const Color(0xFFD94F6E).withValues(alpha: 0.4)
+                            : Colors.white.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          periodLengthUnknown
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          size: 16,
+                          color: periodLengthUnknown
+                              ? const Color(0xFFD94F6E)
+                              : Colors.white30,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            periodLengthUnknown
+                                ? 'Not sure: use 5-day baseline'
+                                : 'I am not sure yet, let Luna calibrate',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: periodLengthUnknown ? FontWeight.w600 : FontWeight.w500,
+                              color: periodLengthUnknown ? Colors.white : Colors.white60,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
-          const SizedBox(height: 36),
+          const SizedBox(height: 32),
           _LunaButton(label: 'Got it 🌱', onTap: onNext),
         ],
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _StepButton({
+    required this.icon,
+    required this.enabled,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: enabled
+              ? accentColor.withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.03),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: enabled
+                ? accentColor.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.06),
+          ),
+        ),
+        child: Center(
+          child: Icon(
+            icon,
+            size: 18,
+            color: enabled ? accentColor : Colors.white24,
+          ),
+        ),
       ),
     );
   }

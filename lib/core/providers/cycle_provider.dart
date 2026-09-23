@@ -554,7 +554,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
     for (int i = 1; i < sortedDates.length; i++) {
       final diff = sortedDates[i].difference(sortedDates[i - 1]).inDays;
       if (diff <= 2) {
-        currentRunLength += diff;
+        currentRunLength += 1;
       } else {
         if (currentRunLength >= 2 && currentRunLength <= 10) {
           runs.add(currentRunLength);

@@ -168,7 +168,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with WidgetsBin
                           ),
 
                         // Phase Guide Pill
-                        _PhaseLegendButton(colors: colors),
+                        _PhaseLegendButton(colors: colors, profile: profile),
                       ],
                     ),
                   ),
@@ -308,7 +308,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> with WidgetsBin
 // ── Phase Legend Button & Modal ────────────────────────────────────────────────
 class _PhaseLegendButton extends StatelessWidget {
   final PhaseColors colors;
-  const _PhaseLegendButton({required this.colors});
+  final UserProfile? profile;
+  const _PhaseLegendButton({required this.colors, this.profile});
 
   @override
   Widget build(BuildContext context) {
@@ -363,23 +364,27 @@ class _PhaseLegendButton extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _LegendSheet(colors: colors),
+      builder: (_) => _LegendSheet(colors: colors, profile: profile),
     );
   }
 }
 
 class _LegendSheet extends StatelessWidget {
   final PhaseColors colors;
-  const _LegendSheet({required this.colors});
+  final UserProfile? profile;
+  const _LegendSheet({required this.colors, this.profile});
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      (Color(0xFFD94F6E), '🩸', 'Menstrual Phase', 'Days 1–5 · Period flow & deep system reset'),
-      (Color(0xFF4CAF87), '🌱', 'Follicular Phase', 'Days 6–13 · Rising estrogen & mental drive'),
-      (Color(0xFFF2B43A), '✨', 'Ovulation Peak', 'Days 14–16 · Peak energy, confidence & fertile window'),
-      (Color(0xFFE8A87C), '🍂', 'Early Luteal', 'Days 17–22 · Calming progesterone & focus'),
-      (Color(0xFF9B84D4), '🌙', 'Late Luteal (PMS)', 'Days 23–28 · Amygdala sensitivity & gentle pacing'),
+    final periodLen = profile?.averagePeriodLength ?? 5;
+    final folStart = periodLen + 1;
+    final folEnd = 13.clamp(folStart, 16);
+    final items = [
+      (const Color(0xFFD94F6E), '🩸', 'Menstrual Phase', 'Days 1–$periodLen · Period flow & deep system reset'),
+      (const Color(0xFF4CAF87), '🌱', 'Follicular Phase', 'Days $folStart–$folEnd · Rising estrogen & mental drive'),
+      (const Color(0xFFF2B43A), '✨', 'Ovulation Peak', 'Days 14–16 · Peak energy, confidence & fertile window'),
+      (const Color(0xFFE8A87C), '🍂', 'Early Luteal', 'Days 17–22 · Calming progesterone & focus'),
+      (const Color(0xFF9B84D4), '🌙', 'Late Luteal (PMS)', 'Days 23–28 · Amygdala sensitivity & gentle pacing'),
     ];
 
     return Container(
@@ -524,12 +529,14 @@ class _CalendarGrid extends StatelessWidget {
             )
           : null;
       final phaseColor = phase != null ? _phaseColor(phase) : colors.accent.withValues(alpha: 0.3);
-      final isMenstrual = hasAnchor && (phase == CyclePhase.menstrual || isConfirmedStart);
-      final isOvulation = hasAnchor && phase == CyclePhase.ovulatory && !isConfirmedStart;
+      final dayLog = logEntries.where((e) =>
+          e.date.year == date.year && e.date.month == date.month && e.date.day == date.day).firstOrNull;
+      final hasLoggedFlow = dayLog != null && (dayLog.flow != null || dayLog.periodStarted);
+      final isMenstrual = hasAnchor && (phase == CyclePhase.menstrual || isConfirmedStart || hasLoggedFlow);
+      final isOvulation = hasAnchor && phase == CyclePhase.ovulatory && !isConfirmedStart && !hasLoggedFlow;
 
       // Check if user logged on this date
-      final hasLog = logEntries.any((e) =>
-          e.date.year == date.year && e.date.month == date.month && e.date.day == date.day);
+      final hasLog = dayLog != null;
 
       cells.add(
         GestureDetector(
@@ -721,12 +728,13 @@ class _SelectedDayCard extends ConsumerWidget {
     final dayGuidance = phase != null ? CycleDailyIntelligence.getGuidance(dayNumber, phase) : null;
 
     final isConfirmedStart = CycleEngine.isConfirmedPeriodStart(selectedDay, periodHistory);
-    final anchor = profile.lastPeriodStart;
-    final daysDiff = anchor != null
-        ? selectedDay.calendarDaysDifference(anchor)
+    final closestAnchor = CycleEngine.findCycleStart(selectedDay, profile, periodHistory);
+    final daysDiff = closestAnchor != null
+        ? selectedDay.calendarDaysDifference(closestAnchor)
         : null;
     final periodLen = profile.averagePeriodLength;
-    final isInPeriodDays = daysDiff != null && daysDiff >= 0 && daysDiff < periodLen;
+    final isInPeriodDays = (daysDiff != null && daysDiff >= 0 && daysDiff < periodLen) ||
+        (entry != null && (entry.flow != null || entry.periodStarted));
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -862,7 +870,9 @@ class _SelectedDayCard extends ConsumerWidget {
                   const Text('🩸', style: TextStyle(fontSize: 12)),
                   const SizedBox(width: 6),
                   Text(
-                    'Menstrual bleed · Day ${daysDiff + 1}',
+                    daysDiff != null
+                        ? 'Menstrual bleed · Day ${daysDiff + 1}'
+                        : 'Menstrual flow recorded',
                     style: GoogleFonts.dmSans(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w600,

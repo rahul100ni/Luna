@@ -28,7 +28,7 @@ android {
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
         // flag during build.
         versionCode = flutter.versionCode
-        versionName = "1.1.24.54"
+        versionName = "1.1.24.55"
     }
 
     packaging {

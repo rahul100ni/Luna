@@ -72,7 +72,7 @@ class CycleGapAnalysis {
 }
 
 class CycleEngine {
-  static DateTime? _findCycleStart(
+  static DateTime? findCycleStart(
     DateTime normDate, UserProfile profile, List<PeriodEntry>? periodHistory) {
     if (periodHistory != null && periodHistory.isNotEmpty) {
       final c = periodHistory.where((p) => !p.startDate.isAfter(normDate)).toList();
@@ -80,7 +80,9 @@ class CycleEngine {
     }
     final lp = profile.lastPeriodStart;
     if (lp == null) return null;
-    return DateTime(lp.year, lp.month, lp.day);
+    final lpDate = DateTime(lp.year, lp.month, lp.day);
+    if (lpDate.isAfter(normDate)) return null;
+    return lpDate;
   }
 
   static CycleState calculate(UserProfile profile) {
@@ -93,14 +95,18 @@ class CycleEngine {
     final now = DateTime.now();
     final dayOfCycle = now.calendarDaysDifference(lastPeriod) + 1;
     final phaseDay = dayOfCycle.clamp(1, profile.averageCycleLength);
-    final phase = PhaseConstants.phaseFromDay(phaseDay, profile.averageCycleLength);
+    final phase = PhaseConstants.phaseFromDay(
+      phaseDay,
+      profile.averageCycleLength,
+      periodLength: profile.averagePeriodLength,
+    );
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
     final nextPeriodDate = lastPeriod.add(Duration(days: profile.averageCycleLength));
     final daysUntilNextPeriod = nextPeriodDate.calendarDaysDifference(now);
     int daysUntilPhaseChange = 0;
     for (int d = dayOfCycle + 1; d <= dayOfCycle + 14; d++) {
       final np = d.clamp(1, profile.averageCycleLength);
-      if (PhaseConstants.phaseFromDay(np, profile.averageCycleLength) != phase) {
+      if (PhaseConstants.phaseFromDay(np, profile.averageCycleLength, periodLength: profile.averagePeriodLength) != phase) {
         daysUntilPhaseChange = d - dayOfCycle; break;
       }
     }
@@ -112,38 +118,40 @@ class CycleEngine {
   }
 
   static CyclePhase? phaseForDate(DateTime date, UserProfile profile,
-      {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false}) {
+      {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false, int? periodLength}) {
     if (profile.lastPeriodStart == null) return null;
     final normDate = DateTime(date.year, date.month, date.day);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final cycleStart = _findCycleStart(normDate, profile, periodHistory);
+    final cycleStart = findCycleStart(normDate, profile, periodHistory);
     if (cycleStart == null) return null;
     final daysSinceStart = normDate.calendarDaysDifference(cycleStart);
     if (daysSinceStart < 0) return null;
     final cycleLength = profile.averageCycleLength;
+    final pLen = periodLength ?? profile.averagePeriodLength;
     if (!normDate.isAfter(today)) {
       final dayOfCycle = daysSinceStart + 1;
       final phaseDay = dayOfCycle.clamp(1, cycleLength);
-      return PhaseConstants.phaseFromDay(phaseDay, cycleLength);
+      return PhaseConstants.phaseFromDay(phaseDay, cycleLength, periodLength: pLen);
     }
     final historyCount = periodHistory?.length ?? 1;
     if (isCycleLengthUnknown && historyCount < 2) return null;
     final futureDay = (daysSinceStart % cycleLength) + 1;
-    return PhaseConstants.phaseFromDay(futureDay, cycleLength);
+    return PhaseConstants.phaseFromDay(futureDay, cycleLength, periodLength: pLen);
   }
 
   static CycleState? calculateForDate(UserProfile profile, DateTime date,
-      {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false}) {
+      {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false, int? periodLength}) {
     if (profile.lastPeriodStart == null) return null;
     final normDate = DateTime(date.year, date.month, date.day);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final cycleStart = _findCycleStart(normDate, profile, periodHistory);
+    final cycleStart = findCycleStart(normDate, profile, periodHistory);
     if (cycleStart == null) return null;
     final daysSinceStart = normDate.calendarDaysDifference(cycleStart);
     if (daysSinceStart < 0) return null;
     final cycleLength = profile.averageCycleLength;
+    final pLen = periodLength ?? profile.averagePeriodLength;
     final historyCount = periodHistory?.length ?? 1;
     int dayOfCycle;
     DateTime nextPeriodDate;
@@ -159,7 +167,7 @@ class CycleEngine {
       nextPeriodDate = cycleStart.add(Duration(days: (cyclesAhead + 1) * cycleLength));
     }
     final phaseDay = dayOfCycle.clamp(1, cycleLength);
-    final phase = PhaseConstants.phaseFromDay(phaseDay, cycleLength);
+    final phase = PhaseConstants.phaseFromDay(phaseDay, cycleLength, periodLength: pLen);
     final phaseInfo = PhaseConstants.getPhaseInfo(phase);
     return CycleState(dayOfCycle: dayOfCycle, phase: phase,
       phaseInfo: phaseInfo, nextPeriodDate: nextPeriodDate,
@@ -168,13 +176,13 @@ class CycleEngine {
   }
 
   static List<DateTime> getPeriodDatesForMonth(DateTime month, UserProfile profile,
-      {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false}) {
+      {List<PeriodEntry>? periodHistory, bool isCycleLengthUnknown = false, int? periodLength}) {
     final dates = <DateTime>[];
     if (profile.lastPeriodStart == null) return dates;
     final dim = DateTime(month.year, month.month + 1, 0).day;
     for (int d = 1; d <= dim; d++) {
       final dt = DateTime(month.year, month.month, d);
-      if (phaseForDate(dt, profile, periodHistory: periodHistory, isCycleLengthUnknown: isCycleLengthUnknown) == CyclePhase.menstrual) dates.add(dt);
+      if (phaseForDate(dt, profile, periodHistory: periodHistory, isCycleLengthUnknown: isCycleLengthUnknown, periodLength: periodLength) == CyclePhase.menstrual) dates.add(dt);
     }
     return dates;
   }

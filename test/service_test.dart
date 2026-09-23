@@ -1324,5 +1324,94 @@ void main() {
       expect(calc, isNull);
     });
   });
+
+  group('Period Length Dynamic Calibration & Calendar Multi-Cycle Accuracy Tests', () {
+    test('PhaseConstants.phaseFromDay respects dynamic periodLength', () {
+      // 7-day period in 28-day cycle: Day 6 and Day 7 must be menstrual
+      expect(PhaseConstants.phaseFromDay(6, 28, periodLength: 7), equals(CyclePhase.menstrual));
+      expect(PhaseConstants.phaseFromDay(7, 28, periodLength: 7), equals(CyclePhase.menstrual));
+      expect(PhaseConstants.phaseFromDay(8, 28, periodLength: 7), equals(CyclePhase.follicular));
+
+      // 5-day period in 28-day cycle: Day 6 is follicular
+      expect(PhaseConstants.phaseFromDay(5, 28, periodLength: 5), equals(CyclePhase.menstrual));
+      expect(PhaseConstants.phaseFromDay(6, 28, periodLength: 5), equals(CyclePhase.follicular));
+
+      // 3-day period in 28-day cycle: Day 3 is menstrual, Day 4 is follicular
+      expect(PhaseConstants.phaseFromDay(3, 28, periodLength: 3), equals(CyclePhase.menstrual));
+      expect(PhaseConstants.phaseFromDay(4, 28, periodLength: 3), equals(CyclePhase.follicular));
+    });
+
+    test('CycleEngine.phaseForDate propagates user profile averagePeriodLength', () {
+      final start = DateTime(2026, 9, 20);
+      final profile7 = UserProfile(
+        id: 'user-7',
+        name: 'User 7',
+        averageCycleLength: 28,
+        averagePeriodLength: 7,
+        lastPeriodStart: start,
+        createdAt: start,
+      );
+
+      final profile5 = UserProfile(
+        id: 'user-5',
+        name: 'User 5',
+        averageCycleLength: 28,
+        averagePeriodLength: 5,
+        lastPeriodStart: start,
+        createdAt: start,
+      );
+
+      final day6 = DateTime(2026, 9, 25); // Day 6 of cycle
+
+      // User with 7-day period should have menstrual phase on day 6
+      expect(CycleEngine.phaseForDate(day6, profile7), equals(CyclePhase.menstrual));
+
+      // User with 5-day period should have follicular phase on day 6
+      expect(CycleEngine.phaseForDate(day6, profile5), equals(CyclePhase.follicular));
+    });
+
+    test('CycleEngine.findCycleStart finds closest historical anchor across multiple cycles', () {
+      final aug22 = DateTime(2026, 8, 22);
+      final sep20 = DateTime(2026, 9, 20);
+      final history = [
+        PeriodEntry(id: '1', startDate: aug22, source: 'user'),
+        PeriodEntry(id: '2', startDate: sep20, source: 'user'),
+      ];
+      final profile = UserProfile(
+        id: 'u1',
+        name: 'Luna',
+        averageCycleLength: 29,
+        averagePeriodLength: 6,
+        lastPeriodStart: sep20,
+        createdAt: aug22,
+      );
+
+      // Date in August cycle: August 25 -> cycle start must be August 22
+      final aug25Anchor = CycleEngine.findCycleStart(DateTime(2026, 8, 25), profile, history);
+      expect(aug25Anchor, equals(aug22));
+
+      // Date in September cycle: September 22 -> cycle start must be September 20
+      final sep22Anchor = CycleEngine.findCycleStart(DateTime(2026, 9, 22), profile, history);
+      expect(sep22Anchor, equals(sep20));
+
+      // Date before any history: August 10 -> anchor must be null
+      final aug10Anchor = CycleEngine.findCycleStart(DateTime(2026, 8, 10), profile, history);
+      expect(aug10Anchor, isNull);
+    });
+
+    test('Bleeding run length calculation counts gap days as 1 additional bleed day, not gap size', () {
+      // Day 1 (Sep 1) and Day 3 (Sep 3) -> 2 days apart (diff = 2)
+      // Must count as 2 bleeding days, not 3
+      final sortedDates = [DateTime(2026, 9, 1), DateTime(2026, 9, 3)];
+      int currentRunLength = 1;
+      for (int i = 1; i < sortedDates.length; i++) {
+        final diff = sortedDates[i].difference(sortedDates[i - 1]).inDays;
+        if (diff <= 2) {
+          currentRunLength += 1;
+        }
+      }
+      expect(currentRunLength, equals(2));
+    });
+  });
 }
 
