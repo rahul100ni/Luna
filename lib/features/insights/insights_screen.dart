@@ -2069,7 +2069,7 @@ class _PeriodHistorySection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Read from the dedicated period_history table — the single source of truth
+    // Read from the dedicated period_history table: the single source of truth
     final periodHistory = ref.watch(periodHistoryProvider);
     final sortedHistory = [...periodHistory]
       ..sort((a, b) => b.startDate.compareTo(a.startDate));

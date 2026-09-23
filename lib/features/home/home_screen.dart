@@ -911,13 +911,13 @@ class _TodayPlaybookState extends State<_TodayPlaybook> {
     }
   }
 
-  // Strip verbose explanation after ': ', ' (', or ' — ' to keep it scannable
+  // Strip verbose explanation after ': ', ' (', or ' - ' to keep it scannable
   String _shortItem(String item) {
     final colonIdx = item.indexOf(': ');
     if (colonIdx > 4) return item.substring(0, colonIdx);
     final parenIdx = item.indexOf(' (');
     if (parenIdx > 4) return item.substring(0, parenIdx);
-    final dashIdx = item.indexOf(' — ');
+    final dashIdx = item.indexOf(' - ');
     if (dashIdx > 0) return item.substring(0, dashIdx);
     return item;
   }
@@ -1028,7 +1028,7 @@ class _TodayPlaybookState extends State<_TodayPlaybook> {
 
           const SizedBox(height: 14),
 
-          // Items list — quick skim style
+          // Items list: quick skim style
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             child: Padding(

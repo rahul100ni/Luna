@@ -8,6 +8,7 @@ import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/deepseek_service.dart';
 import '../../core/services/storage_service.dart';
+import '../../core/services/cloud_ground_truth_service.dart';
 
 class CycleNutritionSheet extends ConsumerStatefulWidget {
   const CycleNutritionSheet({super.key});
@@ -386,6 +387,7 @@ class _CycleNutritionSheetState extends ConsumerState<CycleNutritionSheet> {
         onTap: () {
           setState(() => _selectedDiet = id);
           StorageService.setDietPreference(id);
+          CloudGroundTruthService.syncAll();
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),

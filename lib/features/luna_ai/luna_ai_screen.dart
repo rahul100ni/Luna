@@ -1859,7 +1859,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
                           const SizedBox(height: 24),
 
-                          // CTA — Talk to Luna
+                          // CTA: Talk to Luna
                           GestureDetector(
                             onTap: (_selectedMood != null || _textController.text.isNotEmpty) && !_loading
                                 ? _checkIn

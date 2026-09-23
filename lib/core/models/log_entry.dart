@@ -1,8 +1,8 @@
 class LogEntry {
   final String id;
   final DateTime date;
-  final MoodLevel? mood; // nullable — mood is optional (can log energy/symptoms/flow without mood)
-  final int? energyLevel; // nullable — only stored when user explicitly sets it
+  final MoodLevel? mood; // nullable: mood is optional (can log energy/symptoms/flow without mood)
+  final int? energyLevel; // nullable: only stored when user explicitly sets it
   final SleepQuality? sleepQuality; // NEW: replaces the 5-bolt energy UI
   final FlowLevel? flow;
   final CrampLevel? cramps;
@@ -191,7 +191,7 @@ enum FlowLevel { spotting, light, medium, heavy }
 
 enum CrampLevel { none, mild, moderate, severe }
 
-/// Sleep quality logged by user — replaces the blunt 1-5 energy score
+/// Sleep quality logged by user: replaces the blunt 1-5 energy score
 enum SleepQuality { poor, fair, good, great }
 
 extension SleepQualityExt on SleepQuality {

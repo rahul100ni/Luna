@@ -38,7 +38,7 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
   bool _isSaving = false;
   String? _existingEntryId;
 
-  // Energy level — adult slider (1 to 5, nullable if untouched)
+  // Energy level: adult slider (1 to 5, nullable if untouched)
   int? _energy;
 
   // Optional deeper fields
@@ -1500,7 +1500,7 @@ class _LunaSliderThumbShape extends SliderComponentShape {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawCircle(center.translate(0, 1.5), radius, shadowPaint);
 
-    // 2. Base body — stays dark, grounded, and sophisticated in both states
+    // 2. Base body: stays dark, grounded, and sophisticated in both states
     final bodyColor = Color.lerp(
       surfaceColor,
       Color.lerp(surfaceColor, primaryColor, 0.22)!,
@@ -1523,7 +1523,7 @@ class _LunaSliderThumbShape extends SliderComponentShape {
       ..strokeWidth = 1.5;
     canvas.drawCircle(center, radius, ringPaint);
 
-    // 4. Center jewel pip — blooms confidently from delicate dot to rich jewel core
+    // 4. Center jewel pip: blooms confidently from delicate dot to rich jewel core
     final pipRadius = radius * (0.30 + 0.16 * activeProgress);
     final pipColor = Color.lerp(
       accentColor.withValues(alpha: 0.85),

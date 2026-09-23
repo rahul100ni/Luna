@@ -29,6 +29,7 @@ class ProfileNotifier extends StateNotifier<UserProfile?> {
     state = profile;
     final cycleState = CycleEngine.calculate(profile);
     NotificationService.schedulePhaseNotifications(cycleState);
+    CloudGroundTruthService.syncAll();
   }
 
   /// Syncs profile.lastPeriodStart. Internal use only.
@@ -42,6 +43,7 @@ class ProfileNotifier extends StateNotifier<UserProfile?> {
     state = updated;
     final cycleState = CycleEngine.calculate(updated);
     NotificationService.schedulePhaseNotifications(cycleState);
+    CloudGroundTruthService.syncAll();
   }
 
   Future<void> updateCycleLengths({int? cycleLength, int? periodLength}) async {
@@ -52,6 +54,7 @@ class ProfileNotifier extends StateNotifier<UserProfile?> {
     );
     await StorageService.saveProfile(updated);
     state = updated;
+    CloudGroundTruthService.syncAll();
   }
 
   Future<void> clear() async {
@@ -250,6 +253,7 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
 
     // 7. Recompute cycle length
     _recomputeCycleLength();
+    CloudGroundTruthService.syncAll();
   }
 
   /// Explicitly updates or corrects the cycle period start date (e.g. from Settings or Calendar).
@@ -354,8 +358,9 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     state = await StorageService.getPeriodHistory();
     if (state.isEmpty) return;
 
-    // Find the cycle entry that started on or before normStop
-    final candidates = state.where((p) => !p.startDate.isAfter(normStop)).toList();
+    // Find the cycle entry that started on or before normStop, newest first
+    final sorted = [...state]..sort((a, b) => b.startDate.compareTo(a.startDate));
+    final candidates = sorted.where((p) => !p.startDate.isAfter(normStop)).toList();
     if (candidates.isEmpty) return;
     final anchor = candidates.first;
 
@@ -371,6 +376,33 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
 
     await StorageService.savePeriodEntry(updated);
     state = await StorageService.getPeriodHistory();
+    CloudGroundTruthService.syncAll();
+  }
+
+  /// Clears the user-specified period stop date for the cycle containing [date],
+  /// reverting to natural baseline or dynamically logged flow continuity.
+  Future<void> clearPeriodStop(DateTime date) async {
+    final normDate = DateTime(date.year, date.month, date.day);
+    if (!_isLoaded && _loadFuture != null) {
+      await _loadFuture;
+    }
+    state = await StorageService.getPeriodHistory();
+    if (state.isEmpty) return;
+
+    final sorted = [...state]..sort((a, b) => b.startDate.compareTo(a.startDate));
+    final candidates = sorted.where((p) => !p.startDate.isAfter(normDate)).toList();
+    if (candidates.isEmpty) return;
+    final anchor = candidates.first;
+
+    final updated = anchor.copyWith(
+      clearEndDate: true,
+      clearBleedDuration: true,
+      isUserSpecifiedDuration: false,
+    );
+
+    await StorageService.savePeriodEntry(updated);
+    state = await StorageService.getPeriodHistory();
+    await _ref.read(logEntriesProvider.notifier).syncActiveCycleBleedDuration(anchor.startDate);
     CloudGroundTruthService.syncAll();
   }
 
@@ -547,7 +579,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       }
     }
 
-    await _syncActiveCycleBleedDuration(finalEntry.date);
+    await syncActiveCycleBleedDuration(finalEntry.date);
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
   }
@@ -568,7 +600,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       }
     }
     if (entry != null) {
-      await _syncActiveCycleBleedDuration(entry.date);
+      await syncActiveCycleBleedDuration(entry.date);
     }
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
@@ -600,7 +632,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       await _ref.read(periodHistoryProvider.notifier).removePeriodEntry(anchor.id);
     }
 
-    await _syncActiveCycleBleedDuration(today);
+    await syncActiveCycleBleedDuration(today);
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
   }
@@ -630,7 +662,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
         state = [previousEntry, ...state];
       }
     }
-    await _syncActiveCycleBleedDuration(normDate);
+    await syncActiveCycleBleedDuration(normDate);
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
   }
@@ -638,7 +670,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
   /// Dynamically synchronizes active cycle bleed duration when flow is logged on extended days.
   /// If user logs flow on Day 6 (when baseline is 5), the cycle bleed duration extends to Day 6.
   /// If flow is subsequently removed, it safely resets so the cycle ends naturally at baseline.
-  Future<void> _syncActiveCycleBleedDuration(DateTime date) async {
+  Future<void> syncActiveCycleBleedDuration(DateTime date) async {
     final normDate = DateTime(date.year, date.month, date.day);
     final history = _ref.read(periodHistoryProvider);
     final cycle = history.where((p) {
@@ -646,11 +678,31 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       final diff = normDate.difference(pNorm).inDays;
       return diff >= 0 && diff < 14;
     }).firstOrNull;
-    if (cycle == null || cycle.endDate != null) return;
+    if (cycle == null) return;
 
     final cycleStart = DateTime(cycle.startDate.year, cycle.startDate.month, cycle.startDate.day);
     final profile = _ref.read(profileProvider);
     final baselinePeriod = profile?.averagePeriodLength ?? 5;
+
+    // If an explicit end date was already recorded, but user now logged flow strictly AFTER it,
+    // extend the end date and duration to match her ground-truth reality.
+    if (cycle.endDate != null) {
+      final endNorm = DateTime(cycle.endDate!.year, cycle.endDate!.month, cycle.endDate!.day);
+      if (normDate.isAfter(endNorm) && state.any((e) {
+        final eNorm = DateTime(e.date.year, e.date.month, e.date.day);
+        return eNorm == normDate && e.flow != null;
+      })) {
+        final newDuration = normDate.difference(cycleStart).inDays + 1;
+        final updated = cycle.copyWith(
+          endDate: normDate,
+          bleedDurationDays: newDuration,
+          isUserSpecifiedDuration: true,
+        );
+        await StorageService.savePeriodEntry(updated);
+        await _ref.read(periodHistoryProvider.notifier).refresh();
+      }
+      return;
+    }
 
     // Collect all dates with active flow within this cycle 14-day window
     final flowDays = state.where((e) {
@@ -680,6 +732,32 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       );
       await StorageService.savePeriodEntry(updated);
       await _ref.read(periodHistoryProvider.notifier).refresh();
+    }
+  }
+
+  /// Clears any menstrual flow or periodStarted flags on dates strictly after [afterDate]
+  /// up to 14 days, in a single clean pass without duplicate database sync calls.
+  Future<void> clearFlowAfterDate(DateTime afterDate) async {
+    final normAfter = DateTime(afterDate.year, afterDate.month, afterDate.day);
+    bool modified = false;
+    final updatedList = <LogEntry>[];
+    for (final e in state) {
+      final eNorm = DateTime(e.date.year, e.date.month, e.date.day);
+      if (eNorm.isAfter(normAfter) && eNorm.difference(normAfter).inDays < 14) {
+        if (e.flow != null || e.periodStarted) {
+          final updated = e.copyWith(flow: null, periodStarted: false);
+          await StorageService.saveLogEntry(updated);
+          updatedList.add(updated);
+          modified = true;
+          continue;
+        }
+      }
+      updatedList.add(e);
+    }
+    if (modified) {
+      state = updatedList;
+      _recomputePeriodLength();
+      CloudGroundTruthService.syncAll();
     }
   }
 

@@ -737,8 +737,22 @@ class _SelectedDayCard extends ConsumerWidget {
         : null;
     final ctx = CycleEngine.findCycleContext(selectedDay, profile, periodHistory);
     final periodLen = ctx?.periodLength ?? profile.averagePeriodLength;
+    final matchingPeriod = closestAnchor != null
+        ? periodHistory.where((p) {
+            final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+            return pNorm.year == closestAnchor.year &&
+                pNorm.month == closestAnchor.month &&
+                pNorm.day == closestAnchor.day;
+          }).firstOrNull
+        : null;
+    final recordedEndDate = matchingPeriod?.endDate;
+    final isRecordedEndDate = recordedEndDate != null &&
+        selectedDay.year == recordedEndDate.year &&
+        selectedDay.month == recordedEndDate.month &&
+        selectedDay.day == recordedEndDate.day;
     final isInPeriodDays = (daysDiff != null && daysDiff >= 0 && daysDiff < periodLen) ||
-        (entry != null && (entry.flow != null || entry.periodStarted));
+        (entry != null && (entry.flow != null || entry.periodStarted)) ||
+        isRecordedEndDate;
     final canStartNewPeriodToday = !isConfirmedStart &&
         (closestAnchor == null || daysDiff == null || daysDiff < 0 || daysDiff >= 14);
     final canMarkPastStart = !isConfirmedStart &&
@@ -752,6 +766,7 @@ class _SelectedDayCard extends ConsumerWidget {
         (daysDiff + 1) < (profile.averageCycleLength - 2);
     final isImmediateExtensionCandidate = !isFuture &&
         !isConfirmedStart &&
+        matchingPeriod?.endDate == null &&
         (entry == null || entry.flow == null) &&
         daysDiff != null &&
         daysDiff == periodLen &&
@@ -880,6 +895,50 @@ class _SelectedDayCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 10),
+          ] else if (isRecordedEndDate && !isFuture) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8.5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF87).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF4CAF87).withValues(alpha: 0.28)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline_rounded, size: 14, color: Color(0xFF4CAF87)),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      daysDiff != null
+                          ? 'Bleeding ended here · Day ${daysDiff + 1}'
+                          : 'Bleeding ended on this day',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSurface.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => _showClearPeriodEndedDialog(context, colors, ref, selectedDay),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Text(
+                        'Change',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          color: colors.accent,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
           ] else if (isInPeriodDays && !isFuture) ...[
             Container(
               width: double.infinity,
@@ -893,20 +952,21 @@ class _SelectedDayCard extends ConsumerWidget {
                 children: [
                   const Text('🩸', style: TextStyle(fontSize: 12)),
                   const SizedBox(width: 6),
-                  Text(
-                    daysDiff != null
-                        ? (daysDiff >= periodLen
-                            ? 'Extended bleed · Day ${daysDiff + 1}'
-                            : 'Menstrual bleed · Day ${daysDiff + 1}')
-                        : 'Menstrual flow recorded',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: colors.onSurface.withValues(alpha: 0.8),
+                  Expanded(
+                    child: Text(
+                      daysDiff != null
+                          ? (daysDiff >= periodLen
+                              ? 'Extended bleed · Day ${daysDiff + 1}'
+                              : 'Menstrual bleed · Day ${daysDiff + 1}')
+                          : 'Menstrual flow recorded',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSurface.withValues(alpha: 0.8),
+                      ),
                     ),
                   ),
                   if (daysDiff != null && daysDiff >= 1 && daysDiff <= 9) ...[
-                    const Spacer(),
                     InkWell(
                       onTap: () => _showPeriodEndedDialog(context, colors, ref, selectedDay, daysDiff + 1),
                       borderRadius: BorderRadius.circular(8),
@@ -915,14 +975,14 @@ class _SelectedDayCard extends ConsumerWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_rounded, size: 12, color: colors.onSurface.withValues(alpha: 0.45)),
+                            Icon(Icons.check_rounded, size: 12, color: colors.onSurface.withValues(alpha: 0.65)),
                             const SizedBox(width: 3),
                             Text(
                               'Ended on this day',
                               style: GoogleFonts.dmSans(
                                 fontSize: 10.5,
-                                color: colors.onSurface.withValues(alpha: 0.45),
-                                fontWeight: FontWeight.w500,
+                                color: colors.onSurface.withValues(alpha: 0.75),
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -1508,7 +1568,7 @@ class _SelectedDayCard extends ConsumerWidget {
                     ),
                   ),
                 )
-              else if (!isConfirmedStart && !isInPeriodDays)
+              else if (entry != null && canMarkPastStart && !isConfirmedStart && !isInPeriodDays)
                 GestureDetector(
                   onTap: () async {
                     await ref.read(periodHistoryProvider.notifier).addPeriodStart(selectedDay, source: 'calendar');
@@ -1645,6 +1705,18 @@ class _SelectedDayCard extends ConsumerWidget {
     DateTime selectedDay,
     int dayNumber,
   ) async {
+    final String bodyCopy;
+    if (dayNumber <= 3) {
+      bodyCopy =
+          'Luna will record that your menstrual bleeding concluded on Day $dayNumber for this cycle. Your baseline rhythm remains preserved.';
+    } else if (dayNumber <= 6) {
+      bodyCopy =
+          'Luna will mark Day $dayNumber as the final day of bleeding for this cycle, seamlessly guiding you into your follicular phase.';
+    } else {
+      bodyCopy =
+          'Luna will record that your extended bleed concluded on Day $dayNumber, locking this duration for your records and transitioning your cycle.';
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dlgCtx) => AlertDialog(
@@ -1657,7 +1729,7 @@ class _SelectedDayCard extends ConsumerWidget {
           ),
         ),
         content: Text(
-          'Shorter bleeds (2 to 3 days) can happen due to lighter shedding, stress, or mild hormonal variation. Luna records that bleeding ended on this day for this cycle while preserving your baseline rhythm.',
+          bodyCopy,
           style: GoogleFonts.dmSans(
             color: colors.onSurface.withValues(alpha: 0.8),
             fontSize: 13,
@@ -1687,22 +1759,77 @@ class _SelectedDayCard extends ConsumerWidget {
     );
     if (confirm == true) {
       await ref.read(periodHistoryProvider.notifier).recordPeriodStop(selectedDay);
-      final allEntries = ref.read(logEntriesProvider);
-      final normSelected = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
-      for (final e in allEntries) {
-        final eNorm = DateTime(e.date.year, e.date.month, e.date.day);
-        if (eNorm.isAfter(normSelected) && eNorm.difference(normSelected).inDays < 14) {
-          if (e.flow != null || e.periodStarted) {
-            final updated = e.copyWith(flow: null, periodStarted: false);
-            await ref.read(logEntriesProvider.notifier).addEntry(updated);
-          }
-        }
-      }
+      await ref.read(logEntriesProvider.notifier).clearFlowAfterDate(selectedDay);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Bleeding ended on Day $dayNumber recorded 🌸',
+              style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
+            ),
+            backgroundColor: const Color(0xFF2A1F3D),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showClearPeriodEndedDialog(
+    BuildContext context,
+    PhaseColors colors,
+    WidgetRef ref,
+    DateTime selectedDay,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: colors.surface,
+        title: Text(
+          'Remove Period End Date',
+          style: GoogleFonts.cormorantGaramond(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          'Remove this recorded end date? Luna will return to your baseline flow rhythm and you can log flow or choose a different end date anytime.',
+          style: GoogleFonts.dmSans(
+            color: colors.onSurface.withValues(alpha: 0.8),
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.dmSans(color: colors.onSurface.withValues(alpha: 0.6)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            child: Text(
+              'Remove End Date',
+              style: GoogleFonts.dmSans(
+                color: const Color(0xFFD94F6E),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await ref.read(periodHistoryProvider.notifier).clearPeriodStop(selectedDay);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Period end date removed. Rhythm restored to baseline 🌸',
               style: GoogleFonts.dmSans(color: Colors.white, fontWeight: FontWeight.w500),
             ),
             backgroundColor: const Color(0xFF2A1F3D),

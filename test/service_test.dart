@@ -288,15 +288,15 @@ void main() {
     test('PhaseConstants copy contains no em dashes', () {
       for (final phase in CyclePhase.values) {
         final info = PhaseConstants.getPhaseInfo(phase);
-        expect(info.scienceBody.contains('—'), isFalse);
+        expect(info.scienceBody.contains('\u2014'), isFalse);
         for (final item in info.doThis) {
-          expect(item.contains('—'), isFalse);
+          expect(item.contains('\u2014'), isFalse);
         }
         for (final item in info.avoidThis) {
-          expect(item.contains('—'), isFalse);
+          expect(item.contains('\u2014'), isFalse);
         }
         for (final item in info.eatThis) {
-          expect(item.contains('—'), isFalse);
+          expect(item.contains('\u2014'), isFalse);
         }
       }
     });
@@ -574,7 +574,7 @@ void main() {
       final analysis = CycleEngine.analyzeGaps(profile, history);
       expect(analysis.regularity, equals(CycleRegularity.unknown));
       expect(analysis.hasAbnormality, isFalse);
-      expect(analysis.clinicalGuidanceDirective.contains('—'), isFalse);
+      expect(analysis.clinicalGuidanceDirective.contains('\u2014'), isFalse);
     });
 
     test('Identifies delayed cycle (>= 4 days) and generates endocrinological guidance without em dashes', () {
@@ -601,7 +601,7 @@ void main() {
       expect(analysis.biologicalSummary, contains('35 days'));
       expect(analysis.clinicalGuidanceDirective, contains('follicular phase'));
       expect(analysis.clinicalGuidanceDirective, contains('cortisol'));
-      expect(analysis.clinicalGuidanceDirective.contains('—'), isFalse,
+      expect(analysis.clinicalGuidanceDirective.contains('\u2014'), isFalse,
           reason: 'Guidance must never contain em dashes');
     });
 
@@ -627,7 +627,7 @@ void main() {
       expect(analysis.deviationFromBaseline, equals(-6));
       expect(analysis.hasAbnormality, isTrue);
       expect(analysis.clinicalGuidanceDirective, contains('early'));
-      expect(analysis.clinicalGuidanceDirective.contains('—'), isFalse);
+      expect(analysis.clinicalGuidanceDirective.contains('\u2014'), isFalse);
     });
 
     test('Identifies overdue active cycle when past expected next period by >= 4 days', () {
@@ -650,7 +650,7 @@ void main() {
       expect(analysis.currentDaysOverdue, equals(6));
       expect(analysis.hasAbnormality, isTrue);
       expect(analysis.clinicalGuidanceDirective, contains('delayed ovulation'));
-      expect(analysis.clinicalGuidanceDirective.contains('—'), isFalse);
+      expect(analysis.clinicalGuidanceDirective.contains('\u2014'), isFalse);
     });
   });
 
@@ -1045,10 +1045,10 @@ void main() {
         expect(g.doThis, isNotEmpty);
         expect(g.avoidThis, isNotEmpty);
         expect(g.biologicalContext, isNotEmpty);
-        expect(g.dayHighlight.contains('—'), isFalse);
-        expect(g.doThis.contains('—'), isFalse);
-        expect(g.avoidThis.contains('—'), isFalse);
-        expect(g.biologicalContext.contains('—'), isFalse);
+        expect(g.dayHighlight.contains('\u2014'), isFalse);
+        expect(g.doThis.contains('\u2014'), isFalse);
+        expect(g.avoidThis.contains('\u2014'), isFalse);
+        expect(g.biologicalContext.contains('\u2014'), isFalse);
       }
     });
   });
@@ -2011,6 +2011,45 @@ void main() {
 
         expect(CycleEngine.phaseForDate(day3, profile, periodHistory: historyEarlyStop), equals(CyclePhase.menstrual));
         expect(CycleEngine.phaseForDate(day4, profile, periodHistory: historyEarlyStop), equals(CyclePhase.follicular));
+
+        // Verify cycle context reflects exact locked bleed duration
+        final ctx = CycleEngine.findCycleContext(day4, profile, historyEarlyStop);
+        expect(ctx?.periodLength, equals(3));
+      });
+
+      test('Clearing recorded period end date restores natural baseline period duration', () {
+        final sep16 = DateTime(2026, 9, 16);
+        final profile = UserProfile(
+          id: 'test_user',
+          name: 'Sarah',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: sep16,
+          createdAt: DateTime(2026, 8, 1),
+        );
+
+        final entry = PeriodEntry(
+          id: 'c1',
+          startDate: sep16,
+          endDate: DateTime(2026, 9, 18),
+          bleedDurationDays: 3,
+          isUserSpecifiedDuration: true,
+        );
+
+        // Clear end date and bleed duration
+        final cleared = entry.copyWith(
+          clearEndDate: true,
+          clearBleedDuration: true,
+          isUserSpecifiedDuration: false,
+        );
+
+        expect(cleared.endDate, isNull);
+        expect(cleared.bleedDurationDays, isNull);
+        expect(cleared.isUserSpecifiedDuration, isFalse);
+
+        // With cleared end date, Day 4 returns to menstrual phase (baseline = 5)
+        final day4 = sep16.add(const Duration(days: 3));
+        expect(CycleEngine.phaseForDate(day4, profile, periodHistory: [cleared]), equals(CyclePhase.menstrual));
       });
     });
   });

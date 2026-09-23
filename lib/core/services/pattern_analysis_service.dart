@@ -100,7 +100,7 @@ class PatternAnalysisService {
       if (profile.lastPeriodStart != null) {
         final inDays =
             log.date.calendarDaysDifference(profile.lastPeriodStart!);
-        // Bug 8 fix: skip logs that predate the anchor — they have no valid
+        // Bug 8 fix: skip logs that predate the anchor, as they have no valid
         // cycle day. Also use a Dart-safe positive modulo so day is always
         // in range [1..cycleLength], regardless of Dart's signed % behavior.
         if (inDays < 0) continue;

@@ -481,7 +481,7 @@ class DeepSeekService {
     }
   }
 
-  /// Continuous chat — returns plain string response
+  /// Continuous chat: returns plain string response
   static Future<String> getChatMessage({
     required String userName,
     required bool hasCycleAnchor,

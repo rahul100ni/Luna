@@ -6,7 +6,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../services/cycle_engine.dart';
 import '../constants/phase_constants.dart';
 
-// ── Notification preference keys — single source of truth ─────────────────────
+// ── Notification preference keys: single source of truth ─────────────────────
 // These are public so settings_screen.dart reads/writes the exact same keys.
 const kNotifDailyCheckin = 'notif_daily_checkin';
 const kNotifPeriodSoon = 'notif_period_soon';
@@ -44,7 +44,7 @@ class NotificationService {
       await _plugin.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (details) {
-          // App opened from notification — can deeplink here in future
+          // App opened from notification: can deeplink here in future
         },
       );
     } catch (e) {

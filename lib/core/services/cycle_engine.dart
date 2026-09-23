@@ -164,7 +164,7 @@ class CycleEngine {
 
   static CycleState calculate(UserProfile profile, {List<PeriodEntry>? periodHistory, int? periodLength}) {
     final lastPeriod = profile.lastPeriodStart;
-    if (lastPeriod == null) {
+    if (lastPeriod == null && (periodHistory == null || periodHistory.isEmpty)) {
       return CycleState(dayOfCycle: 0, phase: CyclePhase.follicular,
         phaseInfo: PhaseConstants.getPhaseInfo(CyclePhase.follicular),
         daysUntilNextPeriod: profile.averageCycleLength, daysUntilPhaseChange: 0, isAnchored: false);
@@ -174,7 +174,7 @@ class CycleEngine {
     final ctx = findCycleContext(today, profile, periodHistory, periodLength: periodLength);
     final cycleLen = ctx?.cycleLength ?? profile.averageCycleLength;
     final periodLen = ctx?.periodLength ?? (periodLength ?? profile.averagePeriodLength);
-    final anchor = ctx?.cycleStart ?? lastPeriod;
+    final anchor = ctx?.cycleStart ?? lastPeriod ?? (periodHistory!.first.startDate);
 
     final dayOfCycle = today.calendarDaysDifference(anchor) + 1;
     final phaseDay = dayOfCycle.clamp(1, cycleLen);
@@ -286,10 +286,12 @@ class CycleEngine {
     final today = DateTime(now.year, now.month, now.day);
     final baseline = profile.averageCycleLength;
 
-    final lp = profile.lastPeriodStart;
+    final latestAnchor = (periodHistory != null && periodHistory.isNotEmpty)
+        ? ([...periodHistory]..sort((a, b) => b.startDate.compareTo(a.startDate))).first.startDate
+        : profile.lastPeriodStart;
     int overdueDays = 0;
-    if (lp != null) {
-      final daysSinceStart = today.calendarDaysDifference(DateTime(lp.year, lp.month, lp.day));
+    if (latestAnchor != null) {
+      final daysSinceStart = today.calendarDaysDifference(DateTime(latestAnchor.year, latestAnchor.month, latestAnchor.day));
       overdueDays = daysSinceStart - baseline;
     }
 

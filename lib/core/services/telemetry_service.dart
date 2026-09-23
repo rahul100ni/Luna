@@ -49,7 +49,7 @@ class TelemetryService {
   }) {
     if (tokens <= 0) return;
 
-    // Fire and forget — never awaits on UI thread
+    // Fire and forget: never awaits on UI thread
     () async {
       try {
         final now = DateTime.now();
@@ -70,7 +70,7 @@ class TelemetryService {
             )
             .timeout(const Duration(seconds: 8));
       } catch (_) {
-        // Silently ignore telemetry network glitches — never disturb the user
+        // Silently ignore telemetry network glitches: never disturb the user
       }
     }();
   }

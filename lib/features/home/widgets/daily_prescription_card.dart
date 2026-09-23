@@ -98,7 +98,7 @@ class _DailyPrescriptionCardState
     final day = cycleState?.dayOfCycle ?? 0;
     final key = _cacheKey(hasAnchor, day, phase, gapAnalysis);
 
-    // Bug 5 fix: always check cache first — even on manual Refresh tap —
+    // Bug 5 fix: always check cache first, even on manual Refresh tap,
     // unless the user explicitly force-refreshes. This prevents burning API
     // quota on every tap when the prescription is already fresh today.
     if (!forceRefresh) {
