@@ -80,6 +80,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   List<_ChatMessage> _chatHistory = [];
   DateTime? _pendingPeriodDate;
   DateTime? _pendingStopDate;
+  DateTime? _lastPreviousAnchor;
   late AnimationController _pulseController;
 
   static const List<String> _quickSymptoms = [
@@ -173,6 +174,25 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       _response = null;
     });
 
+    // Check if check-in text asserts period start or cycle day
+    final requestedPeriodDate = PeriodDateExtractor.extractDate(userText);
+    DateTime? previousAnchorForCheckIn;
+    if (requestedPeriodDate != null) {
+      previousAnchorForCheckIn = ref.read(profileProvider)?.lastPeriodStart;
+      await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
+
+      final currentToday = ref.read(todayLogProvider);
+      final now = DateTime.now();
+      final isToday = requestedPeriodDate.year == now.year &&
+          requestedPeriodDate.month == now.month &&
+          requestedPeriodDate.day == now.day;
+      if (!isToday && currentToday?.periodStarted == true) {
+        final updatedToday = currentToday!.copyWith(periodStarted: false);
+        await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+      }
+    }
+    _lastPreviousAnchor = previousAnchorForCheckIn;
+
     final profile = ref.read(profileProvider);
     final cycleState = ref.read(cycleStateProvider);
     final todayEntry = ref.read(todayLogProvider);
@@ -253,6 +273,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           isUser: false,
           time: DateTime.now(),
           autoLogNote: _lastAutoLogSummary,
+          previousPeriodDate: _lastPreviousAnchor,
         ),
       ];
       _chatMode = true;
@@ -466,7 +487,10 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
     // ── Pending Date Confirmation Interception ─────────────────────────────
     if (_pendingPeriodDate != null) {
-      if (PeriodDateExtractor.isConfirmation(text)) {
+      final isConfirm = PeriodDateExtractor.isConfirmation(text) ||
+          (PeriodDateExtractor.extractCycleDay(text) != null &&
+           PeriodDateExtractor.extractDate(text)?.day == _pendingPeriodDate!.day);
+      if (isConfirm) {
         setState(() {
           _chatHistory.add(
               _ChatMessage(text: text, isUser: true, time: DateTime.now()));
@@ -483,18 +507,61 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
     }
 
+    // ── Discrepancy Interception (e.g. "it shows day 1 here") ───────────────
+    if (PeriodDateExtractor.isDiscrepancyReport(text)) {
+      final userMsgs = _chatHistory.where((m) => m.isUser).map((m) => m.text).toList();
+      final recentDay = PeriodDateExtractor.findRecentCycleDay(userMsgs);
+      if (recentDay != null) {
+        final now = DateTime.now();
+        final targetDate = DateTime(now.year, now.month, now.day).subtract(Duration(days: recentDay - 1));
+        final previousAnchor = ref.read(profileProvider)?.lastPeriodStart;
+        await ref.read(periodHistoryProvider.notifier).updatePeriodStart(targetDate);
+
+        final currentToday = ref.read(todayLogProvider);
+        final isToday = targetDate.year == now.year &&
+            targetDate.month == now.month &&
+            targetDate.day == now.day;
+        if (!isToday && currentToday?.periodStarted == true) {
+          final updatedToday = currentToday!.copyWith(periodStarted: false);
+          await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+        }
+
+        final dateStr = _formatPeriodDate(targetDate);
+        setState(() {
+          _chatHistory.add(_ChatMessage(text: text, isUser: true, time: DateTime.now()));
+          _chatHistory.add(_ChatMessage(
+            text: 'I see! I have corrected your cycle anchor to $dateStr right now. Your tracker is now showing Day $recentDay · Menstrual 🌸',
+            isUser: false,
+            time: DateTime.now(),
+            previousPeriodDate: previousAnchor,
+          ));
+          _pendingPeriodDate = null;
+        });
+        _persistChatHistory();
+        _scrollToBottom();
+        return;
+      }
+    }
+
     final targetResult = PeriodDateExtractor.extractTargetDate(text);
-    final requestedPeriodDate = PeriodDateExtractor.extractDate(text);
+    DateTime? requestedPeriodDate = PeriodDateExtractor.extractDate(text);
     final cycleDay = PeriodDateExtractor.extractCycleDay(text);
     final hasPeriodStop = PeriodDateExtractor.hasPeriodStopIntent(text);
 
+    final currentAnchor = ref.read(profileProvider)?.lastPeriodStart;
+    final hasOverlappingAnchor = requestedPeriodDate != null &&
+        currentAnchor != null &&
+        (currentAnchor.year != requestedPeriodDate.year ||
+         currentAnchor.month != requestedPeriodDate.month ||
+         currentAnchor.day != requestedPeriodDate.day);
+
     final isDirectCommand = requestedPeriodDate != null &&
-        PeriodDateExtractor.isDirectCorrectionCommand(text);
+        (PeriodDateExtractor.isDirectCorrectionCommand(text) || !hasOverlappingAnchor);
 
     DateTime? previousAnchorForCommand;
     if (isDirectCommand) {
-      previousAnchorForCommand = ref.read(profileProvider)?.lastPeriodStart;
-      // Direct explicit user command: apply update to SQLite & Riverpod immediately
+      previousAnchorForCommand = currentAnchor;
+      // Direct explicit user command or no conflicting anchor: apply update immediately
       await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
 
       final currentToday = ref.read(todayLogProvider);
@@ -574,7 +641,15 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       conversationMessages.add({
         'role': 'system',
         'content':
-            'SYSTEM CONFIRMATION: The app has already directly updated her cycle start date to $dateStr. Her cycle is now aligned to Day ${cycleState.dayOfCycle} · Menstrual. Acknowledge this with sisterly warmth and reassure her that her cycle is aligned.',
+            'SYSTEM CONFIRMATION: The app has already directly updated her cycle start date to $dateStr. Her cycle is now aligned to Day ${cycleState.dayOfCycle} · Menstrual. The app UI currently displays Day ${cycleState.dayOfCycle}. Acknowledge this with sisterly warmth and reassure her that her cycle is aligned.',
+      });
+    } else if (hasOverlappingAnchor) {
+      final dateStr = _formatPeriodDate(requestedPeriodDate);
+      final currStr = _formatPeriodDate(currentAnchor);
+      conversationMessages.add({
+        'role': 'system',
+        'content':
+            'SYSTEM INSTRUCTION: The user mentioned her period started on $dateStr${cycleDay != null ? ' (Day $cycleDay)' : ''}, which shifts her cycle start from $currStr (Day ${cycleState.dayOfCycle}) to $dateStr. To ensure no data is lost or overwritten by mistake, warmly invite her to confirm the update using the interactive confirmation card below. DO NOT claim that you have already updated her start date!',
       });
     }
 
@@ -644,6 +719,29 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       hasSpecificDateRequest: requestedPeriodDate != null,
     );
 
+    // Also check if DeepSeek provided periodStartDate or cycleDay in its structured output
+    if (requestedPeriodDate == null && rawLog != null) {
+      try {
+        final logEnd = rawLog.indexOf(']');
+        final jsonStr = logEnd != -1 ? rawLog.substring(0, logEnd) : rawLog;
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>?;
+        if (map != null) {
+          if (map['periodStartDate'] != null) {
+            final parsed = DateTime.tryParse(map['periodStartDate'] as String);
+            if (parsed != null) {
+              requestedPeriodDate = parsed;
+            }
+          } else if (map['cycleDay'] != null) {
+            final cd = map['cycleDay'] as int?;
+            if (cd != null && cd >= 1 && cd <= 60) {
+              final now = DateTime.now();
+              requestedPeriodDate = DateTime(now.year, now.month, now.day).subtract(Duration(days: cd - 1));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     // Safety clean: strip any dangling [LOG:... or trailing brackets from text
     cleanResponse =
         cleanResponse.replaceAll(RegExp(r'\s*\[LOG:[^\]]*\]?'), '').trim();
@@ -674,8 +772,8 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         final lower = cleanResponse.toLowerCase();
         if (!lower.contains('?') && !lower.contains(dateStr.toLowerCase())) {
           cleanResponse += cycleDay != null
-              ? '\n\nIf today is your day $cycleDay, that places your period start at $dateStr. Would you like me to update your cycle anchor to $dateStr?'
-              : '\n\nWould you like me to update your period start date to $dateStr?';
+              ? '\n\nIf today is your day $cycleDay, that places your period start at $dateStr. Please confirm below if you would like me to update your cycle anchor to $dateStr.'
+              : '\n\nPlease confirm below if you would like me to update your period start date to $dateStr.';
         }
       }
     }
@@ -2618,13 +2716,22 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
               const Text('📅', style: TextStyle(fontSize: 16)),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  'Update cycle start to $dateStr?',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: colors.onSurface,
-                  ),
+                child: Builder(
+                  builder: (_) {
+                    final now = DateTime.now();
+                    final todayMidnight = DateTime(now.year, now.month, now.day);
+                    final targetMidnight = DateTime(date.year, date.month, date.day);
+                    final dayNum = todayMidnight.difference(targetMidnight).inDays + 1;
+                    final dayStr = (dayNum >= 1 && dayNum <= 60) ? ' (Day $dayNum)' : '';
+                    return Text(
+                      'Update cycle start to $dateStr$dayStr?',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: colors.onSurface,
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
@@ -2652,13 +2759,24 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
-                      child: Text(
-                        'Yes, update',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+                      child: Builder(
+                        builder: (_) {
+                          final now = DateTime.now();
+                          final todayMidnight = DateTime(now.year, now.month, now.day);
+                          final targetMidnight = DateTime(date.year, date.month, date.day);
+                          final dayNum = todayMidnight.difference(targetMidnight).inDays + 1;
+                          final label = (dayNum >= 1 && dayNum <= 60)
+                              ? 'Yes, set Day $dayNum'
+                              : 'Yes, update';
+                          return Text(
+                            label,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),

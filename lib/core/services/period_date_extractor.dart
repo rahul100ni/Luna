@@ -65,9 +65,36 @@ class PeriodDateExtractor {
   static bool hasPeriodContext(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
-      r'\b(periods?|cycles?|bleeds?|bleeding|started|start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here|day\s*\d+|day\s*one|day\s*two|day\s*three|day\s*four)\b',
+      r'\b(periods?|cycles?|bleeds?|bleeding|started|start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here|day\s*\d+|\d+(?:st|nd|rd|th)?\s+day|day\s*(?:one|two|three|four|five|six|seven|eight|nine|ten)|(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+day|shows?\s+day|says?\s+day|displaying\s+day)\b',
       caseSensitive: false,
     ).hasMatch(lower);
+  }
+
+  /// Checks if user text is reporting a discrepancy between the app's displayed day and reality,
+  /// e.g. "it shows day 1 here", "still showing day 1", "why does it show day 1", "says day 1 on top".
+  static bool isDiscrepancyReport(String text) {
+    final lower = text.toLowerCase().trim();
+    return RegExp(
+      r'\b(?:it\s+shows?|still\s+shows?|why\s+does\s+it\s+show|showing|reads?|says?|stuck\s+on)\s+day\s*\d+\b',
+      caseSensitive: false,
+    ).hasMatch(lower) || RegExp(
+      r'\bday\s*\d+\s+(?:here|on\s+my\s+(?:screen|end|phone))\b',
+      caseSensitive: false,
+    ).hasMatch(lower);
+  }
+
+  /// Searches recent messages in reverse order to locate the most recently stated cycle day.
+  /// Used for resolving discrepancy complaints (e.g. when user says "it shows day 1 here" after saying "dude day 4").
+  static int? findRecentCycleDay(List<String> messages) {
+    for (int i = messages.length - 1; i >= 0; i--) {
+      final text = messages[i];
+      if (isDiscrepancyReport(text)) continue;
+      final day = extractCycleDay(text);
+      if (day != null && day >= 1 && day <= 60) {
+        return day;
+      }
+    }
+    return null;
   }
 
   /// Extracts target date for ANY conversational log or biomarker mention (today, past, or future).
@@ -163,25 +190,53 @@ class PeriodDateExtractor {
     return DateTargetResult(date: today, isFuture: false, isExplicit: false, relativeDaysAgo: 0);
   }
 
-  /// Extracts cycle day number if user stated "today is my 4th day", "4th day of my period", etc.
+  /// Extracts cycle day number from user text in ANY conversational style
+  /// (e.g. "dude day 4", "today is day 4", "day 4", "its day 4", "4th day of period", "im on day 4").
+  /// Returns null if the text is reporting an erroneous display (e.g. "it shows day 1 here")
+  /// unless an intended target day is explicitly mentioned (e.g. "it shows day 1 but today is day 4").
   static int? extractCycleDay(String text) {
     final lower = text.toLowerCase().trim();
-    final match = RegExp(
-      r'\b(?:today\s+is\s+my|it\s+is\s+my|it\x27s\s+my|on\s+my|my)\s+(\d+|first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\s+day\b',
-    ).firstMatch(lower);
 
-    if (match != null) {
-      final token = match.group(1)!;
+    // Check if there is a discrepancy phrase like "it shows day 1" or "why does it show day 1"
+    final hasDiscrepancy = isDiscrepancyReport(lower);
+    if (hasDiscrepancy) {
+      // Check if user specified their actual intended day in the same sentence:
+      // e.g. "it shows day 1 here but today is day 4", "it shows day 1 should be day 4"
+      final correctionMatch = RegExp(
+        r'\b(?:but|should\s+be|actually|make\s+it|set\s+to|today\s+is|it\x27s|its|i\s+am\s+on|im\s+on|i\x27m\s+on)\s+(?:day\s+)?(\d+|first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\b',
+      ).firstMatch(lower);
+      if (correctionMatch != null) {
+        final token = correctionMatch.group(1)!;
+        return int.tryParse(token) ?? _wordNumbers[token];
+      }
+      return null;
+    }
+
+    // Pattern A: "day 4", "dude day 4", "its day 4", "it is day 4", "today is day 4", "im on day 4", "make it day 4", "day 4 of period"
+    final dayNumMatch = RegExp(
+      r'\bday\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b',
+    ).firstMatch(lower);
+    if (dayNumMatch != null) {
+      final token = dayNumMatch.group(1)!;
       return int.tryParse(token) ?? _wordNumbers[token];
     }
 
-    final dayOfCycleMatch = RegExp(
-      r'\bday\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:of\s+(?:my\s+)?(?:period|cycle))\b',
+    // Pattern B: "4th day", "my 4th day", "today is my 4th day", "fourth day of cycle", "on my 4th day"
+    final ordinalDayMatch = RegExp(
+      r'\b(\d+|first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\s+day\b',
     ).firstMatch(lower);
-
-    if (dayOfCycleMatch != null) {
-      final token = dayOfCycleMatch.group(1)!;
+    if (ordinalDayMatch != null) {
+      final token = ordinalDayMatch.group(1)!;
       return int.tryParse(token) ?? _wordNumbers[token];
+    }
+
+    // Pattern C: "i am on 4", "im on 4", "today is 4", "currently on 4"
+    final onNumMatch = RegExp(
+      r'\b(?:i\s+am\s+on|im\s+on|i\x27m\s+on|currently\s+on|currently|today\s+is|it\x27s|its)\s+(\d+)(?:st|nd|rd|th)?\b',
+    ).firstMatch(lower);
+    if (onNumMatch != null) {
+      final n = int.tryParse(onNumMatch.group(1)!);
+      if (n != null && n >= 1 && n <= 60) return n;
     }
 
     return null;
@@ -195,14 +250,19 @@ class PeriodDateExtractor {
 
     if (!hasPeriodContext(text)) return null;
 
-    // Check if user specified their cycle day: "today is my 4th day" -> period started 3 days ago!
+    // 1. If user explicitly provided a past date/relative marker for when period/Day 1 was (e.g. "yesterday", "3 days ago", "on the 20th")
+    final target = extractTargetDate(text, referenceDate: referenceDate);
+    if (target.isExplicit && !target.isFuture && (target.relativeDaysAgo == null || target.relativeDaysAgo! > 0)) {
+      return target.date;
+    }
+
+    // 2. Check if user specified their cycle day: "today is my 4th day", "dude day 4" -> period started (cycleDay - 1) days ago!
     final cycleDay = extractCycleDay(text);
-    if (cycleDay != null && cycleDay >= 1 && cycleDay <= 30) {
+    if (cycleDay != null && cycleDay >= 1 && cycleDay <= 60) {
       return today.subtract(Duration(days: cycleDay - 1));
     }
 
-    // Use target date extractor
-    final target = extractTargetDate(text, referenceDate: referenceDate);
+    // 3. Fallback to explicit target if any
     if (target.isExplicit && !target.isFuture) {
       return target.date;
     }
@@ -303,15 +363,21 @@ class PeriodDateExtractor {
     ).hasMatch(lower);
   }
 
-  /// Checks if user text is an explicit direct imperative command to set or correct period/cycle start date,
-  /// meaning the user explicitly ordered "update ...", "change ...", "set ...", "correct ...".
+  /// Checks if user text is an explicit direct imperative command or assertion to set or correct period/cycle start date,
+  /// meaning the user explicitly ordered "update ...", "change ...", "set ...", "correct ...", or asserted their day ("dude day 4", "today is day 4").
   static bool isDirectCorrectionCommand(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
       r'^(?:please\s+)?(update|change|set|correct|fix|redo|force|override|make)\b',
       caseSensitive: false,
     ).hasMatch(lower) || RegExp(
-      r'\b(update|change|set|correct|make)\s+(?:my\s+)?(?:period|cycle)\b',
+      r'\b(update|change|set|correct|make|force)\s+(?:my\s+)?(?:period|cycle)\b',
+      caseSensitive: false,
+    ).hasMatch(lower) || RegExp(
+      r'\b(?:dude\s+)?day\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b',
+      caseSensitive: false,
+    ).hasMatch(lower) || RegExp(
+      r'\b(?:today\s+is|it\x27s|its|im\s+on|i\s+am\s+on)\s+day\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b',
       caseSensitive: false,
     ).hasMatch(lower);
   }

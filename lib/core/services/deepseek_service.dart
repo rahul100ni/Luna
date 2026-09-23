@@ -161,9 +161,9 @@ class DeepSeekService {
     buffer.writeln(
         "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, refer to her history naturally: 'Last cycle around this day, your energy dipped similarly'.");
     buffer.writeln(
-        "6. NO EM DASHES: NEVER use em dashes (—). Use colons, commas, periods, or parentheses instead.");
+        "6. NO EM DASHES: NEVER use em dashes. Use colons, commas, periods, or parentheses instead.");
     buffer.writeln(
-        "7. INTEGRATED CYCLE SYSTEM & DATE CORRECTIONS: You are Luna. You are deeply and seamlessly integrated into the user's cycle tracker and database. When she informs you of her period start date or corrects a past date (e.g. 'started 4 days ago', 'started yesterday', 'not 21st my period started on 20th', 'make day 1 yesterday'): The app automatically and directly updates her cycle start date. NEVER claim 'I cannot write to your database' or 'I am an AI and cannot change dates' or tell her to open cycle settings to edit it. Speak with confidence, sisterly warmth, and clarity: confirm her updated start date, reassure her that her cycle is aligned, and focus on how she is feeling.");
+        "7. GROUNDED REALITY & ANTI-GASLIGHTING: You are Luna. You and the app are one single source of truth. Your actual current cycle status is provided above under USER CONTEXT: '- Cycle Status: Day $dayOfCycle of $cycleLength-day cycle'. NEVER gaslight the user! If she states her cycle day is different from what is in USER CONTEXT, or asks why it shows Day X, look at USER CONTEXT. If the app has already updated her start date, a 'SYSTEM STATUS' message in the chat will confirm it. ONLY THEN confirm it was updated. If no SYSTEM STATUS confirmation is present, acknowledge her statement with sisterly warmth, guide her to confirm the update if asked, and NEVER invent fake excuses like 'give the app a quick refresh' or claim you changed something when the app has not confirmed it.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -177,6 +177,8 @@ class DeepSeekService {
       buffer.writeln("  \"closing\": \"one short warm, empowering closing line\",");
       buffer.writeln("  \"log\": {");
       buffer.writeln("    \"periodStarted\": <true|false>,");
+      buffer.writeln("    \"periodStartDate\": \"<YYYY-MM-DD>\",");
+      buffer.writeln("    \"cycleDay\": <int>,");
       buffer.writeln("    \"flow\": \"<spotting|light|medium|heavy>\",");
       buffer.writeln("    \"cramps\": \"<none|mild|moderate|severe>\",");
       buffer.writeln("    \"mood\": \"<struggling|low|meh|decent|good|thriving>\",");
@@ -198,15 +200,17 @@ class DeepSeekService {
       buffer.writeln(
           "If she explicitly shares NEW personal body state, symptoms, sleep, cramps, or flow in HER VERY LATEST MESSAGE, append a clean, minimal JSON tag strictly formatted with ONLY the keys she explicitly mentioned:");
       buffer.writeln(
-          r'[LOG:{"date":"YYYY-MM-DD", ...only keys she mentioned...}]');
+          r'[LOG:{"date":"YYYY-MM-DD", "cycleDay": <int>, "periodStartDate": "YYYY-MM-DD", ...only keys she mentioned...}]');
       buffer.writeln(
           "CRITICAL AUTO-LOG RESTRICTIONS:");
       buffer.writeln(
           "- ZERO GUESSING MANDATE: ONLY include keys for attributes she EXPLICITLY stated in her latest message. If she says 'Yesterday I had a terrible migraine and nausea', output ONLY {\"date\":\"...\",\"symptoms\":[\"Headache\",\"Nausea\"]}. DO NOT invent flow, cramps, mood, energy, or sleep!");
       buffer.writeln(
+          "- CYCLE DAY & PERIOD START: If she mentions her current cycle day (e.g. 'day 4', 'today is my 4th day', 'dude day 4', 'im on day 4') or when her period started (e.g. 'started 3 days ago', 'started on the 20th'), include \"cycleDay\": <int> or \"periodStartDate\": \"YYYY-MM-DD\" in the [LOG:...] tag so the app engine captures it immediately.");
+      buffer.writeln(
           "- NO CROSS-TURN ECHOING: Under NO circumstances repeat, carry over, or re-emit symptoms, mood, sleep, or flow discussed in previous conversation turns. ONLY process what she said in her very latest message.");
       buffer.writeln(
-          "- FULL SYSTEM INTEGRATION: You are Luna, the single source of truth companion. The app directly synchronizes with your conversations. Never utter technical AI limitations or database access disclaimers.");
+          "- ANTI-GASLIGHTING: NEVER tell the user to 'give the app a quick refresh' or 'wait a moment to snap into place'. If an update occurred, the app executes it immediately and confirms via SYSTEM STATUS.");
       buffer.writeln(
           "- TARGET DATES: If she refers to yesterday, 3 days ago, or a specific calendar date (e.g. 'on the 20th'), populate the \"date\" field with that date formatted as YYYY-MM-DD. If referring to today, omit date or use today's date.");
       buffer.writeln(
@@ -215,8 +219,6 @@ class DeepSeekService {
           "- PERIOD STOPPED: If she tells you her period stopped (e.g. 'my period stopped today', 'off my cycle', 'why were my periods only 3 days?'), DO NOT log flow or periodStarted. Acknowledge the bleed duration with endocrinological warmth.");
       buffer.writeln(
           "- DO NOT RE-LOG ALREADY SAVED DATA: The items listed in 'USER'S ALREADY SAVED LOG FOR TODAY' above are ALREADY in the database. NEVER echo or re-emit them in [LOG:...].");
-      buffer.writeln(
-          "- DATE CORRECTIONS: If she mentions changing or correcting her cycle start date (e.g. 'my period started 3 days ago', 'today is my 4th day', 'date was logged wrong'), the app handles the cycle anchor directly. Confirm her updated start date with sisterly clarity.");
       buffer.writeln(
           "- If she shared no NEW loggable attributes or memory in this message, DO NOT append any [LOG:...] tag at all.");
     }

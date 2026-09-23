@@ -1691,6 +1691,82 @@ void main() {
       expect(restoredEntry.symptoms, equals(['Cramps']));
     });
   });
+
+  group('Bulletproof Conversational Cycle Day & Discrepancy Self-Healing Tests', () {
+    test('extractCycleDay parses all conversational cycle day assertions', () {
+      expect(PeriodDateExtractor.extractCycleDay('dude day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('today is day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('its day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('it is day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('im on day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('i am on day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('make it day 4'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('Today is my 4th day of period'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('4th day of cycle'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('day four'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('fourth day'), equals(4));
+      expect(PeriodDateExtractor.extractCycleDay('day 1'), equals(1));
+      expect(PeriodDateExtractor.extractCycleDay('today is day 3'), equals(3));
+    });
+
+    test('Discrepancy report detection prevents erroneous day overwriting', () {
+      // User complains that app displays Day 1
+      const complaint1 = 'it shows day 1 here';
+      expect(PeriodDateExtractor.isDiscrepancyReport(complaint1), isTrue);
+      // Must NOT extract 1 as target cycle day!
+      expect(PeriodDateExtractor.extractCycleDay(complaint1), isNull);
+
+      const complaint2 = 'why does it show day 1';
+      expect(PeriodDateExtractor.isDiscrepancyReport(complaint2), isTrue);
+      expect(PeriodDateExtractor.extractCycleDay(complaint2), isNull);
+
+      // Sentence with both discrepancy and target day extracts target day
+      const combined = 'it shows day 1 here but today is day 4';
+      expect(PeriodDateExtractor.isDiscrepancyReport(combined), isTrue);
+      expect(PeriodDateExtractor.extractCycleDay(combined), equals(4));
+    });
+
+    test('findRecentCycleDay recovers intended cycle day from message history', () {
+      final history = [
+        'Hey Luna',
+        'dude day 4',
+        'it shows day 1 here',
+      ];
+      final recoveredDay = PeriodDateExtractor.findRecentCycleDay(history);
+      expect(recoveredDay, equals(4));
+    });
+
+    test('extractDate correctly calculates start date for "dude day 4"', () {
+      final now = DateTime(2026, 9, 23);
+      final calculatedStart = PeriodDateExtractor.extractDate('dude day 4', referenceDate: now);
+      expect(calculatedStart, isNotNull);
+      // Sep 23 minus (4 - 1) days = Sep 20
+      expect(calculatedStart!.year, equals(2026));
+      expect(calculatedStart.month, equals(9));
+      expect(calculatedStart.day, equals(20));
+    });
+
+    test('isDirectCorrectionCommand recognizes cycle day assertions', () {
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('dude day 4'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('day 4'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('today is day 4'), isTrue);
+      expect(PeriodDateExtractor.isDirectCorrectionCommand('update my period start'), isTrue);
+    });
+
+    test('isConfirmation identifies cycle day repetitions matching pending date', () {
+      final pendingDate = DateTime(2026, 9, 20); // 3 days ago relative to Sep 23 (Day 4)
+      const userReply = 'dude day 4';
+
+      final cycleDay = PeriodDateExtractor.extractCycleDay(userReply);
+      expect(cycleDay, equals(4));
+
+      final now = DateTime(2026, 9, 23);
+      final dateFromReply = PeriodDateExtractor.extractDate(userReply, referenceDate: now);
+      expect(dateFromReply?.day, equals(pendingDate.day));
+    });
+  });
 }
+
 
 

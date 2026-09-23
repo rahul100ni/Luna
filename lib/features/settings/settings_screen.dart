@@ -497,8 +497,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // 2. Wipe all data from storage (SQLite + SharedPreferences)
               await StorageService.clearAllData();
               await StorageService.clearLastChatSession();
-              // 3. Clear Riverpod provider state
+              // 3. Clear Riverpod provider state completely
               ref.read(profileProvider.notifier).clear();
+              await ref.read(periodHistoryProvider.notifier).clearAll();
               ref.read(logEntriesProvider.notifier).refresh();
               // 4. Clean navigation to onboarding
               if (mounted) {
