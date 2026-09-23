@@ -739,6 +739,13 @@ class _SelectedDayCard extends ConsumerWidget {
         (closestAnchor == null || daysDiff == null || daysDiff < 0 || daysDiff >= 14);
     final canMarkPastStart = !isConfirmedStart &&
         (closestAnchor == null || daysDiff == null || daysDiff <= 0 || daysDiff >= 14);
+    final isExtendedCycleDay = !isFuture &&
+        daysDiff != null &&
+        (daysDiff + 1) > profile.averageCycleLength &&
+        !isConfirmedStart;
+    final isEarlyStartCandidate = daysDiff != null &&
+        daysDiff >= 14 &&
+        (daysDiff + 1) < (profile.averageCycleLength - 2);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -801,7 +808,9 @@ class _SelectedDayCard extends ConsumerWidget {
                       phaseInfo != null
                           ? (isFuture
                               ? 'Est. ${phaseInfo.name}'
-                              : '${phaseInfo.name} · Day ${state?.dayOfCycle ?? 0}')
+                              : isExtendedCycleDay
+                                  ? 'Extended · Day ${daysDiff + 1}'
+                                  : '${phaseInfo.name} · Day ${state?.dayOfCycle ?? 0}')
                           : (hasAnchor ? 'Unrecorded Cycle' : 'Day View'),
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
@@ -1189,6 +1198,35 @@ class _SelectedDayCard extends ConsumerWidget {
             const SizedBox(height: 12),
           ],
 
+          // Subtle extended cycle reassurance (Not in the face, but comforting)
+          if (isExtendedCycleDay && !isInPeriodDays) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: colors.primary.withValues(alpha: 0.16)),
+              ),
+              child: Row(
+                children: [
+                  const Text('🌙', style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Extended cycle: Stress, travel, or sleep changes often delay ovulation. Your cycle will recalibrate once your period arrives.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        color: colors.onSurface.withValues(alpha: 0.7),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           // ── Contextual Action Buttons ───────────────────────────────────
           // On FUTURE dates: Zero buttons! Foresight information only.
           if (!isFuture) ...[
@@ -1256,7 +1294,11 @@ class _SelectedDayCard extends ConsumerWidget {
                         const Text('🩸', style: TextStyle(fontSize: 12)),
                         const SizedBox(width: 6),
                         Text(
-                          'My period started today',
+                          isEarlyStartCandidate
+                              ? 'Period started early today · Day ${daysDiff + 1}'
+                              : isExtendedCycleDay
+                                  ? 'Period arrived today · Day ${daysDiff + 1}'
+                                  : 'My period started today',
                           style: GoogleFonts.dmSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -1334,7 +1376,11 @@ class _SelectedDayCard extends ConsumerWidget {
                                 const Text('🩸', style: TextStyle(fontSize: 11)),
                                 const SizedBox(width: 5),
                                 Text(
-                                  'Period Start',
+                                  isEarlyStartCandidate
+                                      ? 'Started early · Day ${daysDiff + 1}'
+                                      : isExtendedCycleDay
+                                          ? 'Started · Day ${daysDiff + 1}'
+                                          : 'Period Start',
                                   style: GoogleFonts.dmSans(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w700,
@@ -1382,7 +1428,11 @@ class _SelectedDayCard extends ConsumerWidget {
                         const Text('🩸', style: TextStyle(fontSize: 11)),
                         const SizedBox(width: 5),
                         Text(
-                          'Mark as Period Start',
+                          isEarlyStartCandidate
+                              ? 'Period started early on this date · Day ${daysDiff + 1}'
+                              : isExtendedCycleDay
+                                  ? 'Period arrived on this date · Day ${daysDiff + 1}'
+                                  : 'Mark as Period Start',
                           style: GoogleFonts.dmSans(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
