@@ -747,7 +747,7 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                           onChanged: (v) => setState(() => _energy = v),
                         ),
 
-                        // ── Contextual Period Started Toggle ───────────────
+                        // ── Contextual Period Started Toggle (Day 1) ───────────────
                         if (showPeriodStartedToggle) ...[
                           const SizedBox(height: 18),
                           GestureDetector(
@@ -809,6 +809,95 @@ class _LogScreenState extends ConsumerState<LogScreen> with WidgetsBindingObserv
                                   ),
                                 ],
                               ),
+                            ),
+                          ).animate().fadeIn(delay: 90.ms),
+                        ],
+
+                        // ── Ongoing Bleed & Flow Selector (Days 2 to 10) ───────────────
+                        if (isMidCycleDay2To13 && daysSinceAnchor != null && daysSinceAnchor <= 10) ...[
+                          const SizedBox(height: 18),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: colors.surface.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: _flow != null
+                                    ? const Color(0xFFD94F6E).withValues(alpha: 0.35)
+                                    : colors.onSurface.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text('🩸', style: TextStyle(fontSize: 14)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'PERIOD FLOW · DAY ${daysSinceAnchor + 1}',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFFD94F6E),
+                                        letterSpacing: 1.0,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    if (_flow != null)
+                                      GestureDetector(
+                                        onTap: () => setState(() => _flow = null),
+                                        child: Text(
+                                          'No flow / ended',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 11,
+                                            color: colors.onSurface.withValues(alpha: 0.45),
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: FlowLevel.values.map((f) {
+                                    final labels = ['Spotting', 'Light', 'Medium', 'Heavy'];
+                                    final sel = _flow == f;
+                                    return Expanded(
+                                      child: GestureDetector(
+                                        onTap: () => setState(() => _flow = sel ? null : f),
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 180),
+                                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: sel
+                                                ? const Color(0xFFD94F6E).withValues(alpha: 0.22)
+                                                : colors.background.withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: sel
+                                                  ? const Color(0xFFD94F6E)
+                                                  : colors.onSurface.withValues(alpha: 0.1),
+                                              width: sel ? 1.4 : 1,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              labels[f.index],
+                                              style: GoogleFonts.dmSans(
+                                                fontSize: 11.5,
+                                                fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                                                color: sel ? const Color(0xFFFF8FA3) : colors.onSurface.withValues(alpha: 0.6),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
                             ),
                           ).animate().fadeIn(delay: 90.ms),
                         ],
