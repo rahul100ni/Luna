@@ -12,6 +12,7 @@ import 'package:luna_app/core/models/period_entry.dart';
 import 'package:luna_app/core/models/luna_memory_entry.dart';
 import 'package:luna_app/core/services/period_date_extractor.dart';
 import 'package:luna_app/core/services/cycle_daily_intelligence.dart';
+import 'package:luna_app/core/services/cloud_ground_truth_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -1798,6 +1799,126 @@ void main() {
       final calc = PeriodDateExtractor.extractDate(complaintWithCorrection, referenceDate: now);
       expect(calc, isNotNull);
       expect(calc!.day, equals(20));
+    });
+
+    group('Historical Cycle Immunity, Ground-Truth Independence & Cloud Sync Tests', () {
+      test('Closed historical cycle retains true calendar length regardless of profile.averageCycleLength edits', () {
+        final profile = UserProfile(
+          id: 'test_user',
+          name: 'Sarah',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: DateTime(2026, 9, 20),
+          createdAt: DateTime(2026, 8, 1),
+        );
+
+        final history = [
+          PeriodEntry(id: 'c3', startDate: DateTime(2026, 9, 20)),
+          PeriodEntry(id: 'c2', startDate: DateTime(2026, 8, 29), actualCycleLength: 22),
+          PeriodEntry(id: 'c1', startDate: DateTime(2026, 8, 1), actualCycleLength: 28),
+        ];
+
+        // 1. In August (Cycle 1): 28 days
+        final ctxAug = CycleEngine.findCycleContext(DateTime(2026, 8, 10), profile, history);
+        expect(ctxAug, isNotNull);
+        expect(ctxAug!.isClosed, isTrue);
+        expect(ctxAug.cycleLength, equals(28));
+        expect(ctxAug.cycleStart, equals(DateTime(2026, 8, 1)));
+        expect(ctxAug.nextCycleStart, equals(DateTime(2026, 8, 29)));
+
+        // 2. In early September (Cycle 2): 22 days
+        final ctxSepClosed = CycleEngine.findCycleContext(DateTime(2026, 9, 5), profile, history);
+        expect(ctxSepClosed, isNotNull);
+        expect(ctxSepClosed!.isClosed, isTrue);
+        expect(ctxSepClosed.cycleLength, equals(22));
+        expect(ctxSepClosed.cycleStart, equals(DateTime(2026, 8, 29)));
+        expect(ctxSepClosed.nextCycleStart, equals(DateTime(2026, 9, 20)));
+
+        // 3. User edits settings: changes averageCycleLength to 35!
+        final updatedProfile = profile.copyWith(averageCycleLength: 35);
+
+        // Historical Cycle 1 and Cycle 2 MUST remain 28 and 22 days (strictly immune to settings edit)
+        final ctxAugAfter = CycleEngine.findCycleContext(DateTime(2026, 8, 10), updatedProfile, history);
+        expect(ctxAugAfter!.cycleLength, equals(28));
+
+        final ctxSepAfter = CycleEngine.findCycleContext(DateTime(2026, 9, 5), updatedProfile, history);
+        expect(ctxSepAfter!.cycleLength, equals(22));
+
+        // Active ongoing cycle uses the newly configured 35 days
+        final ctxActive = CycleEngine.findCycleContext(DateTime(2026, 9, 22), updatedProfile, history);
+        expect(ctxActive, isNotNull);
+        expect(ctxActive!.isClosed, isFalse);
+        expect(ctxActive.cycleLength, equals(35));
+      });
+
+      test('Historical bleeding duration is strictly preserved and immune to profile.averagePeriodLength edits', () {
+        final profile = UserProfile(
+          id: 'test_user',
+          name: 'Sarah',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: DateTime(2026, 9, 20),
+          createdAt: DateTime(2026, 8, 1),
+        );
+
+        final history = [
+          PeriodEntry(id: 'c3', startDate: DateTime(2026, 9, 20)),
+          PeriodEntry(id: 'c2', startDate: DateTime(2026, 8, 29), bleedDurationDays: 3, isUserSpecifiedDuration: true),
+          PeriodEntry(id: 'c1', startDate: DateTime(2026, 8, 1), bleedDurationDays: 5, isUserSpecifiedDuration: true),
+        ];
+
+        // Aug 1 cycle had 5 bleeding days: Day 4 and Day 5 are menstrual
+        expect(CycleEngine.phaseForDate(DateTime(2026, 8, 4), profile, periodHistory: history), equals(CyclePhase.menstrual));
+        expect(CycleEngine.phaseForDate(DateTime(2026, 8, 5), profile, periodHistory: history), equals(CyclePhase.menstrual));
+        expect(CycleEngine.phaseForDate(DateTime(2026, 8, 6), profile, periodHistory: history), equals(CyclePhase.follicular));
+
+        // Aug 29 cycle had 3 bleeding days: Day 3 is menstrual, Day 4 is follicular
+        expect(CycleEngine.phaseForDate(DateTime(2026, 8, 31), profile, periodHistory: history), equals(CyclePhase.menstrual));
+        expect(CycleEngine.phaseForDate(DateTime(2026, 9, 1), profile, periodHistory: history), equals(CyclePhase.follicular));
+
+        // User edits averagePeriodLength in settings to 2 days!
+        final updatedProfile = profile.copyWith(averagePeriodLength: 2);
+
+        // Historical cycles keep their exact recorded bleed durations: Day 5 of Aug 1 is STILL menstrual!
+        expect(CycleEngine.phaseForDate(DateTime(2026, 8, 5), updatedProfile, periodHistory: history), equals(CyclePhase.menstrual));
+        // Day 3 of Aug 29 cycle is STILL menstrual!
+        expect(CycleEngine.phaseForDate(DateTime(2026, 8, 31), updatedProfile, periodHistory: history), equals(CyclePhase.menstrual));
+      });
+
+      test('PeriodEntry model serialization preserves duration, end date, and actual cycle length', () {
+        final entry = PeriodEntry(
+          id: 'entry_123',
+          startDate: DateTime(2026, 8, 1),
+          source: 'ai_stop',
+          endDate: DateTime(2026, 8, 5),
+          bleedDurationDays: 5,
+          isUserSpecifiedDuration: true,
+          actualCycleLength: 28,
+        );
+
+        final map = entry.toMap();
+        expect(map['id'], equals('entry_123'));
+        expect(map['start_date'], contains('2026-08-01'));
+        expect(map['end_date'], contains('2026-08-05'));
+        expect(map['bleed_duration_days'], equals(5));
+        expect(map['is_user_specified_duration'], equals(1));
+        expect(map['actual_cycle_length'], equals(28));
+
+        final restored = PeriodEntry.fromMap(map);
+        expect(restored.id, equals(entry.id));
+        expect(restored.startDate.day, equals(1));
+        expect(restored.endDate?.day, equals(5));
+        expect(restored.bleedDurationDays, equals(5));
+        expect(restored.isUserSpecifiedDuration, isTrue);
+        expect(restored.actualCycleLength, equals(28));
+      });
+
+      test('CloudGroundTruthService account key sanitization handles emails, special characters, and empty inputs', () {
+        expect(CloudGroundTruthService.sanitizeAccountKey('rahul.test@example.com'), equals('rahul_test_at_example_com'));
+        expect(CloudGroundTruthService.sanitizeAccountKey('Luna-User#99\$beta[v1]'), equals('luna-user_99_beta_v1_'));
+        expect(CloudGroundTruthService.sanitizeAccountKey('   '), equals('anonymous_vault'));
+        expect(CloudGroundTruthService.sanitizeAccountKey('user_123-abc'), equals('user_123-abc'));
+      });
     });
   });
 }

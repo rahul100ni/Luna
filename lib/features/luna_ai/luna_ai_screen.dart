@@ -418,6 +418,8 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       await ref.read(logEntriesProvider.notifier).addEntry(updated);
     }
 
+    await ref.read(periodHistoryProvider.notifier).recordPeriodStop(stopDate);
+
     final profile = ref.read(profileProvider);
     final history = ref.read(periodHistoryProvider);
     final anchor = profile != null ? CycleEngine.findCycleStart(stopDate, profile, history) : null;
@@ -622,6 +624,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           final updated = stopEntry.copyWith(flow: null, periodStarted: false);
           await ref.read(logEntriesProvider.notifier).addEntry(updated);
         }
+        await ref.read(periodHistoryProvider.notifier).recordPeriodStop(stopDate);
       }
     }
 

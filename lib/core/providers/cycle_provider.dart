@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import '../services/cycle_engine.dart';
 import '../services/notification_service.dart';
 import '../services/pattern_analysis_service.dart';
+import '../services/cloud_ground_truth_service.dart';
 import '../constants/phase_constants.dart';
 
 // -- Profile Provider -----------------------------------------------------------
@@ -172,8 +173,24 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
       // Ensure LogEntry for this date has periodStarted = true without cascading
       await _ref.read(logEntriesProvider.notifier).setPeriodStartedForDate(normDate, true);
 
+      // If there is an immediately preceding cycle anchor, calculate and lock its actualCycleLength
+      final sortedBefore = state.where((p) => p.startDate.isBefore(normDate)).toList()
+        ..sort((a, b) => b.startDate.compareTo(a.startDate));
+      if (sortedBefore.isNotEmpty) {
+        final prev = sortedBefore.first;
+        final gap = normDate.difference(DateTime(prev.startDate.year, prev.startDate.month, prev.startDate.day)).inDays;
+        if (gap > 0 && prev.actualCycleLength != gap) {
+          final updatedPrev = prev.copyWith(actualCycleLength: gap);
+          await StorageService.savePeriodEntry(updatedPrev);
+          state = await StorageService.getPeriodHistory();
+        }
+      }
+
       // Recompute average cycle length from actual gap history
       _recomputeCycleLength();
+
+      // Background Ground-Truth Cloud Sync (non-blocking)
+      CloudGroundTruthService.syncAll();
     } finally {
       _isAdding = false;
     }
@@ -327,6 +344,36 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     await updatePeriodStart(normPrev);
   }
 
+  /// Records the end of bleeding for the active cycle, locking its bleed duration
+  /// so that future settings changes never alter this cycle's bleeding days.
+  Future<void> recordPeriodStop(DateTime stopDate) async {
+    final normStop = DateTime(stopDate.year, stopDate.month, stopDate.day);
+    if (!_isLoaded && _loadFuture != null) {
+      await _loadFuture;
+    }
+    state = await StorageService.getPeriodHistory();
+    if (state.isEmpty) return;
+
+    // Find the cycle entry that started on or before normStop
+    final candidates = state.where((p) => !p.startDate.isAfter(normStop)).toList();
+    if (candidates.isEmpty) return;
+    final anchor = candidates.first;
+
+    final anchorDate = DateTime(anchor.startDate.year, anchor.startDate.month, anchor.startDate.day);
+    final days = normStop.difference(anchorDate).inDays + 1;
+    final bleedDays = days.clamp(1, 14);
+
+    final updated = anchor.copyWith(
+      endDate: normStop,
+      bleedDurationDays: bleedDays,
+      isUserSpecifiedDuration: true,
+    );
+
+    await StorageService.savePeriodEntry(updated);
+    state = await StorageService.getPeriodHistory();
+    CloudGroundTruthService.syncAll();
+  }
+
   Future<void> removePeriodEntry(String id) async {
     final entry = state.where((e) => e.id == id).firstOrNull;
     await StorageService.deletePeriodEntry(id);
@@ -340,6 +387,7 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     }
 
     _recomputeCycleLength();
+    CloudGroundTruthService.syncAll();
   }
 
   Future<void> clearAll() async {
@@ -356,8 +404,9 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
 // -- Cycle State Provider -------------------------------------------------------
 final cycleStateProvider = Provider<CycleState?>((ref) {
   final profile = ref.watch(profileProvider);
+  final history = ref.watch(periodHistoryProvider);
   if (profile == null) return null;
-  return CycleEngine.calculate(profile);
+  return CycleEngine.calculate(profile, periodHistory: history);
 });
 
 // -- Cycle Anchor Presence Provider ---------------------------------------------
@@ -499,6 +548,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
     }
 
     _recomputePeriodLength();
+    CloudGroundTruthService.syncAll();
   }
 
   Future<void> deleteEntry(String id) async {
@@ -517,6 +567,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       }
     }
     _recomputePeriodLength();
+    CloudGroundTruthService.syncAll();
   }
 
   Future<void> deleteTodayEntry() async {
@@ -546,6 +597,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
     }
 
     _recomputePeriodLength();
+    CloudGroundTruthService.syncAll();
   }
 
   /// Restores a previous snapshot of LogEntry for a specific date (Universal Undo).
@@ -574,6 +626,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       }
     }
     _recomputePeriodLength();
+    CloudGroundTruthService.syncAll();
   }
 
   /// Clinically guarded period length calibration:

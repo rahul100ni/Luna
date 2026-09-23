@@ -17,7 +17,7 @@ class StorageService {
       final dbPath = path.join(await getDatabasesPath(), 'luna.db');
       _db = await openDatabase(
         dbPath,
-        version: 4,
+        version: 5,
         onCreate: (db, version) async {
           await db.execute('''
             CREATE TABLE log_entries (
@@ -37,7 +37,11 @@ class StorageService {
             CREATE TABLE period_history (
               id TEXT PRIMARY KEY,
               start_date TEXT NOT NULL,
-              source TEXT NOT NULL DEFAULT 'logged'
+              source TEXT NOT NULL DEFAULT 'logged',
+              end_date TEXT,
+              bleed_duration_days INTEGER,
+              is_user_specified_duration INTEGER DEFAULT 0,
+              actual_cycle_length INTEGER
             )
           ''');
           await db.execute('''
@@ -76,6 +80,20 @@ class StorageService {
               )
             ''');
           }
+          if (oldVersion < 5) {
+            try {
+              await db.execute('ALTER TABLE period_history ADD COLUMN end_date TEXT');
+            } catch (_) {}
+            try {
+              await db.execute('ALTER TABLE period_history ADD COLUMN bleed_duration_days INTEGER');
+            } catch (_) {}
+            try {
+              await db.execute('ALTER TABLE period_history ADD COLUMN is_user_specified_duration INTEGER DEFAULT 0');
+            } catch (_) {}
+            try {
+              await db.execute('ALTER TABLE period_history ADD COLUMN actual_cycle_length INTEGER');
+            } catch (_) {}
+          }
         },
       );
       if (_db != null) {
@@ -89,6 +107,8 @@ class StorageService {
         } catch (_) {}
         // Automatic lossless migration of legacy period starts from log_entries (VISION Pillar Nine)
         await migrateLegacyPeriodStarts();
+        // Automatic resolution of historical bleed durations and cycle lengths
+        await migrateHistoricalCycleIntegrity();
       }
     } catch (e) {
       _db = null;
@@ -116,7 +136,7 @@ class StorageService {
 
   // ── Log Entries ───────────────────────────────────────────────────
   static Future<void> saveLogEntry(LogEntry entry) async {
-    if (_db == null) return; // graceful degradation — no crash
+    if (_db == null) return; // graceful degradation: no crash
     try {
       await _db!.insert(
         'log_entries',
@@ -305,15 +325,50 @@ class StorageService {
         whereArgs: [entry.id, '$datePrefix%'],
       );
 
-      // Save/update this entry with primary key ID
+      // Save/update this entry with primary key ID and all metadata
       await _db!.insert(
         'period_history',
-        {
-          'id': entry.id,
-          'start_date': normDate.toIso8601String(),
-          'source': entry.source,
-        },
+        entry.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  /// Updates explicit bleed duration and end date for a period entry
+  static Future<void> updatePeriodEntryDuration(
+    String id,
+    DateTime endDate,
+    int durationDays,
+    bool isUserSpecified,
+  ) async {
+    if (_db == null) return;
+    try {
+      final normEnd = DateTime(endDate.year, endDate.month, endDate.day);
+      await _db!.update(
+        'period_history',
+        {
+          'end_date': normEnd.toIso8601String(),
+          'bleed_duration_days': durationDays,
+          'is_user_specified_duration': isUserSpecified ? 1 : 0,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } catch (_) {}
+  }
+
+  /// Updates actual cycle length (calendar gap to next period start)
+  static Future<void> updatePeriodActualCycleLength(
+    String id,
+    int cycleLength,
+  ) async {
+    if (_db == null) return;
+    try {
+      await _db!.update(
+        'period_history',
+        {'actual_cycle_length': cycleLength},
+        where: 'id = ?',
+        whereArgs: [id],
       );
     } catch (_) {}
   }
@@ -410,6 +465,61 @@ class StorageService {
     } catch (_) {}
   }
 
+  /// Calculates and locks historical cycle lengths and bleed durations for past closed cycles
+  /// so that future settings edits never distort past truth.
+  static Future<void> migrateHistoricalCycleIntegrity() async {
+    if (_db == null) return;
+    try {
+      final entries = await getPeriodHistory();
+      if (entries.isEmpty) return;
+
+      final sorted = [...entries]..sort((a, b) => a.startDate.compareTo(b.startDate));
+      for (int i = 0; i < sorted.length; i++) {
+        final current = sorted[i];
+
+        // 1. Calculate actual cycle length if there is a subsequent cycle
+        if (i < sorted.length - 1) {
+          final next = sorted[i + 1];
+          final gap = DateTime(next.startDate.year, next.startDate.month, next.startDate.day)
+              .difference(DateTime(current.startDate.year, current.startDate.month, current.startDate.day))
+              .inDays;
+          if (gap > 0 && current.actualCycleLength != gap) {
+            await updatePeriodActualCycleLength(current.id, gap);
+          }
+        }
+
+        // 2. Resolve bleed duration if missing
+        if (current.bleedDurationDays == null) {
+          final startIso = current.startDate.toIso8601String().substring(0, 10);
+          final logs = await _db!.query(
+            'log_entries',
+            where: 'date >= ?',
+            whereArgs: [startIso],
+            orderBy: 'date ASC',
+            limit: 14,
+          );
+
+          int bleedRun = 0;
+          DateTime? lastBleedDate;
+          for (final row in logs) {
+            final log = LogEntry.fromMap(row);
+            final isBleed = log.flow != null || log.periodStarted || log.symptoms.contains('Period');
+            if (isBleed) {
+              bleedRun++;
+              lastBleedDate = log.date;
+            } else if (bleedRun > 0) {
+              break;
+            }
+          }
+
+          if (bleedRun > 0 && lastBleedDate != null) {
+            await updatePeriodEntryDuration(current.id, lastBleedDate, bleedRun, false);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   // ── Cycle Calibration State ─────────────────────────────────────────
   static bool isCycleLengthUnknown() {
     return _prefs?.getBool('cycle_length_unknown') ?? false;
@@ -465,5 +575,37 @@ class StorageService {
     try {
       await _db!.delete('luna_memories');
     } catch (_) {}
+  }
+
+  // ── Cloud Ground-Truth & Multi-Device Sync Preferences ─────────────
+  static String? getCloudSyncId() {
+    return _prefs?.getString('cloud_sync_id');
+  }
+
+  static Future<void> setCloudSyncId(String id) async {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) {
+      await _prefs?.remove('cloud_sync_id');
+    } else {
+      await _prefs?.setString('cloud_sync_id', trimmed);
+    }
+  }
+
+  static Future<void> clearCloudSyncId() async {
+    await _prefs?.remove('cloud_sync_id');
+  }
+
+  static DateTime? getLastCloudSyncTime() {
+    final str = _prefs?.getString('last_cloud_sync_time');
+    if (str == null) return null;
+    return DateTime.tryParse(str);
+  }
+
+  static Future<void> setLastCloudSyncTime(DateTime time) async {
+    await _prefs?.setString('last_cloud_sync_time', time.toIso8601String());
+  }
+
+  static Future<void> clearLastCloudSyncTime() async {
+    await _prefs?.remove('last_cloud_sync_time');
   }
 }

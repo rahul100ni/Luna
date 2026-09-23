@@ -8,9 +8,10 @@ import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/storage_service.dart';
+import '../../core/services/cloud_ground_truth_service.dart';
 import 'version_manager_screen.dart';
 
-// Notification preference keys — imported from notification_service.dart (single source of truth)
+// Notification preference keys: imported from notification_service.dart (single source of truth)
 // kNotifDailyCheckin, kNotifPeriodSoon, kNotifPhaseChange, kNotifPms,
 // kNotifDailyHour, kNotifDailyMinute are top-level constants in notification_service.dart
 
@@ -131,10 +132,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _SheetTitle(label: 'Cycle Length', colors: colors),
                   const SizedBox(height: 6),
                   Text(
-                    'Average days between periods (21–45)',
+                    'Average days between periods (21 to 45).\nApplies to current and upcoming cycles; past logged cycles remain untouched.',
                     style: GoogleFonts.dmSans(
                       fontSize: 13,
-                      color: colors.onSurface.withValues(alpha: 0.5),
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      height: 1.4,
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -188,10 +190,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _SheetTitle(label: 'Period Length', colors: colors),
                   const SizedBox(height: 6),
                   Text(
-                    'Average days of bleeding (2–10)',
+                    'Average days of bleeding (2 to 10).\nApplies to current and upcoming cycles; past logged cycles remain untouched.',
                     style: GoogleFonts.dmSans(
                       fontSize: 13,
-                      color: colors.onSurface.withValues(alpha: 0.5),
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      height: 1.4,
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -454,28 +457,376 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // ── 6. Reset All Data (two-step confirmation) ────────────────────────────────
-  void _showResetConfirmation(PhaseColors colors) {
+  // ── 6. Cloud Vault & Multi-Device Sync Helpers ─────────────────────────────
+  String _formatSyncIdSubtitle() {
+    final syncId = StorageService.getCloudSyncId();
+    if (syncId == null || syncId.isEmpty) {
+      return 'Not linked yet (tap to set email or Sync ID)';
+    }
+    return 'ID: $syncId';
+  }
+
+  String _formatLastSyncSubtitle() {
+    final lastSync = StorageService.getLastCloudSyncTime();
+    if (lastSync == null) {
+      return 'Tap to back up all sacred cycle data';
+    }
+    final now = DateTime.now();
+    final diff = now.difference(lastSync);
+    if (diff.inMinutes < 1) {
+      return 'Synced just now';
+    } else if (diff.inHours < 1) {
+      return 'Synced ${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      return 'Synced ${diff.inHours}h ago';
+    } else {
+      return 'Synced on ${lastSync.day}/${lastSync.month}/${lastSync.year}';
+    }
+  }
+
+  Future<void> _triggerManualSync(PhaseColors colors) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text('Syncing to Cloud Vault...', style: GoogleFonts.dmSans()),
+        duration: const Duration(seconds: 1),
+        backgroundColor: colors.surface,
+      ),
+    );
+    final res = await CloudGroundTruthService.syncAll();
+    if (mounted) {
+      setState(() {});
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(res.message, style: GoogleFonts.dmSans(color: colors.onSurface)),
+          backgroundColor: colors.surface,
+        ),
+      );
+    }
+  }
+
+  void _showCloudVaultDialog(PhaseColors colors) {
+    final current = StorageService.getCloudSyncId() ?? '';
+    final controller = TextEditingController(text: current);
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: colors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Reset everything?',
+          'Cloud Vault & Sync ID',
           style: GoogleFonts.cormorantGaramond(
             fontSize: 22,
             fontWeight: FontWeight.w700,
             color: colors.onSurface,
           ),
         ),
-        content: Text(
-          'This will permanently delete your profile, all logged check-ins, and your AI patterns.\n\nThis action cannot be undone.',
-          style: GoogleFonts.dmSans(
-            fontSize: 14,
-            color: colors.onSurface.withValues(alpha: 0.7),
-            height: 1.6,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Link your email or a private Sync ID so you never lose your history and can continue seamlessly on any phone.',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: colors.onSurface.withValues(alpha: 0.7),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              style: GoogleFonts.dmSans(color: colors.onSurface),
+              decoration: InputDecoration(
+                hintText: 'e.g. name@email.com or my-luna-id',
+                hintStyle: GoogleFonts.dmSans(
+                  color: colors.onSurface.withValues(alpha: 0.35),
+                ),
+                filled: true,
+                fillColor: colors.background,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.dmSans(
+                color: colors.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
           ),
+          TextButton(
+            onPressed: () async {
+              final newId = controller.text.trim();
+              if (newId.isNotEmpty) {
+                await StorageService.setCloudSyncId(newId);
+                await CloudGroundTruthService.syncAll(explicitSyncId: newId);
+                if (mounted) setState(() {});
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: Text(
+              'Save & Sync',
+              style: GoogleFonts.dmSans(
+                color: colors.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRestoreFromCloudDialog(PhaseColors colors) {
+    final current = StorageService.getCloudSyncId() ?? '';
+    final controller = TextEditingController(text: current);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: colors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Restore from Cloud Vault',
+          style: GoogleFonts.cormorantGaramond(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: colors.onSurface,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter the email or Sync ID from your other phone to restore all your sacred cycle dates, logs, and companion memories.',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: colors.onSurface.withValues(alpha: 0.7),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              style: GoogleFonts.dmSans(color: colors.onSurface),
+              decoration: InputDecoration(
+                hintText: 'Your email or Sync ID',
+                hintStyle: GoogleFonts.dmSans(
+                  color: colors.onSurface.withValues(alpha: 0.35),
+                ),
+                filled: true,
+                fillColor: colors.background,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.dmSans(
+                color: colors.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              final syncKey = controller.text.trim();
+              if (syncKey.isEmpty) return;
+              Navigator.pop(ctx);
+
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              scaffoldMessenger.showSnackBar(
+                SnackBar(
+                  content: Text('Restoring data from Cloud Vault...', style: GoogleFonts.dmSans()),
+                  backgroundColor: colors.surface,
+                ),
+              );
+
+              final res = await CloudGroundTruthService.restoreFromCloud(syncKey);
+              if (mounted) {
+                if (res.success) {
+                  if (res.restoredProfile != null) {
+                    await ref.read(profileProvider.notifier).saveProfile(res.restoredProfile!);
+                  }
+                  await ref.read(periodHistoryProvider.notifier).refresh();
+                  await ref.read(logEntriesProvider.notifier).refresh();
+                  setState(() {});
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Restored ${res.cyclesRestored} cycles, ${res.logsRestored} logs, and ${res.memoriesRestored} companion memories! 🌸',
+                        style: GoogleFonts.dmSans(color: colors.onSurface),
+                      ),
+                      backgroundColor: colors.surface,
+                    ),
+                  );
+                } else {
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text(res.message, style: GoogleFonts.dmSans(color: const Color(0xFFD94F6E))),
+                      backgroundColor: colors.surface,
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text(
+              'Restore',
+              style: GoogleFonts.dmSans(
+                color: colors.accent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── 7. Reset All Data (Two-tier choice: Device Only vs Device + Cloud) ─────
+  void _showResetConfirmation(PhaseColors colors) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: colors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(
+          'Reset Luna Data',
+          style: GoogleFonts.cormorantGaramond(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: colors.onSurface,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Choose how thoroughly you want to wipe your data:',
+              style: GoogleFonts.dmSans(
+                fontSize: 14,
+                color: colors.onSurface.withValues(alpha: 0.7),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Option 1: Wipe Device Only
+            InkWell(
+              onTap: () async {
+                Navigator.of(dialogCtx).pop();
+                await _performDeviceWipe(wipeCloud: false);
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: colors.background,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: colors.onSurface.withValues(alpha: 0.1)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.phone_android_rounded, color: colors.accent, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Wipe Device Only',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Clears this phone. Your Cloud Vault remains safe for restore or multi-device use.',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              color: colors.onSurface.withValues(alpha: 0.5),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Option 2: Wipe Everything (Device + Cloud)
+            InkWell(
+              onTap: () async {
+                Navigator.of(dialogCtx).pop();
+                await _performDeviceWipe(wipeCloud: true);
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD94F6E).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFD94F6E).withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.delete_forever_rounded, color: Color(0xFFD94F6E), size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Wipe Everything (Device + Cloud)',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFD94F6E),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Irreversibly destroys both local storage and your private cloud vault.',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              color: colors.onSurface.withValues(alpha: 0.5),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -487,36 +838,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(dialogCtx).pop();
-              try {
-                // 1. Cancel all scheduled notifications
-                await NotificationService.cancelAll();
-              } catch (_) {}
-              // 2. Wipe all data from storage (SQLite + SharedPreferences)
-              await StorageService.clearAllData();
-              await StorageService.clearLastChatSession();
-              // 3. Clear Riverpod provider state completely
-              ref.read(profileProvider.notifier).clear();
-              await ref.read(periodHistoryProvider.notifier).clearAll();
-              ref.read(logEntriesProvider.notifier).refresh();
-              // 4. Clean navigation to onboarding
-              if (mounted) {
-                context.go('/onboarding');
-              }
-            },
-            child: Text(
-              'Reset Luna',
-              style: GoogleFonts.dmSans(
-                color: const Color(0xFFD94F6E),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
         ],
       ),
     );
+  }
+
+  Future<void> _performDeviceWipe({required bool wipeCloud}) async {
+    final syncId = StorageService.getCloudSyncId();
+    if (wipeCloud && syncId != null && syncId.isNotEmpty) {
+      await CloudGroundTruthService.wipeCloudData(syncId);
+    }
+    try {
+      await NotificationService.cancelAll();
+    } catch (_) {}
+    await StorageService.clearAllData();
+    await StorageService.clearLastChatSession();
+    ref.read(profileProvider.notifier).clear();
+    await ref.read(periodHistoryProvider.notifier).clearAll();
+    ref.read(logEntriesProvider.notifier).refresh();
+    if (mounted) {
+      context.go('/onboarding');
+    }
   }
 
   // ── 7. About Luna dialog ─────────────────────────────────────────────────────
@@ -714,6 +1056,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: 'About Luna',
             colors: colors,
             onTap: () => _showAboutDialog(colors),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Cloud Vault & Multi-Device Sync ───────────────────────────────
+          _SectionHeader(label: 'Cloud Vault & Multi-Device Sync', colors: colors),
+          _SettingsTile(
+            icon: Icons.cloud_outlined,
+            label: 'Cloud Vault Sync ID',
+            sublabel: _formatSyncIdSubtitle(),
+            colors: colors,
+            onTap: () => _showCloudVaultDialog(colors),
+          ),
+          _SettingsTile(
+            icon: Icons.sync_rounded,
+            label: 'Sync Ground-Truth Now',
+            sublabel: _formatLastSyncSubtitle(),
+            colors: colors,
+            onTap: () => _triggerManualSync(colors),
+          ),
+          _SettingsTile(
+            icon: Icons.cloud_download_outlined,
+            label: 'Restore from Cloud Vault',
+            sublabel: 'Switching phones? Restore your data and continue',
+            colors: colors,
+            onTap: () => _showRestoreFromCloudDialog(colors),
           ),
           const SizedBox(height: 20),
 
