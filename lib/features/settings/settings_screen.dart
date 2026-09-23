@@ -922,40 +922,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 20),
 
-          // ── Cloud Vault & Multi-Device Sync ───────────────────────────────
-          _SectionHeader(label: 'Cloud Vault & Multi-Device Sync', colors: colors),
-          _SettingsTile(
-            icon: Icons.cloud_outlined,
-            label: 'Cloud Vault Sync ID',
-            sublabel: _formatSyncIdSubtitle(),
-            colors: colors,
-            onTap: () => _showCloudVaultDialog(colors),
-          ),
-          _SettingsTile(
-            icon: Icons.sync_rounded,
-            label: 'Sync Ground-Truth Now',
-            sublabel: _formatLastSyncSubtitle(),
-            colors: colors,
-            onTap: () => _triggerManualSync(colors),
-          ),
-          _SettingsTile(
-            icon: Icons.cloud_download_outlined,
-            label: 'Restore from Cloud Vault',
-            sublabel: 'Switching phones? Restore your data and continue',
-            colors: colors,
-            onTap: () => _showRestoreFromCloudDialog(colors),
-          ),
-          const SizedBox(height: 20),
-
           // ── Data & Privacy section ─────────────────────────────────────────
           _SectionHeader(label: 'Data & Privacy', colors: colors),
           _SettingsTile(
-            icon: Icons.delete_sweep_outlined,
-            label: 'Reset all data',
-            sublabel: 'Wipe profile, logs, and start fresh',
+            icon: Icons.shield_outlined,
+            label: 'Data & Privacy',
+            sublabel: 'Cloud vault, backup, and reset options',
             colors: colors,
-            isDestructive: true,
-            onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (ctx) => _ResetDataSheet(colors: colors, onWipe: _performDeviceWipe)),
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (ctx) => _DataPrivacySheet(
+                  colors: colors,
+                  syncIdSubtitle: _formatSyncIdSubtitle(),
+                  lastSyncSubtitle: _formatLastSyncSubtitle(),
+                  onTapSyncId: () {
+                    Navigator.pop(ctx);
+                    _showCloudVaultDialog(colors);
+                  },
+                  onTapSyncNow: () {
+                    Navigator.pop(ctx);
+                    _triggerManualSync(colors);
+                  },
+                  onTapRestore: () {
+                    Navigator.pop(ctx);
+                    _showRestoreFromCloudDialog(colors);
+                  },
+                  onTapReset: () {
+                    Navigator.pop(ctx);
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (innerCtx) => _ResetDataSheet(colors: colors, onWipe: _performDeviceWipe),
+                    );
+                  },
+                ),
+              );
+            },
           ),
           const SizedBox(height: 40),
 
@@ -1695,6 +1701,73 @@ class _ResetOptionTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+// ── Data & Privacy Sheet ─────────────────────────────────────────────────────
+class _DataPrivacySheet extends StatelessWidget {
+  final PhaseColors colors;
+  final String? syncIdSubtitle;
+  final String? lastSyncSubtitle;
+  final VoidCallback onTapSyncId;
+  final VoidCallback onTapSyncNow;
+  final VoidCallback onTapRestore;
+  final VoidCallback onTapReset;
+
+  const _DataPrivacySheet({
+    required this.colors,
+    this.syncIdSubtitle,
+    this.lastSyncSubtitle,
+    required this.onTapSyncId,
+    required this.onTapSyncNow,
+    required this.onTapRestore,
+    required this.onTapReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _BottomSheetContainer(
+      colors: colors,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SheetTitle(label: 'Data & Privacy', colors: colors),
+          const SizedBox(height: 16),
+          _SettingsTile(
+            icon: Icons.cloud_outlined,
+            label: 'Cloud Vault Sync ID',
+            sublabel: syncIdSubtitle,
+            colors: colors,
+            onTap: onTapSyncId,
+          ),
+          _SettingsTile(
+            icon: Icons.sync_rounded,
+            label: 'Sync Ground-Truth Now',
+            sublabel: lastSyncSubtitle,
+            colors: colors,
+            onTap: onTapSyncNow,
+          ),
+          _SettingsTile(
+            icon: Icons.cloud_download_outlined,
+            label: 'Restore from Cloud Vault',
+            sublabel: 'Switching phones? Restore your data and continue',
+            colors: colors,
+            onTap: onTapRestore,
+          ),
+          const SizedBox(height: 16),
+          _SettingsTile(
+            icon: Icons.delete_sweep_outlined,
+            label: 'Reset all data',
+            sublabel: 'Wipe profile, logs, and start fresh',
+            colors: colors,
+            isDestructive: true,
+            onTap: onTapReset,
+          ),
+        ],
       ),
     );
   }
