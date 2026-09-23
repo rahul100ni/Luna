@@ -507,13 +507,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
     }
 
-    // ── Discrepancy Interception (e.g. "it shows day 1 here") ───────────────
+    // ── Discrepancy Interception (e.g. "it shows day 1 here", "it's still day 1") ──────────
     if (PeriodDateExtractor.isDiscrepancyReport(text)) {
       final userMsgs = _chatHistory.where((m) => m.isUser).map((m) => m.text).toList();
-      final recentDay = PeriodDateExtractor.findRecentCycleDay(userMsgs);
-      if (recentDay != null) {
+      // First check if target day is in the current message itself (e.g. "it shows day 1 but today is day 4")
+      int? targetDay = PeriodDateExtractor.extractCycleDay(text);
+      // Otherwise find the most recent cycle day mentioned in conversation
+      targetDay ??= PeriodDateExtractor.findRecentCycleDay(userMsgs);
+
+      if (targetDay != null) {
         final now = DateTime.now();
-        final targetDate = DateTime(now.year, now.month, now.day).subtract(Duration(days: recentDay - 1));
+        final targetDate = DateTime(now.year, now.month, now.day).subtract(Duration(days: targetDay - 1));
         final previousAnchor = ref.read(profileProvider)?.lastPeriodStart;
         await ref.read(periodHistoryProvider.notifier).updatePeriodStart(targetDate);
 
@@ -530,10 +534,24 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         setState(() {
           _chatHistory.add(_ChatMessage(text: text, isUser: true, time: DateTime.now()));
           _chatHistory.add(_ChatMessage(
-            text: 'I see! I have corrected your cycle anchor to $dateStr right now. Your tracker is now showing Day $recentDay · Menstrual 🌸',
+            text: 'I see! I have corrected your cycle anchor to $dateStr right now. Your tracker is now showing Day $targetDay · Menstrual 🌸',
             isUser: false,
             time: DateTime.now(),
             previousPeriodDate: previousAnchor,
+          ));
+          _pendingPeriodDate = null;
+        });
+        _persistChatHistory();
+        _scrollToBottom();
+        return;
+      } else {
+        // Discrepancy reported, but no target day found in message or history
+        setState(() {
+          _chatHistory.add(_ChatMessage(text: text, isUser: true, time: DateTime.now()));
+          _chatHistory.add(_ChatMessage(
+            text: 'I understand, let\'s get that fixed right now. What day of your cycle or period are you on today? Just tell me (for example, "Day 4" or "started 3 days ago") and I will set it immediately.',
+            isUser: false,
+            time: DateTime.now(),
           ));
           _pendingPeriodDate = null;
         });
@@ -2586,7 +2604,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       if (msg.periodDateUndone == true) {
         return Container(
           margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: colors.surface.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(14),
@@ -2596,14 +2614,18 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.undo_rounded, size: 14, color: colors.onSurface.withValues(alpha: 0.5)),
-              const SizedBox(width: 8),
-              Text(
-                msg.previousPeriodDate != null
-                    ? 'Reverted period start to ${_formatPeriodDate(msg.previousPeriodDate!)} ↺'
-                    : 'Date update reverted ↺',
-                style: GoogleFonts.dmSans(
-                  fontSize: 11.5,
-                  color: colors.onSurface.withValues(alpha: 0.5),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  msg.previousPeriodDate != null
+                      ? 'Reverted to ${_formatPeriodDate(msg.previousPeriodDate!)} ↺'
+                      : 'Date update reverted ↺',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    color: colors.onSurface.withValues(alpha: 0.5),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -2613,7 +2635,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
       return Container(
         margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: colors.primary.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(14),
@@ -2622,22 +2644,26 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_circle_rounded, size: 16, color: colors.accent),
-            const SizedBox(width: 8),
-            Text(
-              'Period start updated to $dateStr',
-              style: GoogleFonts.dmSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurface,
+            Icon(Icons.check_circle_rounded, size: 15, color: colors.accent),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Period start: $dateStr',
+                style: GoogleFonts.dmSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (msg.previousPeriodDate != null) ...[
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: () => _undoPeriodDateUpdate(msg.previousPeriodDate!, messageIndex),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                   decoration: BoxDecoration(
                     color: colors.primary.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
@@ -2668,7 +2694,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     if (msg.periodDateConfirmed == false) {
       return Container(
         margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: colors.surface.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(14),
@@ -2678,13 +2704,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.close_rounded,
-                size: 16, color: colors.onSurface.withValues(alpha: 0.4)),
-            const SizedBox(width: 8),
-            Text(
-              'Date update cancelled',
-              style: GoogleFonts.dmSans(
-                fontSize: 12,
-                color: colors.onSurface.withValues(alpha: 0.45),
+                size: 15, color: colors.onSurface.withValues(alpha: 0.4)),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Date update cancelled',
+                style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  color: colors.onSurface.withValues(alpha: 0.45),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

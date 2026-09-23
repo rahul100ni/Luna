@@ -35,7 +35,7 @@ class PeriodDateExtractor {
     'one': 1, 'first': 1, '1st': 1,
     'two': 2, 'second': 2, '2nd': 2,
     'three': 3, 'third': 3, '3rd': 3,
-    'four': 4, 'fourth': 4, '4th': 4,
+    'four': 4, 'fourth': 4, 'forth': 4, '4th': 4,
     'five': 5, 'fifth': 5, '5th': 5,
     'six': 6, 'sixth': 6, '6th': 6,
     'seven': 7, 'seventh': 7, '7th': 7,
@@ -65,20 +65,23 @@ class PeriodDateExtractor {
   static bool hasPeriodContext(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
-      r'\b(periods?|cycles?|bleeds?|bleeding|started|start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here|day\s*\d+|\d+(?:st|nd|rd|th)?\s+day|day\s*(?:one|two|three|four|five|six|seven|eight|nine|ten)|(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+day|shows?\s+day|says?\s+day|displaying\s+day)\b',
+      r'\b(periods?|cycles?|bleeds?|bleeding|started|start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|update\s*it|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here|day\s*\d+|\d+(?:st|nd|rd|th)?\s+day|day\s*(?:one|two|three|four|five|six|seven|eight|nine|ten)|(?:first|second|third|fourth|forth|fifth|sixth|seventh|eighth|ninth|tenth)\s+day|shows?\s+day|says?\s+day|displaying\s+day|still\s+day)\b',
       caseSensitive: false,
     ).hasMatch(lower);
   }
 
   /// Checks if user text is reporting a discrepancy between the app's displayed day and reality,
-  /// e.g. "it shows day 1 here", "still showing day 1", "why does it show day 1", "says day 1 on top".
+  /// e.g. "it shows day 1 here", "it's still day 1", "still day 1", "why does it show day 1", "says day 1 on top".
   static bool isDiscrepancyReport(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
-      r'\b(?:it\s+shows?|still\s+shows?|why\s+does\s+it\s+show|showing|reads?|says?|stuck\s+on)\s+day\s*\d+\b',
+      r'\b(?:it\x27s\s+still|its\s+still|it\s+is\s+still|why\s+is\s+it\s+still|still|stuck\s+on|shows?|still\s+shows?|why\s+does\s+it\s+show|showing|reads?|says?)\s+(?:on\s+)?day\s*\d+\b',
       caseSensitive: false,
     ).hasMatch(lower) || RegExp(
-      r'\bday\s*\d+\s+(?:here|on\s+my\s+(?:screen|end|phone))\b',
+      r'\bday\s*\d+\s+(?:here|on\s+my\s+(?:screen|end|phone|top)|at\s+the\s+top)\b',
+      caseSensitive: false,
+    ).hasMatch(lower) || RegExp(
+      r'\bwhy\s+(?:is\s+it|does\s+it\s+say|does\s+it\s+show)\s+(?:still\s+)?(?:on\s+)?day\s*\d+\b',
       caseSensitive: false,
     ).hasMatch(lower);
   }
@@ -203,7 +206,7 @@ class PeriodDateExtractor {
       // Check if user specified their actual intended day in the same sentence:
       // e.g. "it shows day 1 here but today is day 4", "it shows day 1 should be day 4"
       final correctionMatch = RegExp(
-        r'\b(?:but|should\s+be|actually|make\s+it|set\s+to|today\s+is|it\x27s|its|i\s+am\s+on|im\s+on|i\x27m\s+on)\s+(?:day\s+)?(\d+|first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\b',
+        r'\b(?:but|should\s+be|actually|make\s+it|set\s+to|today\s+is|it\x27s|its|i\s+am\s+on|im\s+on|i\x27m\s+on)\s+(?:day\s+)?(\d+|first|1st|second|2nd|third|3rd|fourth|forth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\b',
       ).firstMatch(lower);
       if (correctionMatch != null) {
         final token = correctionMatch.group(1)!;
@@ -221,9 +224,9 @@ class PeriodDateExtractor {
       return int.tryParse(token) ?? _wordNumbers[token];
     }
 
-    // Pattern B: "4th day", "my 4th day", "today is my 4th day", "fourth day of cycle", "on my 4th day"
+    // Pattern B: "4th day", "my 4th day", "today is my 4th day", "fourth day of cycle", "on my 4th day", "forth day"
     final ordinalDayMatch = RegExp(
-      r'\b(\d+|first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\s+day\b',
+      r'\b(\d+|first|1st|second|2nd|third|3rd|fourth|forth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\s+day\b',
     ).firstMatch(lower);
     if (ordinalDayMatch != null) {
       final token = ordinalDayMatch.group(1)!;
@@ -249,6 +252,15 @@ class PeriodDateExtractor {
     final today = DateTime(now.year, now.month, now.day);
 
     if (!hasPeriodContext(text)) return null;
+
+    // Discrepancy report guard: "it's still day 1", "why does it show day 1" must NEVER extract Day 1
+    if (isDiscrepancyReport(text)) {
+      final correctedDay = extractCycleDay(text);
+      if (correctedDay != null) {
+        return today.subtract(Duration(days: correctedDay - 1));
+      }
+      return null;
+    }
 
     // 1. If user explicitly provided a past date/relative marker for when period/Day 1 was (e.g. "yesterday", "3 days ago", "on the 20th")
     final target = extractTargetDate(text, referenceDate: referenceDate);
@@ -367,19 +379,25 @@ class PeriodDateExtractor {
   /// meaning the user explicitly ordered "update ...", "change ...", "set ...", "correct ...", or asserted their day ("dude day 4", "today is day 4").
   static bool isDirectCorrectionCommand(String text) {
     final lower = text.toLowerCase().trim();
-    return RegExp(
-      r'^(?:please\s+)?(update|change|set|correct|fix|redo|force|override|make)\b',
-      caseSensitive: false,
-    ).hasMatch(lower) || RegExp(
-      r'\b(update|change|set|correct|make|force)\s+(?:my\s+)?(?:period|cycle)\b',
-      caseSensitive: false,
-    ).hasMatch(lower) || RegExp(
-      r'\b(?:dude\s+)?day\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b',
-      caseSensitive: false,
-    ).hasMatch(lower) || RegExp(
-      r'\b(?:today\s+is|it\x27s|its|im\s+on|i\s+am\s+on)\s+day\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b',
-      caseSensitive: false,
-    ).hasMatch(lower);
+    if (RegExp(r'\b(update|change|set|correct|fix|redo|force|override)\s*it\b').hasMatch(lower)) {
+      return true;
+    }
+    if (RegExp(r'^(?:please\s+)?(update|change|set|correct|fix|redo|force|override|make)\b').hasMatch(lower)) {
+      return true;
+    }
+    if (RegExp(r'\b(update|change|set|correct|make|force)\s+(?:my\s+)?(?:period|cycle)\b').hasMatch(lower)) {
+      return true;
+    }
+    if (RegExp(r'\b(?:dude\s+)?day\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b').hasMatch(lower)) {
+      return true;
+    }
+    if (RegExp(r'\b(?:today\s+is|it\x27s|its|im\s+on|i\s+am\s+on)\s+day\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b').hasMatch(lower)) {
+      return true;
+    }
+    if (RegExp(r'\b(?:today\s+is|it\x27s|its|im\s+on|i\s+am\s+on|on\s+my|my)\s+(\d+|first|1st|second|2nd|third|3rd|fourth|forth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\s+day\b').hasMatch(lower)) {
+      return true;
+    }
+    return false;
   }
 
   /// Checks if user text is confirming a pending question or action.

@@ -1765,6 +1765,40 @@ void main() {
       final dateFromReply = PeriodDateExtractor.extractDate(userReply, referenceDate: now);
       expect(dateFromReply?.day, equals(pendingDate.day));
     });
+    test('User prompt "its my forth day update it" extracts day 4, calculates start, and is direct command', () {
+      const prompt = 'its my forth day update it';
+      expect(PeriodDateExtractor.extractCycleDay(prompt), equals(4));
+      final now = DateTime(2026, 9, 23);
+      final calculatedStart = PeriodDateExtractor.extractDate(prompt, referenceDate: now);
+      expect(calculatedStart, isNotNull);
+      expect(calculatedStart!.day, equals(20)); // Sep 23 - (4-1) = Sep 20
+      expect(PeriodDateExtractor.isDirectCorrectionCommand(prompt), isTrue);
+    });
+
+    test('User complaints "it\'s still day 1" and "still day 1" are caught as discrepancies and never extract Day 1', () {
+      const complaint1 = "it's still day 1";
+      expect(PeriodDateExtractor.isDiscrepancyReport(complaint1), isTrue);
+      expect(PeriodDateExtractor.extractCycleDay(complaint1), isNull);
+      expect(PeriodDateExtractor.extractDate(complaint1), isNull);
+
+      const complaint2 = "still day 1";
+      expect(PeriodDateExtractor.isDiscrepancyReport(complaint2), isTrue);
+      expect(PeriodDateExtractor.extractCycleDay(complaint2), isNull);
+      expect(PeriodDateExtractor.extractDate(complaint2), isNull);
+
+      const complaint3 = "it is still on day 1";
+      expect(PeriodDateExtractor.isDiscrepancyReport(complaint3), isTrue);
+      expect(PeriodDateExtractor.extractCycleDay(complaint3), isNull);
+      expect(PeriodDateExtractor.extractDate(complaint3), isNull);
+
+      const complaintWithCorrection = "it's still day 1 make it day 4";
+      expect(PeriodDateExtractor.isDiscrepancyReport(complaintWithCorrection), isTrue);
+      expect(PeriodDateExtractor.extractCycleDay(complaintWithCorrection), equals(4));
+      final now = DateTime(2026, 9, 23);
+      final calc = PeriodDateExtractor.extractDate(complaintWithCorrection, referenceDate: now);
+      expect(calc, isNotNull);
+      expect(calc!.day, equals(20));
+    });
   });
 }
 

@@ -163,7 +163,13 @@ class DeepSeekService {
     buffer.writeln(
         "6. NO EM DASHES: NEVER use em dashes. Use colons, commas, periods, or parentheses instead.");
     buffer.writeln(
-        "7. GROUNDED REALITY & ANTI-GASLIGHTING: You are Luna. You and the app are one single source of truth. Your actual current cycle status is provided above under USER CONTEXT: '- Cycle Status: Day $dayOfCycle of $cycleLength-day cycle'. NEVER gaslight the user! If she states her cycle day is different from what is in USER CONTEXT, or asks why it shows Day X, look at USER CONTEXT. If the app has already updated her start date, a 'SYSTEM STATUS' message in the chat will confirm it. ONLY THEN confirm it was updated. If no SYSTEM STATUS confirmation is present, acknowledge her statement with sisterly warmth, guide her to confirm the update if asked, and NEVER invent fake excuses like 'give the app a quick refresh' or claim you changed something when the app has not confirmed it.");
+        "7. GROUNDED REALITY & STRICT ANTI-GASLIGHTING: You are Luna. You and the app are one single source of truth. Your actual current cycle status is provided above under USER CONTEXT: '- Cycle Status: Day $dayOfCycle of $cycleLength-day cycle'. NEVER gaslight the user!");
+    buffer.writeln(
+        "   - STRICT BAN ON SETTINGS DEFLECTION: NEVER, EVER tell the user 'I cannot edit your cycle start date from inside this chat' or 'that update has to happen in your cycle settings' or 'I am just an AI' or 'I cannot change dates'. That is completely FALSE and strictly forbidden! The app DOES support cycle date updates directly in conversation.");
+    buffer.writeln(
+        "   - When she tells you her cycle day (e.g. 'its my forth day update it', 'day 4', 'today is my 4th day'), the app automatically processes and updates her cycle start date.");
+    buffer.writeln(
+        "   - NEVER tell the user to 'give the app a quick refresh' or claim you changed something when the app has not confirmed it. If an update occurred, a 'SYSTEM CONFIRMATION' or 'SYSTEM STATUS' message in the chat confirms it. Acknowledge her cycle day with sisterly warmth and validate her current phase.");
 
     if (!isChatMode) {
       buffer.writeln();
@@ -210,7 +216,7 @@ class DeepSeekService {
       buffer.writeln(
           "- NO CROSS-TURN ECHOING: Under NO circumstances repeat, carry over, or re-emit symptoms, mood, sleep, or flow discussed in previous conversation turns. ONLY process what she said in her very latest message.");
       buffer.writeln(
-          "- ANTI-GASLIGHTING: NEVER tell the user to 'give the app a quick refresh' or 'wait a moment to snap into place'. If an update occurred, the app executes it immediately and confirms via SYSTEM STATUS.");
+          "- STRICT ANTI-GASLIGHTING & NO SETTINGS DEFLECTION: NEVER tell the user 'I cannot edit your cycle start date from inside this chat' or 'that update has to happen in your cycle settings' or 'give the app a quick refresh'. The app directly and automatically executes cycle day updates in conversation! When she tells you her cycle day, the app updates her start date instantly. Always acknowledge her day with warmth.");
       buffer.writeln(
           "- TARGET DATES: If she refers to yesterday, 3 days ago, or a specific calendar date (e.g. 'on the 20th'), populate the \"date\" field with that date formatted as YYYY-MM-DD. If referring to today, omit date or use today's date.");
       buffer.writeln(
