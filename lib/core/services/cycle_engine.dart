@@ -112,15 +112,6 @@ class CycleEngine {
               ? current.endDate!.calendarDaysDifference(current.startDate) + 1
               : (periodLength ?? profile.averagePeriodLength));
 
-      if (nextEntry == null && current.endDate == null) {
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final daysSinceStart = today.calendarDaysDifference(current.startDate) + 1;
-        if (daysSinceStart > bleedLength && daysSinceStart <= 10) {
-          bleedLength = daysSinceStart;
-        }
-      }
-
       if (nextEntry != null) {
         // Closed historical cycle: calendar gap is absolute truth
         final actualGap = nextEntry.startDate.calendarDaysDifference(current.startDate);
@@ -154,12 +145,6 @@ class CycleEngine {
     if (lpDate.isAfter(normDate)) return null;
 
     int fallbackBleedLength = periodLength ?? profile.averagePeriodLength;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final daysSinceLp = today.calendarDaysDifference(lpDate) + 1;
-    if (daysSinceLp > fallbackBleedLength && daysSinceLp <= 10) {
-      fallbackBleedLength = daysSinceLp;
-    }
 
     return CycleContext(
       entry: null,

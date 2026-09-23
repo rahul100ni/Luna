@@ -547,6 +547,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       }
     }
 
+    await _syncActiveCycleBleedDuration(finalEntry.date);
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
   }
@@ -565,6 +566,9 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       if (anchor != null) {
         await _ref.read(periodHistoryProvider.notifier).removePeriodEntry(anchor.id);
       }
+    }
+    if (entry != null) {
+      await _syncActiveCycleBleedDuration(entry.date);
     }
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
@@ -596,6 +600,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
       await _ref.read(periodHistoryProvider.notifier).removePeriodEntry(anchor.id);
     }
 
+    await _syncActiveCycleBleedDuration(today);
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
   }
@@ -625,8 +630,57 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
         state = [previousEntry, ...state];
       }
     }
+    await _syncActiveCycleBleedDuration(normDate);
     _recomputePeriodLength();
     CloudGroundTruthService.syncAll();
+  }
+
+  /// Dynamically synchronizes active cycle bleed duration when flow is logged on extended days.
+  /// If user logs flow on Day 6 (when baseline is 5), the cycle bleed duration extends to Day 6.
+  /// If flow is subsequently removed, it safely resets so the cycle ends naturally at baseline.
+  Future<void> _syncActiveCycleBleedDuration(DateTime date) async {
+    final normDate = DateTime(date.year, date.month, date.day);
+    final history = _ref.read(periodHistoryProvider);
+    final cycle = history.where((p) {
+      final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+      final diff = normDate.difference(pNorm).inDays;
+      return diff >= 0 && diff < 14;
+    }).firstOrNull;
+    if (cycle == null || cycle.endDate != null) return;
+
+    final cycleStart = DateTime(cycle.startDate.year, cycle.startDate.month, cycle.startDate.day);
+    final profile = _ref.read(profileProvider);
+    final baselinePeriod = profile?.averagePeriodLength ?? 5;
+
+    // Collect all dates with active flow within this cycle 14-day window
+    final flowDays = state.where((e) {
+      final eNorm = DateTime(e.date.year, e.date.month, e.date.day);
+      final diff = eNorm.difference(cycleStart).inDays;
+      return diff >= 0 && diff < 14 && e.flow != null;
+    }).map((e) {
+      final eNorm = DateTime(e.date.year, e.date.month, e.date.day);
+      return eNorm.difference(cycleStart).inDays + 1;
+    }).toList();
+
+    final maxFlowDay = flowDays.isNotEmpty ? flowDays.reduce((a, b) => a > b ? a : b) : null;
+
+    if (maxFlowDay != null && maxFlowDay > baselinePeriod) {
+      if (cycle.bleedDurationDays != maxFlowDay) {
+        final updated = cycle.copyWith(
+          bleedDurationDays: maxFlowDay,
+          isUserSpecifiedDuration: true,
+        );
+        await StorageService.savePeriodEntry(updated);
+        await _ref.read(periodHistoryProvider.notifier).refresh();
+      }
+    } else if (cycle.isUserSpecifiedDuration && cycle.endDate == null) {
+      final updated = cycle.copyWith(
+        clearBleedDuration: true,
+        isUserSpecifiedDuration: false,
+      );
+      await StorageService.savePeriodEntry(updated);
+      await _ref.read(periodHistoryProvider.notifier).refresh();
+    }
   }
 
   /// Clinically guarded period length calibration:

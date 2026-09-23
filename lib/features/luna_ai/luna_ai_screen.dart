@@ -886,15 +886,10 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     String? detectedNotes;
     String? detectedMemoryCategory;
     String? detectedMemoryNote;
-    String? detectedDateStr;
     final detectedSymptoms = <String>[...?fallbackSymptoms];
 
     // 1. Process logMap (from AI JSON response)
     if (logMap != null) {
-      if (logMap['date'] is String) {
-        final dStr = (logMap['date'] as String).trim();
-        if (dStr.isNotEmpty) detectedDateStr = dStr;
-      }
 
       if (logMap['periodStarted'] is bool) {
         detectedPeriodStarted = logMap['periodStarted'] as bool;
@@ -979,11 +974,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           final map = jsonDecode(trimmedLog) as Map<String, dynamic>;
           parsedAsJson = true;
 
-          if (map['date'] is String) {
-            final dStr = (map['date'] as String).trim();
-            if (dStr.isNotEmpty) detectedDateStr = dStr;
-          }
-
           if (map['periodStarted'] is bool) {
             detectedPeriodStarted = map['periodStarted'] as bool;
           } else if (map['periodStarted'] is String) {
@@ -1056,14 +1046,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
 
       if (!parsedAsJson) {
-        final dateMatch = RegExp(
-                r'["\x27]?date["\x27]?\s*[:=]\s*["\x27]([^"\x27]+)["\x27]',
-                caseSensitive: false)
-            .firstMatch(trimmedLog);
-        if (dateMatch != null) {
-          detectedDateStr = dateMatch.group(1)?.trim();
-        }
-
         final pMatch = RegExp(r'periodStarted\s*[:=]\s*(true|false)',
                 caseSensitive: false)
             .firstMatch(trimmedLog);

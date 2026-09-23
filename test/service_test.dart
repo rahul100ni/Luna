@@ -1920,6 +1920,99 @@ void main() {
         expect(CloudGroundTruthService.sanitizeAccountKey('user_123-abc'), equals('user_123-abc'));
       });
     });
+
+    group('Natural Cycle Bleed End & Dynamic Bleed Extension Tests', () {
+      test('Active cycle bleeding ends naturally at averagePeriodLength; Day 6+ naturally transitions to Follicular', () {
+        final sep16 = DateTime(2026, 9, 16);
+        final profile = UserProfile(
+          id: 'test_user',
+          name: 'Sarah',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: sep16,
+          createdAt: DateTime(2026, 8, 1),
+        );
+
+        final history = [
+          PeriodEntry(id: 'c1', startDate: sep16),
+        ];
+
+        // Day 1 to 5: Menstrual
+        for (int d = 1; d <= 5; d++) {
+          final testDate = sep16.add(Duration(days: d - 1));
+          final phase = CycleEngine.phaseForDate(testDate, profile, periodHistory: history);
+          expect(phase, equals(CyclePhase.menstrual), reason: 'Day $d should be Menstrual');
+        }
+
+        // Day 6 (Sep 21), Day 7 (Sep 22), Day 8 (Sep 23): Naturally Follicular!
+        final day6 = sep16.add(const Duration(days: 5));
+        final day7 = sep16.add(const Duration(days: 6));
+        final day8 = sep16.add(const Duration(days: 7));
+
+        expect(CycleEngine.phaseForDate(day6, profile, periodHistory: history), equals(CyclePhase.follicular));
+        expect(CycleEngine.phaseForDate(day7, profile, periodHistory: history), equals(CyclePhase.follicular));
+        expect(CycleEngine.phaseForDate(day8, profile, periodHistory: history), equals(CyclePhase.follicular));
+      });
+
+      test('Extending bleeding duration on active cycle correctly expands Menstrual phase for extended days', () {
+        final sep16 = DateTime(2026, 9, 16);
+        final profile = UserProfile(
+          id: 'test_user',
+          name: 'Sarah',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: sep16,
+          createdAt: DateTime(2026, 8, 1),
+        );
+
+        // User logged flow on Day 6, extending bleed to 6 days
+        final historyExtended = [
+          PeriodEntry(
+            id: 'c1',
+            startDate: sep16,
+            bleedDurationDays: 6,
+            isUserSpecifiedDuration: true,
+          ),
+        ];
+
+        final day5 = sep16.add(const Duration(days: 4));
+        final day6 = sep16.add(const Duration(days: 5));
+        final day7 = sep16.add(const Duration(days: 6));
+
+        expect(CycleEngine.phaseForDate(day5, profile, periodHistory: historyExtended), equals(CyclePhase.menstrual));
+        expect(CycleEngine.phaseForDate(day6, profile, periodHistory: historyExtended), equals(CyclePhase.menstrual));
+        expect(CycleEngine.phaseForDate(day7, profile, periodHistory: historyExtended), equals(CyclePhase.follicular));
+      });
+
+      test('Explicitly ending bleeding early (e.g. Day 3) locks bleed duration and transitions Day 4 to Follicular', () {
+        final sep16 = DateTime(2026, 9, 16);
+        final profile = UserProfile(
+          id: 'test_user',
+          name: 'Sarah',
+          averageCycleLength: 28,
+          averagePeriodLength: 5,
+          lastPeriodStart: sep16,
+          createdAt: DateTime(2026, 8, 1),
+        );
+
+        // User confirmed bleeding ended on Day 3 (Sep 18)
+        final historyEarlyStop = [
+          PeriodEntry(
+            id: 'c1',
+            startDate: sep16,
+            endDate: DateTime(2026, 9, 18),
+            bleedDurationDays: 3,
+            isUserSpecifiedDuration: true,
+          ),
+        ];
+
+        final day3 = sep16.add(const Duration(days: 2));
+        final day4 = sep16.add(const Duration(days: 3));
+
+        expect(CycleEngine.phaseForDate(day3, profile, periodHistory: historyEarlyStop), equals(CyclePhase.menstrual));
+        expect(CycleEngine.phaseForDate(day4, profile, periodHistory: historyEarlyStop), equals(CyclePhase.follicular));
+      });
+    });
   });
 }
 

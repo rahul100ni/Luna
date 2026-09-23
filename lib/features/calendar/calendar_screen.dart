@@ -732,7 +732,8 @@ class _SelectedDayCard extends ConsumerWidget {
     final daysDiff = closestAnchor != null
         ? selectedDay.calendarDaysDifference(closestAnchor)
         : null;
-    final periodLen = profile.averagePeriodLength;
+    final ctx = CycleEngine.findCycleContext(selectedDay, profile, periodHistory);
+    final periodLen = ctx?.periodLength ?? profile.averagePeriodLength;
     final isInPeriodDays = (daysDiff != null && daysDiff >= 0 && daysDiff < periodLen) ||
         (entry != null && (entry.flow != null || entry.periodStarted));
     final canStartNewPeriodToday = !isConfirmedStart &&
@@ -1654,6 +1655,7 @@ class _SelectedDayCard extends ConsumerWidget {
       ),
     );
     if (confirm == true) {
+      await ref.read(periodHistoryProvider.notifier).recordPeriodStop(selectedDay);
       final allEntries = ref.read(logEntriesProvider);
       final normSelected = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
       for (final e in allEntries) {
