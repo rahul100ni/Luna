@@ -62,13 +62,77 @@ class PeriodDateExtractor {
   };
 
   /// Checks whether text contains period, bleeding, or cycle adjustment context.
+  /// Tightened: standalone verbs like "started", "got", "was on", "began" only
+  /// count as period context when paired with a period/cycle/bleed noun.
   static bool hasPeriodContext(String text) {
     final lower = text.toLowerCase().trim();
-    return RegExp(
-      r'\b(periods?|cycles?|bleeds?|bleeding|started|start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|update\s*it|last\s*period|it\s*was\s*on|was\s*on|began|begun|got|came|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here|day\s*\d+|\d+(?:st|nd|rd|th)?\s+day|day\s*(?:one|two|three|four|five|six|seven|eight|nine|ten)|(?:first|second|third|fourth|forth|fifth|sixth|seventh|eighth|ninth|tenth)\s+day|shows?\s+day|says?\s+day|displaying\s+day|still\s+day)\b',
+
+    // Unconditional period/cycle/bleed nouns - always period context
+    if (RegExp(
+      r'\b(periods?|cycles?|bleeds?|bleeding|menstrua|spotting|flow|pads?|tampons?|cups?)\b',
       caseSensitive: false,
-    ).hasMatch(lower);
+    ).hasMatch(lower)) {
+      return true;
+    }
+
+    // Start / began / got / came -- only counts as period context when EITHER:
+    // (a) a period/cycle/bleed noun is also present (e.g. "my period started", "got my period"), OR
+    // (b) a date/time expression is present alongside (e.g. "started on 15 sep", "began yesterday",
+    //     "it actually began the day before yesterday") -- unambiguous period-date correction intent.
+    // Standalone non-date uses ("I started feeling better", "it got better") do NOT trigger this.
+    if (RegExp(
+      r'\b(started|began|begun|it\s*was\s*on|was\s*on|got|came)\b',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      // Allow if period/cycle/bleed noun is present
+      if (RegExp(
+        r'\b(periods?|cycles?|bleeds?|bleeding|menstrua|spotting|flow)\b',
+        caseSensitive: false,
+      ).hasMatch(lower)) {
+        return true;
+      }
+      // Allow if a date/time expression accompanies the verb (date-correction intent)
+      if (RegExp(
+        r'\b(yesterday|today|the\s+day\s+before|days?\s+ago|\d+\s+days?\s+ago|last\s+week|'
+        r'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|'
+        r'\d{1,2}(st|nd|rd|th)?)\b',
+        caseSensitive: false,
+      ).hasMatch(lower)) {
+        return true;
+      }
+    }
+
+
+    // Explicit date-correction commands - always period context
+    if (RegExp(
+      r'\b(start\s*date|starting\s*date|change\s*date|fix\s*date|update\s*date|wrong\s*date|logged\s*wrong|wrong\s*day|wrong\s*here)\b',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      return true;
+    }
+
+    // Day + number patterns - cycle day reference
+    if (RegExp(
+      r'\bday\s*\d+\b|\b\d+(?:st|nd|rd|th)?\s+day\b|\bday\s*(?:one|two|three|four|five|six|seven|eight|nine|ten)\b|\b(?:first|second|third|fourth|forth|fifth|sixth|seventh|eighth|ninth|tenth)\s+day\b|\bshows?\s+day\b|\bsays?\s+day\b|\bdisplaying\s+day\b|\bstill\s+day\b',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      return true;
+    }
+
+    // "update it" / "change it" / "fix it" only count when paired with cycle/date/period nouns nearby
+    if (RegExp(r'\b(update\s+it|change\s+it|fix\s+it|correct\s+it)\b').hasMatch(lower)) {
+      if (RegExp(r'\b(period|cycle|date|day\s*\d|start)\b').hasMatch(lower)) {
+        return true;
+      }
+    }
+
+    // "last period", "it was on" only when near period/cycle words
+    if (RegExp(r'\blast\s*period\b').hasMatch(lower)) return true;
+
+    return false;
   }
+
+
 
   /// Checks if user text is reporting a discrepancy between the app's displayed day and reality,
   /// e.g. "it shows day 1 here", "it's still day 1", "still day 1", "why does it show day 1", "says day 1 on top".
@@ -204,15 +268,17 @@ class PeriodDateExtractor {
     final hasDiscrepancy = isDiscrepancyReport(lower);
     if (hasDiscrepancy) {
       // Check if user specified their actual intended day in the same sentence:
-      // e.g. "it shows day 1 here but today is day 4", "it shows day 1 should be day 4"
+      // e.g. "it shows day 1 here but today is day 4", "it shows day 1 should be day 4",
+      // "why is it showing day 1 still when I'm day 4", "actually on day 4"
       final correctionMatch = RegExp(
-        r'\b(?:but|should\s+be|actually|make\s+it|set\s+to|today\s+is|it\x27s|its|i\s+am\s+on|im\s+on|i\x27m\s+on)\s+(?:day\s+)?(\d+|first|1st|second|2nd|third|3rd|fourth|forth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\b',
+        r'\b(?:but|should\s+be|actually|make\s+it|set\s+to|today\s+is|it\x27s|its|i\s+am\s+on|im\s+on|i\x27m\s+on|when\s+i\s*\x27?m|when\s+i\s+am|actually\s+on|i\s+am\s+actually|im\s+actually|its\s+actually)\s+(?:day\s+)?(\d+|first|1st|second|2nd|third|3rd|fourth|forth|4th|fifth|5th|sixth|6th|seventh|7th|eighth|8th|ninth|9th|tenth|10th)\b',
       ).firstMatch(lower);
       if (correctionMatch != null) {
         final token = correctionMatch.group(1)!;
         return int.tryParse(token) ?? _wordNumbers[token];
       }
       return null;
+
     }
 
     // Pattern A: "day 4", "dude day 4", "its day 4", "it is day 4", "today is day 4", "im on day 4", "make it day 4", "day 4 of period"
@@ -370,7 +436,7 @@ class PeriodDateExtractor {
   static bool hasPeriodStopIntent(String text) {
     final lower = text.toLowerCase().trim();
     return RegExp(
-      r'\b(period\s+(?:has\s+)?stopped|periods?\s+(?:has\s+)?stopped|period\s+(?:has\s+)?ended|periods?\s+(?:has\s+)?ended|bleeding\s+(?:has\s+)?ended|period\s+is\s+over|periods?\s+are\s+over|periods?\s+(?:were|was)\s+only|(?:were|was)\s+(?:my\s+)?periods?\s+only|off\s+my\s+cycle|stopped\s+bleeding|bleeding\s+stopped|no\s+more\s+flow|flow\s+stopped|period\s+finished|periods?\s+finished|bleeding\s+finished)\b',
+      r'\b(period\s+(?:has\s+)?stopped|periods?\s+(?:has\s+)?stopped|period\s+(?:has\s+)?ended|periods?\s+(?:has\s+)?ended|bleeding\s+(?:has\s+)?ended|period\s+is\s+over|periods?\s+are\s+over|periods?\s+(?:were|was)\s+only|(?:were|was)\s+(?:my\s+)?periods?\s+only|off\s+my\s+cycle|stopped\s+bleeding|bleeding\s+stopped|no\s+more\s+flow|flow\s+stopped|period\s+finished|periods?\s+finished|bleeding\s+finished|done\s+with\s+my\s+period|my\s+period\s+(?:is\s+)?done|period\s+(?:is\s+)?done|i\x27m\s+not\s+bleeding|im\s+not\s+bleeding|no\s+more\s+bleeding|not\s+bleeding\s+anymore|cycle\s+(?:is\s+)?over|period\s+ended\s+(?:yesterday|today|on)|it\s+ended\s+(?:yesterday|today|on)|ended\s+yesterday|ended\s+today)\b',
       caseSensitive: false,
     ).hasMatch(lower);
   }
@@ -401,19 +467,66 @@ class PeriodDateExtractor {
   }
 
   /// Checks if user text is confirming a pending question or action.
+  /// Guard: "ok" and "okay" only count as confirmation when the message is short (<= 35 chars)
+  /// or the word appears at the start, to avoid false positives on "okay so I was feeling off".
   static bool isConfirmation(String text) {
     final lower = text.toLowerCase().trim();
-    return RegExp(
-      r'\b(yes|yeah|yep|sure|please|confirm|update\s*it|do\s*it|correct|ok|okay|yup|right|go\s*ahead|definitely|that\x27s\s*right|replace\s*it|replace|yes\s*please)\b',
+
+    // Strong unambiguous confirmations always count regardless of length
+    if (RegExp(
+      r'\b(yes|yeah|yep|sure|confirm|update\s*it|do\s*it|yup|go\s*ahead|definitely|that\x27s\s*right|that\s+is\s+right|replace\s*it|yes\s*please|please\s+do|sounds\s+right|correct\s+it|fix\s+it|change\s+it|correct)\b',
       caseSensitive: false,
-    ).hasMatch(lower);
+    ).hasMatch(lower)) {
+      return true;
+    }
+
+
+    // "ok", "okay", "right", "please" only count if the message is a short reply (not buried in a sentence)
+    if (lower.length <= 35) {
+      if (RegExp(r'\b(ok|okay|right|please|replace|keep)\b', caseSensitive: false).hasMatch(lower)) {
+        return true;
+      }
+    }
+
+    // "ok" / "okay" at the very start of a message
+    if (RegExp(r'^(ok|okay)\b', caseSensitive: false).hasMatch(lower)) {
+      return true;
+    }
+
+    return false;
   }
 
   /// Checks if user text is cancelling a pending question or action.
+  /// Guard: "wrong" only counts as cancellation when the message is very short (<= 20 chars),
+  /// to avoid "I logged the wrong thing" triggering a cancellation.
+  /// Guard: "no" only counts when standalone or at start of a short message.
   static bool isCancellation(String text) {
     final lower = text.toLowerCase().trim();
-    return RegExp(
-      r'\b(no|nope|cancel|don\x27?t|dont|never\s*mind|nevermind|keep\s*it|keep|leave\s*it|stop|wrong|nah|no\s*thanks|keep\s*previous)\b',
-    ).hasMatch(lower);
+
+    // Strong unambiguous cancellations
+    if (RegExp(
+      r'\b(nope|cancel|don\x27?t|dont|never\s*mind|nevermind|keep\s*it|leave\s*it|nah|no\s*thanks|keep\s*previous|don\x27?t\s+change|dont\s+change|keep\s+as\s+is|leave\s+as)\b',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      return true;
+    }
+
+    // "no" only as a standalone short reply
+    if (lower.length <= 20 && RegExp(r'^\s*no\s*[.!]?\s*$', caseSensitive: false).hasMatch(lower)) {
+      return true;
+    }
+
+    // "stop" only as standalone
+    if (RegExp(r'^\s*stop\s*[.!]?\s*$', caseSensitive: false).hasMatch(lower)) {
+      return true;
+    }
+
+    // "wrong" only in a very short reply (standalone error indicator, not descriptive sentence)
+    if (lower.length <= 20 && RegExp(r'\bwrong\b', caseSensitive: false).hasMatch(lower)) {
+      return true;
+    }
+
+    return false;
   }
 }
+

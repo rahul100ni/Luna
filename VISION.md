@@ -276,22 +276,51 @@ Each phase must have a distinct, thoughtfully chosen colour palette that feels r
 
 ---
 
-## Pillar Nine: Sacred Data Integrity & Backward Compatibility
+## Pillar Nine: Absolute Non-Destructive Continuity & Sacred Data Integrity
 
 ### Her History Is Permanent and Sacred
+She is already using the app. She already has things logged. Her cycle history is a deeply personal medical and emotional memory. 
+**Any change we make MUST NOT mess up what she already has laid out.** 
 
-A woman's cycle history is deeply personal medical and emotional memory. No update to Luna shall ever corrupt, invalidate, wipe out, or misinterpret historical user data.
+### The Prime Directive of Updates
+- **Zero Regression:** With any update we make, her experience **MUST GET BETTER** or stay exactly the same. It must not compromise on anything existing. It must not ruin it. It must not worsen anything.
+- **Isolate Old Data from New Experiments:** If implementing a new feature risks messing up her current or old data, **do not implement it on her existing data.** Keep existing logs completely safe and intact.
+- **Every Change is for Her Benefit:** Each pass, each refactor, each new feature must be strictly for her benefit. We must be extra careful to ensure that old data never becomes a problem or a friction point in the new architecture.
 
 ### Non-Negotiable Rules of Data Integrity
 
-1. **Lossless Legacy Schema Migrations:**
-   Whenever the database schema evolves, all historical data from legacy tables (including legacy `log_entries` where `periodStarted == 1` or historical bleeding dates) must be automatically and losslessly migrated into modern cycle stores on the very first launch.
-2. **Never Break History on Upgrade:**
-   Updating the app must never cause past months or calendar dates to lose their phase history, reset their anchors, or default to arbitrary phases (such as Follicular). The calendar must faithfully reflect every recorded period start across all time.
-3. **Consecutive Flow Is Not a Period Start:**
-   A period is a multi-day biological rhythm. Tracking flow (Light, Medium, Heavy) on Day 2, 3, or 4 of an active menstrual phase must NEVER overwrite or advance the cycle start date (Day 1). Day 1 is sacred and only moves when explicitly corrected by the user.
-4. **Zero Accidental Overwriting:**
-   The single source of truth must prevent background mechanisms from silently modifying or resetting past period entries. Corrections require explicit intent.
+1. **Lossless Legacy Schema Migrations:** Whenever the database schema evolves, all historical data from legacy tables must be automatically and losslessly migrated. 
+2. **Never Break History on Upgrade:** Updating the app must never cause past months or calendar dates to lose their phase history, reset their anchors, or default to arbitrary phases. The calendar must faithfully reflect every recorded period start across all time.
+3. **Consecutive Flow Is Not a Period Start:** Tracking flow on Day 2, 3, or 4 of an active menstrual phase must NEVER overwrite or advance the cycle start date (Day 1). Day 1 is sacred and only moves when explicitly corrected by the user.
+4. **Zero Accidental Overwriting:** The single source of truth must prevent background mechanisms from silently modifying or resetting past period entries. Corrections require explicit intent.
+
+---
+
+## Pillar Ten: Effortlessly Smart & Deeply Empathetic Logging
+
+### Extracting Everything, Missing Nothing
+
+When she writes to Luna, she is trusting the app with her reality. Whether she types a quick three-word update or pours her heart out in a long paragraph detailing cramps, emotional shifts, sleep disturbances, and daily interactions -- Luna must honor every single piece of it.
+
+- **Multi-pass, exhaustive extraction:** Luna does not stop at the first symptom it finds. If a message contains five symptoms, two emotional notes, and a detail about her sleep, all of them must be captured. Missing details because they were "too deep in the paragraph" is unacceptable and heartbreaking. If it takes multiple passes to extract it all, we do multiple passes.
+- **Multi-lingual and non-rigid:** Luna is not a hardcoded bot waiting for the words "I have cramps." If she writes in Hindi, Hinglish, or casual slang ("kl neend achi nahi aayi", "feeling super off today"), Luna understands the context and logs the appropriate biomarkers (sleep, mood, energy) without skipping a beat.
+
+### Passive Intelligence & Meta-Data
+
+The app should effortlessly build a complete picture without throwing data in her face. 
+- **Contextual notes:** If she says "talked to a friend and it made me feel good," Luna doesn't just log "good mood" -- it keeps a background memory of that interaction for that cycle day. 
+- **Subtle meta-data:** Luna notices *how* she writes. If she writes tiny sentences on Day 2 and long, expressive paragraphs on Day 4, that shift in communication is information. Luna notes this tone and length shift passively, using it to better understand her emotional rhythm without explicitly confronting her with it.
+
+### Multi-Level Verification & Smart Collision Handling
+
+Luna has an AI -- it must *use* it to think before acting. 
+
+- **Self-Verification First:** Before popping up an alert or asking a question, the AI must ask itself: *"What info do I already have? What changes am I about to make? Does this actually make sense?"* 
+- **Never ask stupid questions:** If the app already knows it is Day 1 of her cycle (e.g., today is Sept 30, and her cycle started today), and she logs "cramps", Luna must *never* prompt her with "Do you want to change your cycle start date to Sept 30?" That is broken, hardcoded logic.
+- **Graceful Collision Handling:** If new info genuinely collides with old info, Luna doesn't just overwrite it or fail. It asks her thoughtfully: *"Hey, you mentioned earlier that [X], but now you're feeling [Y]. Which feels more accurate to you right now?"* Then, it allows her to be descriptive in her response, using the AI to parse her nuanced decision easily.
+
+### The Goal
+Be intuitively brilliant in the background. Be a listener who catches every detail, connects patterns across cycles (e.g., *"In March's cycle you felt similar... maybe try that thing you did in September?"*), and never burdens her with rigid, robotic logging constraints. 
 
 ---
 

@@ -159,7 +159,8 @@ class DeepSeekService {
     buffer.writeln(
         "4. TONE: Warm, intelligent, conversational, sisterly. No toxic positivity. Treat her like an intelligent woman.");
     buffer.writeln(
-        "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, refer to her history naturally: 'Last cycle around this day, your energy dipped similarly'.");
+        "5. PERSONAL PATTERN MEMORY: When historical patterns are present above, weave them into your response naturally and warmly. EXAMPLE: 'Last cycle around this phase, your energy dipped similarly -- your body seems to really feel the progesterone drop around Day 20. What you're feeling right now is deeply connected to that pattern.' DO NOT ignore pattern data when it is present. It is the most precious context you have.");
+
     buffer.writeln(
         "6. NO EM DASHES: NEVER use em dashes. Use colons, commas, periods, or parentheses instead.");
     buffer.writeln(
@@ -226,8 +227,19 @@ class DeepSeekService {
       buffer.writeln(
           "- DO NOT RE-LOG ALREADY SAVED DATA: The items listed in 'USER'S ALREADY SAVED LOG FOR TODAY' above are ALREADY in the database. NEVER echo or re-emit them in [LOG:...].");
       buffer.writeln(
+          "- MEMORY-ONLY LOG: If she shares something important that should be remembered (a person, a preference, a life context, a vulnerability) but NO new biomarkers, you CAN and SHOULD still emit [LOG:{\"memory\":{\"category\":\"...\",\"note\":\"...\"}}] as a standalone tag. Do NOT skip memory capture just because there are no biomarkers to log.");
+      buffer.writeln(
+          "- EXHAUSTIVE EXTRACTION MANDATE (VISION Pillar Ten): If she mentions multiple symptoms in one message, include ALL of them in the symptoms array. Do NOT cap or truncate the list. If she mentions headache, nausea, cramps, fatigue, and bloating -- all five must appear. Missing even one symptom from a long message is a failure. If something qualifies as a symptom but you are unsure of the canonical name, include it with a best-fit descriptive name (e.g. 'Lower back ache', 'Breast tenderness', 'Racing heart', 'Hot flashes'). There is no maximum limit on the symptoms array.");
+      buffer.writeln(
+          "- MULTILINGUAL AND HINGLISH (VISION Pillar Ten): She may write in Hindi, Hinglish, or casual slang. Process her meaning with full cultural fluency. NEVER treat non-English input as unloggable. Extract ALL biomarkers exactly as you would from English. Common translations (non-exhaustive): 'kl' or 'kal' = yesterday; 'aaj' = today; 'neend achi nahi aayi' = sleep was poor (log sleep:poor); 'bahut dard ho raha hai' = lots of pain/cramps (log cramps:moderate or symptoms:Cramps); 'pet mein dard' = stomach/pelvic pain; 'sar mein dard' = headache (log symptoms:Headache); 'period aa gaya' or 'period shuru ho gaya' = period started (log periodStarted:true); 'period kal se shuru hua' = period started yesterday; 'thakaan feel ho rahi' or 'bahut thakaan hai' = fatigue (log energy:2 or symptoms:Fatigue); 'mood theek nahi' or 'bilkul theek nahi' = mood low/struggling; 'neend nahi aayi' = couldn't sleep (log sleep:poor); 'bahut emotional ho rahi hoon' = mood:struggling; 'bahut khush hoon' = mood:thriving or good; 'bloating ho rahi' = symptoms:Bloating; 'chakkar aa rahe' = symptoms:Dizziness. Use context to infer -- do not require exact keyword matches.");
+      buffer.writeln(
+          "- PASSIVE CONTEXT CAPTURE (VISION Pillar Ten): If her message contains life events, social interactions, or emotional undertones that are NOT explicit biomarkers but are worth remembering -- capture them in memory. Examples: 'talked to a friend and felt better' -> memory:{category:'life_context', note:'Talking to friend improved mood on Day X'}. 'stressed about work presentation' -> memory:{category:'life_context', note:'Work stress noted on Day X'}. 'had a difficult conversation with my mom' -> memory:{category:'life_context', note:'Difficult family interaction, emotionally draining, Day X'}. Capture this even if no biomarkers were mentioned.");
+      buffer.writeln(
+          "- PERSON MENTION EXTRACTION (VISION Pillar One): If she mentions a person by name or relationship (e.g. 'talked to Priya', 'my friend called', 'my mom was annoying me'), capture the person and emotional valence in memory: memory:{category:'person', note:'[Name/relationship]: [what happened and emotional tone]'}. This allows Luna to remember who matters to her and how interactions affect her mood.");
+      buffer.writeln(
           "- If she shared no NEW loggable attributes or memory in this message, DO NOT append any [LOG:...] tag at all.");
     }
+
 
     return buffer.toString();
   }

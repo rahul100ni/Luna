@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -64,7 +66,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   }
 
   MoodLevel? _selectedMood;
+  // Tracks the mood pre-populated from today's existing entry on load.
+  // Used to detect whether the user actively changed their mood selection
+  // (Bug 13 fix: pre-filled chip must not fire badge as a "new" log).
+  MoodLevel? _prefillMood;
   final Set<String> _selectedSymptoms = {};
+
   final _textController = TextEditingController();
   final _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -112,7 +119,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       final todayEntry = ref.read(todayLogProvider);
       if (todayEntry != null && mounted) {
         setState(() {
+          // Bug 13 fix: record what was pre-filled so _checkIn can detect
+          // whether the user actually changed the mood chip vs. it being
+          // auto-populated from an existing entry.
           _selectedMood ??= todayEntry.mood;
+          _prefillMood = todayEntry.mood;
           _selectedSymptoms.addAll(todayEntry.symptoms);
         });
       }
@@ -178,20 +189,30 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final requestedPeriodDate = PeriodDateExtractor.extractDate(userText);
     DateTime? previousAnchorForCheckIn;
     if (requestedPeriodDate != null) {
-      previousAnchorForCheckIn = ref.read(profileProvider)?.lastPeriodStart;
-      await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
+      final currentAnchor = ref.read(profileProvider)?.lastPeriodStart;
+      // VISION Pillar Ten: self-verify before acting. If the extracted date is identical
+      // to the current anchor, there is nothing to update. Skip to avoid a phantom confirmation.
+      final isSameAsAnchor = currentAnchor != null &&
+          currentAnchor.year == requestedPeriodDate.year &&
+          currentAnchor.month == requestedPeriodDate.month &&
+          currentAnchor.day == requestedPeriodDate.day;
+      if (!isSameAsAnchor) {
+        previousAnchorForCheckIn = currentAnchor;
+        await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
 
-      final currentToday = ref.read(todayLogProvider);
-      final now = DateTime.now();
-      final isToday = requestedPeriodDate.year == now.year &&
-          requestedPeriodDate.month == now.month &&
-          requestedPeriodDate.day == now.day;
-      if (!isToday && currentToday?.periodStarted == true) {
-        final updatedToday = currentToday!.copyWith(periodStarted: false);
-        await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+        final currentToday = ref.read(todayLogProvider);
+        final now = DateTime.now();
+        final isToday = requestedPeriodDate.year == now.year &&
+            requestedPeriodDate.month == now.month &&
+            requestedPeriodDate.day == now.day;
+        if (!isToday && currentToday?.periodStarted == true) {
+          final updatedToday = currentToday!.copyWith(periodStarted: false);
+          await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+        }
       }
     }
     _lastPreviousAnchor = previousAnchorForCheckIn;
+
 
     final profile = ref.read(profileProvider);
     final cycleState = ref.read(cycleStateProvider);
@@ -239,10 +260,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     // Auto-log immediately on check-in from the Luna Home Screen Phase!
+    // Bug 13 fix: only pass fallbackMood if the user actively changed it
+    // from the pre-filled value (or there was no pre-fill at all).
+    final userChangedMood = _selectedMood != null && _selectedMood != _prefillMood;
     final autoLogResult = await _processAutoLog(
       logMap: response.logMap,
       userText: userText,
-      fallbackMood: _selectedMood,
+      fallbackMood: userChangedMood ? _selectedMood : null,
       fallbackSymptoms: _selectedSymptoms.toList(),
     );
 
@@ -461,6 +485,26 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     _scrollToBottom();
   }
 
+  /// VISION Pillar Ten: Silently captures message meta-data (length bucket + cycle day)
+  /// as a background memory entry so Luna can observe communication rhythm patterns
+  /// over time. Fire-and-forget -- never awaited, never shown to the user.
+  Future<void> _captureMessageMeta(String text) async {
+    if (text.trim().isEmpty) return;
+    final len = text.trim().length;
+    final bucket = len < 80 ? 'short' : len < 250 ? 'medium' : 'long';
+    final cycleState = ref.read(cycleStateProvider);
+    final day = cycleState?.dayOfCycle;
+    final label = day != null ? 'Day $day' : 'no-cycle';
+    await StorageService.saveMemory(
+      LunaMemoryEntry(
+        id: LunaMemoryEntry.newId(),
+        category: 'communication_meta',
+        content: '$label: $bucket message ($len chars)',
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
   Future<void> _sendChatMessage([String? prefilledText]) async {
     final text = prefilledText ?? _chatController.text.trim();
     if (text.isEmpty || _chatLoading) return;
@@ -568,21 +612,46 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final cycleDay = PeriodDateExtractor.extractCycleDay(text);
     final hasPeriodStop = PeriodDateExtractor.hasPeriodStopIntent(text);
 
+    // VISION Pillar Ten: Passive meta-data capture -- completely silent background write.
+    // Track message length bucket and cycle day so Luna can notice communication
+    // rhythm patterns over time (e.g. brief on Day 2, expressive on Day 7).
+    // No UI update. No user-facing display. Pure background intelligence.
+    unawaited(_captureMessageMeta(text));
+
     final currentAnchor = ref.read(profileProvider)?.lastPeriodStart;
+
+    // VISION Pillar Ten / Bug 1 fix: Self-verify before acting.
+    // If the date the user mentioned is ALREADY the current cycle anchor, there is nothing
+    // to update and NO confirmation card should appear. Suppress entirely.
+    if (requestedPeriodDate != null && currentAnchor != null) {
+      final isSameAsAnchor =
+          currentAnchor.year == requestedPeriodDate.year &&
+          currentAnchor.month == requestedPeriodDate.month &&
+          currentAnchor.day == requestedPeriodDate.day;
+      if (isSameAsAnchor) {
+        requestedPeriodDate = null; // nothing to change, no card needed
+      }
+    }
+
     final hasOverlappingAnchor = requestedPeriodDate != null &&
         currentAnchor != null &&
         (currentAnchor.year != requestedPeriodDate.year ||
          currentAnchor.month != requestedPeriodDate.month ||
          currentAnchor.day != requestedPeriodDate.day);
 
+    // isDirectCommand fires ONLY when the user explicitly issued a correction command,
+    // OR this is first-time setup (no existing anchor at all).
+    // CRITICAL: !hasOverlappingAnchor was removed -- it allowed AI-hallucinated dates in
+    // [LOG:...] tags to silently update the anchor even when the user said nothing about dates.
     final isDirectCommand = requestedPeriodDate != null &&
-        (PeriodDateExtractor.isDirectCorrectionCommand(text) || !hasOverlappingAnchor);
+        (PeriodDateExtractor.isDirectCorrectionCommand(text) || currentAnchor == null);
 
     DateTime? previousAnchorForCommand;
     if (isDirectCommand) {
       previousAnchorForCommand = currentAnchor;
       // Direct explicit user command or no conflicting anchor: apply update immediately
       await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
+
 
       final currentToday = ref.read(todayLogProvider);
       final now = DateTime.now();
@@ -595,6 +664,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
       _pendingPeriodDate = null;
     }
+
 
     if (targetResult.isFuture) {
       // Save expectation in companion memory so Luna can check in tomorrow!
@@ -694,7 +764,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         conversationMessages.add({
           'role': 'system',
           'content':
-              'SYSTEM CONTRADICTION: The user indicates her bleeding stopped, but she previously logged ${stopEntry!.flow!.name} flow for this day. Ask her gently with sisterly warmth if bleeding has fully ended now, so you can update her cycle record.',
+              'CONTEXT NOTE: She previously logged ${stopEntry!.flow!.name} flow for today. She is now saying her period has stopped. You noticed this discrepancy naturally, the way a close friend paying attention would. Ask her warmly and briefly -- just one sentence -- whether her flow has fully stopped now, so you can keep her record accurate. Do NOT frame this as a system alert or a clinical correction. Keep it in the flow of conversation.',
         });
       } else {
         final anchor = CycleEngine.findCycleStart(stopDate, profile, ref.read(periodHistoryProvider));
@@ -763,10 +833,22 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       } catch (_) {}
     }
 
-    // Safety clean: strip any dangling [LOG:... or trailing brackets from text
-    cleanResponse =
-        cleanResponse.replaceAll(RegExp(r'\s*\[LOG:[^\]]*\]?'), '').trim();
+    // Safety clean: strip any dangling [LOG:... or trailing brackets from text.
+    // Use dotAll + non-greedy to handle multi-line or nested-bracket LOG tags (Bug 4 fix).
+    cleanResponse = cleanResponse.replaceAll(
+        RegExp(r'\s*\[LOG:.*?(?:\]|$)', dotAll: true), '').trim();
     cleanResponse = cleanResponse.replaceAll(RegExp(r'\]+$'), '').trim();
+
+    // Anchor equality guard on AI-extracted period date (same as manual message guard above)
+    if (requestedPeriodDate != null && currentAnchor != null) {
+      final isSameAsAnchor =
+          currentAnchor.year == requestedPeriodDate.year &&
+          currentAnchor.month == requestedPeriodDate.month &&
+          currentAnchor.day == requestedPeriodDate.day;
+      if (isSameAsAnchor) {
+        requestedPeriodDate = null;
+      }
+    }
 
     if (requestedPeriodDate != null) {
       final dateStr = _formatPeriodDate(requestedPeriodDate);
@@ -869,6 +951,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
   /// Unified multi-layer auto-logging engine:
   /// Combines AI structured JSON log, tag parsing, and deterministic text heuristics.
+  ///
+  /// MULTILINGUAL FIX (Bugs 2+5): We track two provenance pools:
+  ///   - aiEmitted*: values extracted from AI JSON/[LOG:...] -- trusted regardless of userText language
+  ///   - heuristic*: values detected by English-only Dart scanner -- require English corroboration
+  /// The final merged value uses aiEmitted if available, otherwise heuristic (if corroborated).
   Future<_AutoLogResult?> _processAutoLog({
     String? rawAiLog,
     Map<String, dynamic>? logMap,
@@ -877,30 +964,43 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     List<String>? fallbackSymptoms,
     bool hasSpecificDateRequest = false,
   }) async {
-    bool? detectedPeriodStarted;
-    FlowLevel? detectedFlow;
-    CrampLevel? detectedCramps;
-    MoodLevel? detectedMood = fallbackMood;
-    int? detectedEnergy;
-    SleepQuality? detectedSleep;
-    String? detectedNotes;
-    String? detectedMemoryCategory;
-    String? detectedMemoryNote;
+    // AI-emitted provenance (language-agnostic, from DeepSeek structured output)
+    bool? aiEmittedPeriodStarted;
+    FlowLevel? aiEmittedFlow;
+    CrampLevel? aiEmittedCramps;
+    MoodLevel? aiEmittedMood;
+    int? aiEmittedEnergy;
+    SleepQuality? aiEmittedSleep;
+    String? aiEmittedNotes;
+    String? aiEmittedMemoryCategory;
+    String? aiEmittedMemoryNote;
+    final aiEmittedSymptoms = <String>[];
+
+    // Heuristic provenance (English-only Dart scanner -- corroboration required)
+    bool? heuristicPeriodStarted;
+    FlowLevel? heuristicFlow;
+    CrampLevel? heuristicCramps;
+    MoodLevel? heuristicMood = fallbackMood;
+    int? heuristicEnergy;
+    SleepQuality? heuristicSleep;
+    final heuristicSymptoms = <String>[...?fallbackSymptoms];
+
+    // Convenience: populate detectedSymptoms from fallback (for backwards compat)
     final detectedSymptoms = <String>[...?fallbackSymptoms];
 
-    // 1. Process logMap (from AI JSON response)
+    // 1. Process logMap (from AI JSON response in check-in mode)
+    // Values go into aiEmitted* -- trusted regardless of userText language
     if (logMap != null) {
-
       if (logMap['periodStarted'] is bool) {
-        detectedPeriodStarted = logMap['periodStarted'] as bool;
+        aiEmittedPeriodStarted = logMap['periodStarted'] as bool;
       } else if (logMap['periodStarted'] is String) {
-        detectedPeriodStarted =
+        aiEmittedPeriodStarted =
             (logMap['periodStarted'] as String).toLowerCase() == 'true';
       }
 
       if (logMap['flow'] is String) {
         final fStr = (logMap['flow'] as String).toLowerCase().trim();
-        detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
+        aiEmittedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
               (f) => f?.name.toLowerCase() == fStr,
               orElse: () => null,
             );
@@ -908,7 +1008,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
       if (logMap['cramps'] is String) {
         final cStr = (logMap['cramps'] as String).toLowerCase().trim();
-        detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
+        aiEmittedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
               (c) => c?.name.toLowerCase() == cStr,
               orElse: () => null,
             );
@@ -916,21 +1016,21 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
       if (logMap['mood'] is String) {
         final mStr = (logMap['mood'] as String).toLowerCase().trim();
-        detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
+        aiEmittedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
               (m) => m?.name.toLowerCase() == mStr,
-              orElse: () => detectedMood,
+              orElse: () => null,
             );
       }
 
       if (logMap['energy'] is num) {
-        detectedEnergy = (logMap['energy'] as num).toInt();
+        aiEmittedEnergy = (logMap['energy'] as num).toInt();
       } else if (logMap['energy'] is String) {
-        detectedEnergy = int.tryParse(logMap['energy'] as String);
+        aiEmittedEnergy = int.tryParse(logMap['energy'] as String);
       }
 
       if (logMap['sleep'] is String) {
         final sStr = (logMap['sleep'] as String).toLowerCase().trim();
-        detectedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
+        aiEmittedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
               (s) => s?.name.toLowerCase() == sStr,
               orElse: () => null,
             );
@@ -938,7 +1038,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
       if (logMap['notes'] is String) {
         final nStr = (logMap['notes'] as String).trim();
-        if (nStr.isNotEmpty) detectedNotes = nStr;
+        if (nStr.isNotEmpty) aiEmittedNotes = nStr;
       }
 
       if (logMap['memory'] is Map) {
@@ -946,22 +1046,24 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         final cat = mem['category']?.toString().trim() ?? 'preference';
         final note = mem['note']?.toString().trim() ?? '';
         if (note.isNotEmpty) {
-          detectedMemoryCategory = cat;
-          detectedMemoryNote = note;
+          aiEmittedMemoryCategory = cat;
+          aiEmittedMemoryNote = note;
         }
       }
 
       if (logMap['symptoms'] is List) {
         for (final s in (logMap['symptoms'] as List)) {
           final sStr = s.toString().trim();
-          if (sStr.isNotEmpty && !detectedSymptoms.contains(sStr)) {
-            detectedSymptoms.add(sStr);
+          if (sStr.isNotEmpty && !aiEmittedSymptoms.contains(sStr)) {
+            aiEmittedSymptoms.add(sStr);
           }
         }
       }
     }
 
-    // 2. Process rawAiLog string (from [LOG:...])
+
+    // 2. Process rawAiLog string (from [LOG:...] in chat mode)
+    // Values go into aiEmitted* -- trusted regardless of userText language
     if (rawAiLog != null && rawAiLog.trim().isNotEmpty) {
       String trimmedLog = rawAiLog.trim();
       if (trimmedLog.endsWith(']')) {
@@ -975,53 +1077,53 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           parsedAsJson = true;
 
           if (map['periodStarted'] is bool) {
-            detectedPeriodStarted = map['periodStarted'] as bool;
+            aiEmittedPeriodStarted = map['periodStarted'] as bool;
           } else if (map['periodStarted'] is String) {
-            detectedPeriodStarted =
+            aiEmittedPeriodStarted =
                 (map['periodStarted'] as String).toLowerCase() == 'true';
           }
 
           if (map['flow'] is String) {
             final fStr = (map['flow'] as String).toLowerCase().trim();
-            detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
+            aiEmittedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
                   (f) => f?.name.toLowerCase() == fStr,
-                  orElse: () => detectedFlow,
+                  orElse: () => aiEmittedFlow,
                 );
           }
 
           if (map['cramps'] is String) {
             final cStr = (map['cramps'] as String).toLowerCase().trim();
-            detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
+            aiEmittedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
                   (c) => c?.name.toLowerCase() == cStr,
-                  orElse: () => detectedCramps,
+                  orElse: () => aiEmittedCramps,
                 );
           }
 
           if (map['mood'] is String) {
             final mStr = (map['mood'] as String).toLowerCase().trim();
-            detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
+            aiEmittedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
                   (m) => m?.name.toLowerCase() == mStr,
-                  orElse: () => detectedMood,
+                  orElse: () => aiEmittedMood,
                 );
           }
 
           if (map['energy'] is num) {
-            detectedEnergy = (map['energy'] as num).toInt();
+            aiEmittedEnergy = (map['energy'] as num).toInt();
           } else if (map['energy'] is String) {
-            detectedEnergy = int.tryParse(map['energy'] as String) ?? detectedEnergy;
+            aiEmittedEnergy = int.tryParse(map['energy'] as String) ?? aiEmittedEnergy;
           }
 
           if (map['sleep'] is String) {
             final sStr = (map['sleep'] as String).toLowerCase().trim();
-            detectedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
+            aiEmittedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
                   (s) => s?.name.toLowerCase() == sStr,
-                  orElse: () => detectedSleep,
+                  orElse: () => aiEmittedSleep,
                 );
           }
 
           if (map['notes'] is String) {
             final nStr = (map['notes'] as String).trim();
-            if (nStr.isNotEmpty) detectedNotes = nStr;
+            if (nStr.isNotEmpty) aiEmittedNotes = nStr;
           }
 
           if (map['memory'] is Map) {
@@ -1029,16 +1131,16 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             final cat = mem['category']?.toString().trim() ?? 'preference';
             final note = mem['note']?.toString().trim() ?? '';
             if (note.isNotEmpty) {
-              detectedMemoryCategory = cat;
-              detectedMemoryNote = note;
+              aiEmittedMemoryCategory = cat;
+              aiEmittedMemoryNote = note;
             }
           }
 
           if (map['symptoms'] is List) {
             for (final s in (map['symptoms'] as List)) {
               final sStr = s.toString().trim();
-              if (sStr.isNotEmpty && !detectedSymptoms.contains(sStr)) {
-                detectedSymptoms.add(sStr);
+              if (sStr.isNotEmpty && !aiEmittedSymptoms.contains(sStr)) {
+                aiEmittedSymptoms.add(sStr);
               }
             }
           }
@@ -1046,20 +1148,21 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
 
       if (!parsedAsJson) {
+        // Regex fallback for malformed JSON -- still treated as AI-emitted
         final pMatch = RegExp(r'periodStarted\s*[:=]\s*(true|false)',
                 caseSensitive: false)
             .firstMatch(trimmedLog);
         if (pMatch != null) {
-          detectedPeriodStarted = pMatch.group(1)?.toLowerCase() == 'true';
+          aiEmittedPeriodStarted = pMatch.group(1)?.toLowerCase() == 'true';
         }
 
         final flowMatch = RegExp(r'flow\s*[:=]\s*(\w+)', caseSensitive: false)
             .firstMatch(trimmedLog);
         if (flowMatch != null) {
           final fStr = flowMatch.group(1)?.toLowerCase();
-          detectedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
+          aiEmittedFlow = FlowLevel.values.cast<FlowLevel?>().firstWhere(
                 (f) => f?.name.toLowerCase() == fStr,
-                orElse: () => detectedFlow,
+                orElse: () => aiEmittedFlow,
               );
         }
 
@@ -1068,9 +1171,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                 .firstMatch(trimmedLog);
         if (crampsMatch != null) {
           final cStr = crampsMatch.group(1)?.toLowerCase();
-          detectedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
+          aiEmittedCramps = CrampLevel.values.cast<CrampLevel?>().firstWhere(
                 (c) => c?.name.toLowerCase() == cStr,
-                orElse: () => detectedCramps,
+                orElse: () => aiEmittedCramps,
               );
         }
 
@@ -1078,9 +1181,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             .firstMatch(trimmedLog);
         if (moodMatch != null) {
           final moodStr = moodMatch.group(1)?.toLowerCase();
-          detectedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
+          aiEmittedMood = MoodLevel.values.cast<MoodLevel?>().firstWhere(
                 (m) => m?.name.toLowerCase() == moodStr,
-                orElse: () => detectedMood,
+                orElse: () => aiEmittedMood,
               );
         }
 
@@ -1088,7 +1191,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             RegExp(r'energy\s*[:=]\s*(\d+)', caseSensitive: false)
                 .firstMatch(trimmedLog);
         if (energyMatch != null) {
-          detectedEnergy = int.tryParse(energyMatch.group(1) ?? '') ?? detectedEnergy;
+          aiEmittedEnergy = int.tryParse(energyMatch.group(1) ?? '') ?? aiEmittedEnergy;
         }
 
         final sleepMatch =
@@ -1096,17 +1199,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                 .firstMatch(trimmedLog);
         if (sleepMatch != null) {
           final sStr = sleepMatch.group(1)?.toLowerCase();
-          detectedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
+          aiEmittedSleep = SleepQuality.values.cast<SleepQuality?>().firstWhere(
                 (s) => s?.name.toLowerCase() == sStr,
-                orElse: () => detectedSleep,
+                orElse: () => aiEmittedSleep,
               );
         }
 
         final notesMatch =
-            RegExp(r'notes\s*[:=]\s*["\x27]([^"\x27]+)["\x27]', caseSensitive: false)
+            RegExp(r'notes\s*[:=]\s*["\\x27]([^"\\x27]+)["\\x27]', caseSensitive: false)
                 .firstMatch(trimmedLog);
         if (notesMatch != null) {
-          detectedNotes = notesMatch.group(1)?.trim();
+          aiEmittedNotes = notesMatch.group(1)?.trim();
         }
 
         final symptomsMatch =
@@ -1117,141 +1220,163 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           for (final item in rawList) {
             final trimmed =
                 item.replaceAll('"', '').replaceAll("'", '').trim();
-            if (trimmed.isNotEmpty && !detectedSymptoms.contains(trimmed)) {
-              detectedSymptoms.add(trimmed);
+            if (trimmed.isNotEmpty && !aiEmittedSymptoms.contains(trimmed)) {
+              aiEmittedSymptoms.add(trimmed);
             }
           }
         }
       }
     }
 
-    // 3. Intelligent Heuristic Scanner on userText
+
+    // 3. Intelligent Heuristic Scanner on userText (English-only -- for corroboration only)
+    // Results go into heuristic* variables. Corroboration guard ONLY nullifies heuristic values.
+    // AI-emitted values are NEVER nullified here.
     if (userText.trim().isNotEmpty) {
       final lower = userText.toLowerCase();
 
-      // Flow scanner
-      if (detectedFlow == null) {
-        if (RegExp(r'\b(high\s+flow|heavy\s+flow|heavy\s+bleeding)\b').hasMatch(lower)) {
-          detectedFlow = FlowLevel.heavy;
-        } else if (RegExp(r'\b(medium\s+flow|moderate\s+flow)\b').hasMatch(lower)) {
-          detectedFlow = FlowLevel.medium;
-        } else if (RegExp(r'\b(light\s+flow|spotting)\b').hasMatch(lower)) {
-          detectedFlow = FlowLevel.light;
-        }
+      // Flow scanner (heuristic)
+      if (RegExp(r'\b(high\s+flow|heavy\s+flow|heavy\s+bleeding)\b').hasMatch(lower)) {
+        heuristicFlow = FlowLevel.heavy;
+      } else if (RegExp(r'\b(medium\s+flow|moderate\s+flow)\b').hasMatch(lower)) {
+        heuristicFlow = FlowLevel.medium;
+      } else if (RegExp(r'\b(light\s+flow|spotting)\b').hasMatch(lower)) {
+        heuristicFlow = FlowLevel.light;
       }
 
-      // Period start scanner (even if user said "started tomorrow", "started today", or "started bleeding")
-      if (detectedPeriodStarted != true) {
-        if (RegExp(r'\b(period\s+started|got\s+my\s+period|started\s+my\s+period|started\s+bleeding|my\s+period\s+came|period\s+is\s+here)\b').hasMatch(lower)) {
-          detectedPeriodStarted = true;
-        }
+      // Period start scanner (heuristic)
+      if (RegExp(r'\b(period\s+started|got\s+my\s+period|started\s+my\s+period|started\s+bleeding|my\s+period\s+came|period\s+is\s+here)\b').hasMatch(lower)) {
+        heuristicPeriodStarted = true;
       }
 
-      // Cramps scanner
-      if (detectedCramps == null) {
-        if (RegExp(r'\b(max\s+cramps|severe\s+cramps|terrible\s+cramps|worst\s+cramps|awful\s+cramps|intense\s+cramps)\b').hasMatch(lower)) {
-          detectedCramps = CrampLevel.severe;
-        } else if (RegExp(r'\b(bad\s+cramps|moderate\s+cramps|painful\s+cramps|cramping\s+badly)\b').hasMatch(lower)) {
-          detectedCramps = CrampLevel.moderate;
-        } else if (RegExp(r'\b(mild\s+cramps|slight\s+cramps|little\s+cramps)\b').hasMatch(lower)) {
-          detectedCramps = CrampLevel.mild;
-        } else if (RegExp(r'\b(cramp|cramps|cramping)\b').hasMatch(lower)) {
-          detectedCramps = CrampLevel.moderate;
-        }
+      // Cramps scanner (heuristic)
+      if (RegExp(r'\b(max\s+cramps|severe\s+cramps|terrible\s+cramps|worst\s+cramps|awful\s+cramps|intense\s+cramps)\b').hasMatch(lower)) {
+        heuristicCramps = CrampLevel.severe;
+      } else if (RegExp(r'\b(bad\s+cramps|moderate\s+cramps|painful\s+cramps|cramping\s+badly)\b').hasMatch(lower)) {
+        heuristicCramps = CrampLevel.moderate;
+      } else if (RegExp(r'\b(mild\s+cramps|slight\s+cramps|little\s+cramps)\b').hasMatch(lower)) {
+        heuristicCramps = CrampLevel.mild;
+      } else if (RegExp(r'\b(cramp|cramps|cramping)\b').hasMatch(lower)) {
+        heuristicCramps = CrampLevel.moderate;
       }
 
-      // Energy scanner (handles "O energy", "0 energy", "zero energy")
-      if (detectedEnergy == null) {
-        if (RegExp(r'\b([o0]|zero|no)\s+energy\b').hasMatch(lower)) {
-          detectedEnergy = 1;
-        } else if (RegExp(r'\b(low\s+energy|exhausted|drained|no\s+stamina)\b').hasMatch(lower)) {
-          detectedEnergy = 1;
-        } else if (RegExp(r'\b(high\s+energy|energized|energetic)\b').hasMatch(lower)) {
-          detectedEnergy = 5;
-        }
+      // Energy scanner (heuristic)
+      if (RegExp(r'\b([o0]|zero|no)\s+energy\b').hasMatch(lower)) {
+        heuristicEnergy = 1;
+      } else if (RegExp(r'\b(low\s+energy|exhausted|drained|no\s+stamina)\b').hasMatch(lower)) {
+        heuristicEnergy = 1;
+      } else if (RegExp(r'\b(high\s+energy|energized|energetic)\b').hasMatch(lower)) {
+        heuristicEnergy = 5;
       }
 
-      // Sleep scanner
-      if (detectedSleep == null) {
-        if (RegExp(r'\b(worst\s+sleep|poor\s+sleep|terrible\s+sleep|awful\s+sleep|bad\s+sleep|couldn\x27?t\s+sleep|insomnia)\b').hasMatch(lower)) {
-          detectedSleep = SleepQuality.poor;
-        } else if (RegExp(r'\b(deep\s+sleep|great\s+sleep|amazing\s+sleep|best\s+sleep)\b').hasMatch(lower)) {
-          detectedSleep = SleepQuality.great;
-        }
+      // Sleep scanner (heuristic)
+      if (RegExp(r'\b(worst\s+sleep|poor\s+sleep|terrible\s+sleep|awful\s+sleep|bad\s+sleep|couldn\x27?t\s+sleep|insomnia)\b').hasMatch(lower)) {
+        heuristicSleep = SleepQuality.poor;
+      } else if (RegExp(r'\b(deep\s+sleep|great\s+sleep|amazing\s+sleep|best\s+sleep)\b').hasMatch(lower)) {
+        heuristicSleep = SleepQuality.great;
       }
 
-      // Mood scanner
-      if (detectedMood == null) {
-        if (RegExp(r'\b(day\s+is\s+ruined|struggling|crying|depressed|can\x27?t\s+take\s+this|miserable|overwhelmed)\b').hasMatch(lower)) {
-          detectedMood = MoodLevel.struggling;
-        } else if (RegExp(r'\b(sad|down|low|gloomy|unhappy)\b').hasMatch(lower)) {
-          detectedMood = MoodLevel.low;
-        } else if (RegExp(r'\b(amazing|thriving|fantastic|wonderful)\b').hasMatch(lower)) {
-          detectedMood = MoodLevel.thriving;
-        }
+      // Mood scanner (heuristic)
+      if (RegExp(r'\b(day\s+is\s+ruined|struggling|crying|depressed|can\x27?t\s+take\s+this|miserable|overwhelmed)\b').hasMatch(lower)) {
+        heuristicMood = MoodLevel.struggling;
+      } else if (RegExp(r'\b(sad|down|low|gloomy|unhappy)\b').hasMatch(lower)) {
+        heuristicMood = MoodLevel.low;
+      } else if (RegExp(r'\b(amazing|thriving|fantastic|wonderful)\b').hasMatch(lower)) {
+        heuristicMood = MoodLevel.thriving;
       }
 
-      // Symptoms scanner
-      void checkSymptom(RegExp reg, String name) {
-        if (reg.hasMatch(lower) && !detectedSymptoms.contains(name)) {
-          detectedSymptoms.add(name);
+      // Symptoms scanner (heuristic) -- expanded list (Bug 6 fix)
+      void checkHeuristicSymptom(RegExp reg, String name) {
+        if (reg.hasMatch(lower) && !heuristicSymptoms.contains(name)) {
+          heuristicSymptoms.add(name);
         }
       }
-      checkSymptom(RegExp(r'\b(headache|headaches|migraine)\b'), 'Headache');
-      checkSymptom(RegExp(r'\b(cramp|cramps|cramping)\b'), 'Cramps');
-      checkSymptom(RegExp(r'\b(bloat|bloated|bloating)\b'), 'Bloating');
-      checkSymptom(RegExp(r'\b(fatigue|fatigued|tired|exhausted)\b'), 'Fatigue');
-      checkSymptom(RegExp(r'\b(brain\s+fog|foggy)\b'), 'Brain fog');
-      checkSymptom(RegExp(r'\b(anxious|anxiety|panic)\b'), 'Anxious');
-      checkSymptom(RegExp(r'\b(irritable|irritated|angry|moody)\b'), 'Irritable');
-      checkSymptom(RegExp(r'\b(craving|cravings)\b'), 'Cravings');
-      checkSymptom(RegExp(r'\b(backache|back\s+pain)\b'), 'Backache');
-      checkSymptom(RegExp(r'\b(tender|breast\s+pain)\b'), 'Tender');
+      checkHeuristicSymptom(RegExp(r'\b(headache|headaches|migraine)\b'), 'Headache');
+      checkHeuristicSymptom(RegExp(r'\b(cramp|cramps|cramping)\b'), 'Cramps');
+      checkHeuristicSymptom(RegExp(r'\b(bloat|bloated|bloating)\b'), 'Bloating');
+      checkHeuristicSymptom(RegExp(r'\b(fatigue|fatigued|tired|exhausted)\b'), 'Fatigue');
+      checkHeuristicSymptom(RegExp(r'\b(brain\s+fog|foggy|cant\s+focus|cant\s+think)\b'), 'Brain fog');
+      checkHeuristicSymptom(RegExp(r'\b(anxious|anxiety|panic|panicking)\b'), 'Anxious');
+      checkHeuristicSymptom(RegExp(r'\b(irritable|irritated|angry|moody|snappy)\b'), 'Irritable');
+      checkHeuristicSymptom(RegExp(r'\b(craving|cravings|craved)\b'), 'Cravings');
+      checkHeuristicSymptom(RegExp(r'\b(backache|back\s+pain|lower\s+back)\b'), 'Backache');
+      checkHeuristicSymptom(RegExp(r'\b(tender|breast\s+pain|sore\s+breasts?)\b'), 'Tender');
+      checkHeuristicSymptom(RegExp(r'\b(nausea|nauseous|nauseated|queasy)\b'), 'Nausea');
+      checkHeuristicSymptom(RegExp(r'\b(dizziness|dizzy|lightheaded)\b'), 'Dizziness');
+      checkHeuristicSymptom(RegExp(r'\b(acne|breakout|breakouts|pimple|pimples)\b'), 'Acne');
+      checkHeuristicSymptom(RegExp(r'\b(insomnia|can\x27?t\s+sleep|sleepless)\b'), 'Insomnia');
+      checkHeuristicSymptom(RegExp(r'\b(swollen|swelling|puffy|edema)\b'), 'Swelling');
+      checkHeuristicSymptom(RegExp(r'\b(hot\s+flash|hot\s+flashes|flushes|sweating)\b'), 'Hot flashes');
+      checkHeuristicSymptom(RegExp(r'\b(constipat|diarrhea|loose\s+stool|stomach\s+pain|gut|digestion)\b'), 'Digestive issues');
 
-      // Strict corroboration: verify every biomarker emitted against userText
+      // Corroboration guards: ONLY nullify heuristic-detected values.
+      // AI-emitted values are protected and never touched here.
       final hasFlowMention = RegExp(
         r'\b(flow|bleeding|bleed|bled|spotting|heavy|light|medium|moderate\s+flow|period\s+blood|blood|tampon|pad|cup)\b',
       ).hasMatch(lower);
       if (!hasFlowMention) {
-        detectedFlow = null;
+        heuristicFlow = null; // only nullify heuristic, not aiEmittedFlow
       }
 
       final hasSleepMention = RegExp(
         r'\b(sleep|slept|sleeping|insomnia|restless|woke\s+up|awake|nightmare|rested)\b',
       ).hasMatch(lower);
       if (!hasSleepMention) {
-        detectedSleep = null;
+        heuristicSleep = null;
       }
 
       final hasEnergyMention = RegExp(
         r'\b(energy|tired|exhausted|fatigue|fatigued|drained|stamina|sluggish|lethargic|energetic|weary|wiped\s+out)\b',
       ).hasMatch(lower);
       if (!hasEnergyMention) {
-        detectedEnergy = null;
+        heuristicEnergy = null;
       }
 
       final hasMoodMention = RegExp(
         r'\b(mood|feeling|felt|feel|sad|happy|anxious|crying|depressed|angry|calm|thriving|miserable|low|overwhelmed|struggling|okay|great|good|irritated|irritable|emotional|stressed)\b',
       ).hasMatch(lower);
       if (!hasMoodMention && fallbackMood == null) {
-        detectedMood = null;
+        heuristicMood = null;
       }
 
       final hasCrampsMention = RegExp(
         r'\b(cramp|cramps|cramping|uterine|pelvic\s+pain|period\s+pain)\b',
       ).hasMatch(lower);
       if (!hasCrampsMention) {
-        detectedCramps = null;
+        heuristicCramps = null;
       }
 
+      // Symptom corroboration: only keep heuristic symptoms that are confirmed in userText
       final corroborated = <String>[];
-      for (final s in detectedSymptoms) {
+      for (final s in heuristicSymptoms) {
         if (_isSymptomCorroborated(s, lower)) {
           if (!corroborated.contains(s)) corroborated.add(s);
         }
       }
-      detectedSymptoms.clear();
-      detectedSymptoms.addAll(corroborated);
+      heuristicSymptoms.clear();
+      heuristicSymptoms.addAll(corroborated);
+    }
+
+    // 3b. MERGE STEP: Resolve final values.
+    // Rule: aiEmitted wins when available (language-agnostic, trusted).
+    // Otherwise use corroborated heuristic value.
+    // Fallback mood (from UI chip) is lowest priority.
+    final bool? detectedPeriodStarted = aiEmittedPeriodStarted ?? heuristicPeriodStarted;
+    final FlowLevel? detectedFlow = aiEmittedFlow ?? heuristicFlow;
+    final CrampLevel? detectedCramps = aiEmittedCramps ?? heuristicCramps;
+    final MoodLevel? detectedMood = aiEmittedMood ?? heuristicMood; // heuristicMood includes fallbackMood
+    final int? detectedEnergy = aiEmittedEnergy ?? heuristicEnergy;
+    final SleepQuality? detectedSleep = aiEmittedSleep ?? heuristicSleep;
+    final String? detectedNotes = aiEmittedNotes;
+    final String? detectedMemoryCategory = aiEmittedMemoryCategory;
+    final String? detectedMemoryNote = aiEmittedMemoryNote;
+
+    // Merge symptoms: AI-emitted symptoms + corroborated heuristic symptoms (deduplicated)
+    for (final s in aiEmittedSymptoms) {
+      if (!detectedSymptoms.contains(s)) detectedSymptoms.add(s);
+    }
+    for (final s in heuristicSymptoms) {
+      if (!detectedSymptoms.contains(s)) detectedSymptoms.add(s);
     }
 
     // Resolve target date from text or AI output
@@ -1267,8 +1392,8 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     if (targetResult.isExplicit) {
       targetDate = DateTime(targetResult.date.year, targetResult.date.month, targetResult.date.day);
     } else {
-      // CRITICAL BIOLOGICAL FIX: Never trust AI's `detectedDateStr` if the user didn't explicitly 
-      // state a target date. The AI often hallucinates the period start date (e.g. 3 days ago) 
+      // CRITICAL BIOLOGICAL FIX: Never trust AI's `detectedDateStr` if the user didn't explicitly
+      // state a target date. The AI often hallucinates the period start date (e.g. 3 days ago)
       // as the symptom log date. If user just says "Day 4, I have a headache", the headache is TODAY.
       targetDate = todayMidnight;
     }
@@ -1280,18 +1405,20 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     // 4. CRITICAL BIOLOGICAL MANDATE:
     // If the log is for a past date, or user specified a specific period date,
     // do NOT anchor period start to TODAY.
+    bool? resolvedPeriodStarted = detectedPeriodStarted;
+    FlowLevel? resolvedFlow = detectedFlow;
     if (!isToday || hasSpecificDateRequest) {
       if (isToday) {
-        detectedPeriodStarted = false;
-        detectedFlow = null;
+        resolvedPeriodStarted = false;
+        resolvedFlow = null;
       }
-    } else if (detectedFlow != null) {
+    } else if (resolvedFlow != null) {
       // Menstrual flow strictly implies period has started (for today only)
-      detectedPeriodStarted = true;
+      resolvedPeriodStarted = true;
     }
 
     // 5. Execute period start anchor if detected
-    if (detectedPeriodStarted == true && !hasSpecificDateRequest) {
+    if (resolvedPeriodStarted == true && !hasSpecificDateRequest) {
       if (isToday) {
         await ref.read(periodHistoryProvider.notifier).addPeriodStart(now, source: 'ai');
       } else {
@@ -1311,6 +1438,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       );
     }
 
+
     // 7. DIFFING ENGINE (VISION Pillar One, Two & Three):
     // Only treat biomarkers as NEW if they actually differ from what was ALREADY logged on targetDate!
     final allEntries = ref.read(logEntriesProvider);
@@ -1322,13 +1450,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     final isNewMood = detectedMood != null && detectedMood != targetEntry?.mood;
     final isNewEnergy = detectedEnergy != null && detectedEnergy != targetEntry?.energyLevel;
     final isNewSleep = detectedSleep != null && detectedSleep != targetEntry?.sleepQuality;
-    final isNewFlow = detectedFlow != null && detectedFlow != targetEntry?.flow && (isToday ? !hasSpecificDateRequest : true);
+    final isNewFlow = resolvedFlow != null && resolvedFlow != targetEntry?.flow;
     final isNewCramps = detectedCramps != null &&
         detectedCramps != CrampLevel.none &&
         detectedCramps != targetEntry?.cramps;
-    final isNewPeriodStarted = detectedPeriodStarted == true &&
-        (isToday ? !hasSpecificDateRequest : true) &&
+    final isNewPeriodStarted = resolvedPeriodStarted == true &&
         (targetEntry?.periodStarted != true);
+
 
     final existingSymptoms =
         LogEntry.canonicalizeSymptoms(targetEntry?.symptoms ?? []);
@@ -1374,12 +1502,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         mood: detectedMood ?? targetEntry?.mood,
         energyLevel: detectedEnergy ?? targetEntry?.energyLevel,
         sleepQuality: detectedSleep ?? targetEntry?.sleepQuality,
-        flow: detectedFlow ?? targetEntry?.flow,
+        flow: resolvedFlow ?? targetEntry?.flow,
         cramps: detectedCramps ?? targetEntry?.cramps,
         symptoms: updatedSymptoms,
         notes: updatedNotes,
         periodStarted: isNewPeriodStarted || (targetEntry?.periodStarted ?? false),
       );
+
 
       await ref.read(logEntriesProvider.notifier).addEntry(newEntry);
     }
@@ -1391,8 +1520,10 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
     if (isNewFlow) {
       parts.add(
-          '${detectedFlow.name[0].toUpperCase()}${detectedFlow.name.substring(1)} flow');
+          '${resolvedFlow.name[0].toUpperCase()}${resolvedFlow.name.substring(1)} flow');
     }
+
+
     if (isNewCramps) {
       parts.add(
           '${detectedCramps.name[0].toUpperCase()}${detectedCramps.name.substring(1)} cramps');
