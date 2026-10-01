@@ -310,7 +310,27 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
       }
     }
 
+    final previousNormOld = normOld; // capture before editPeriodEntry
     await editPeriodEntry(target.id, normNew);
+
+    // Orphaned-flag cleanup (Bug 3 fix):
+    // The old anchor day may have a log_entry with periodStarted:true.
+    // If the anchor moved to a different day, clear that flag so the
+    // calendar doesn't show a ghost period marker on the wrong date.
+    if (previousNormOld.year != normNew.year ||
+        previousNormOld.month != normNew.month ||
+        previousNormOld.day != normNew.day) {
+      final allLogs = await StorageService.getLogEntries(limit: 365);
+      final orphanEntry = allLogs.where((e) =>
+          e.date.year == previousNormOld.year &&
+          e.date.month == previousNormOld.month &&
+          e.date.day == previousNormOld.day &&
+          e.periodStarted).firstOrNull;
+      if (orphanEntry != null) {
+        final cleaned = orphanEntry.copyWith(periodStarted: false);
+        await StorageService.saveLogEntry(cleaned);
+      }
+    }
   }
 
   /// Recomputes average cycle length only when sufficient completed cycles exist.

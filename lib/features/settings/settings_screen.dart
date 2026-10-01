@@ -10,6 +10,7 @@ import '../../core/services/notification_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/cloud_ground_truth_service.dart';
 import 'version_manager_screen.dart';
+import 'luna_memories_screen.dart';
 
 // Notification preference keys: imported from notification_service.dart (single source of truth)
 // kNotifDailyCheckin, kNotifPeriodSoon, kNotifPhaseChange, kNotifPms,
@@ -922,7 +923,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 20),
 
-          // ── Data & Privacy section ─────────────────────────────────────────
+          // -- Luna's Memory section -------------------------------------------
+          _SectionHeader(label: "What Luna Knows", colors: colors),
+          _SettingsTile(
+            icon: Icons.auto_awesome_outlined,
+            label: "Luna's memories",
+            sublabel: 'What she quietly holds for you',
+            colors: colors,
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const LunaMemoriesScreen(),
+              ));
+            },
+          ),
+          const SizedBox(height: 20),
+
+          // -- Data & Privacy section -------------------------------------------
           _SectionHeader(label: 'Data & Privacy', colors: colors),
           _SettingsTile(
             icon: Icons.shield_outlined,

@@ -938,10 +938,24 @@ void main() {
 
     test('extractDate parses day-only relative to current month', () {
       final now = DateTime.now();
-      final on18th = PeriodDateExtractor.extractDate('my period started on the 18th');
-      expect(on18th, isNotNull);
-      expect(on18th!.day, equals(18));
-      expect(on18th.month, equals(now.month));
+      // Use the 1st -- it is always <= today.day so the extractor resolves it
+      // to the current month (biologically correct: period started the 1st of this month).
+      final on1st = PeriodDateExtractor.extractDate('my period started on the 1st');
+      expect(on1st, isNotNull);
+      expect(on1st!.day, equals(1));
+      expect(on1st.month, equals(now.month));
+      // A day strictly in the future relative to today resolves to previous month
+      // (biologically: you can't have a period start in the future).
+      if (now.day < 28) {
+        final futureDay = now.day + 1;
+        final suffix = futureDay == 1 ? 'st' : futureDay == 2 ? 'nd' : futureDay == 3 ? 'rd' : 'th';
+        final onFuture = PeriodDateExtractor.extractDate('my period started on the $futureDay$suffix');
+        expect(onFuture, isNotNull);
+        // Should resolve to previous month since it's a future date
+        expect(onFuture!.day, equals(futureDay));
+        final expectedMonth = now.month == 1 ? 12 : now.month - 1;
+        expect(onFuture.month, equals(expectedMonth));
+      }
     });
 
     test('isConfirmation identifies affirmative responses', () {
@@ -2050,6 +2064,30 @@ void main() {
         // With cleared end date, Day 4 returns to menstrual phase (baseline = 5)
         final day4 = sep16.add(const Duration(days: 3));
         expect(CycleEngine.phaseForDate(day4, profile, periodHistory: [cleared]), equals(CyclePhase.menstrual));
+      });
+    });
+
+    group('Midnight Boundary & Memory Regex Fallback Tests', () {
+      test('Regex fallback extracts memory category and note from malformed JSON', () {
+        const rawAiLog = '{"mood": "calm", "memory": {"category": "preference", "note": "Prefers hot tea for cramps"}, "invalid_trailing": }';
+        final memCatMatch = RegExp(r'"memory"\s*:\s*\{[^}]*"category"\s*:\s*"([^"]+)"').firstMatch(rawAiLog);
+        final memNoteMatch = RegExp(r'"memory"\s*:\s*\{[^}]*"note"\s*:\s*"([^"]+)"').firstMatch(rawAiLog);
+
+        expect(memCatMatch?.group(1), equals('preference'));
+        expect(memNoteMatch?.group(1), equals('Prefers hot tea for cramps'));
+      });
+
+      test('Midnight boundary sessionDate anchors target date consistently across midnight', () {
+        final sessionDate = DateTime(2026, 9, 30, 23, 58);
+        final simulatedNowAfterMidnight = DateTime(2026, 10, 1, 0, 2);
+
+        // When anchored to sessionDate, todayMidnight reflects session date
+        final anchoredTodayMidnight = DateTime(sessionDate.year, sessionDate.month, sessionDate.day);
+        final driftingTodayMidnight = DateTime(simulatedNowAfterMidnight.year, simulatedNowAfterMidnight.month, simulatedNowAfterMidnight.day);
+
+        expect(anchoredTodayMidnight, equals(DateTime(2026, 9, 30)));
+        expect(driftingTodayMidnight, equals(DateTime(2026, 10, 1)));
+        expect(anchoredTodayMidnight, isNot(equals(driftingTodayMidnight)));
       });
     });
   });

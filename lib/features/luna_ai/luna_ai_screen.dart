@@ -11,6 +11,7 @@ import '../../core/models/log_entry.dart';
 import '../../core/models/luna_memory_entry.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/services/cloud_ground_truth_service.dart';
 import '../../core/services/cycle_engine.dart';
 import '../../core/services/deepseek_service.dart';
 import '../../core/services/period_date_extractor.dart';
@@ -88,6 +89,9 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   DateTime? _pendingPeriodDate;
   DateTime? _pendingStopDate;
   DateTime? _lastPreviousAnchor;
+  // Midnight-boundary safety: locked at session start, never re-evaluated mid-conversation.
+  // Prevents log dates drifting to the next day if user chats across midnight.
+  DateTime _sessionDate = DateTime.now();
   late AnimationController _pulseController;
 
   static const List<String> _quickSymptoms = [
@@ -127,7 +131,48 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           _selectedSymptoms.addAll(todayEntry.symptoms);
         });
       }
+      // Proactive future-date recall (Bug 6 fix):
+      // If yesterday she said "I know I'll have cramps tomorrow", Luna should
+      // proactively open the conversation today -- not wait passively.
+      _checkForTimeBoundExpectations();
     });
+  }
+
+  /// Scans luna_memories for any 'Expected to experience' entries created yesterday.
+  /// If found and the chat is empty, Luna opens with a proactive warm message.
+  Future<void> _checkForTimeBoundExpectations() async {
+    if (_chatHistory.isNotEmpty) return; // Don't interrupt existing sessions
+    final memories = await StorageService.getMemories(limit: 100);
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final expectationMemories = memories.where((m) {
+      final sameDay = m.createdAt.year == yesterday.year &&
+          m.createdAt.month == yesterday.month &&
+          m.createdAt.day == yesterday.day;
+      return sameDay && m.content.toLowerCase().startsWith('expected to experience:');
+    }).toList();
+
+    if (expectationMemories.isEmpty || !mounted) return;
+
+    // Build a soft, natural recall message from the first expectation
+    final snippet = expectationMemories.first.content
+        .replaceFirst('Expected to experience: ', '')
+        .replaceFirst('Expected to experience:', '');
+
+    final profile = ref.read(profileProvider);
+    final greeting = profile?.name != null
+        ? 'Hey -- yesterday you mentioned you were expecting ${snippet.toLowerCase().trimRight()}. How are you actually feeling today?'
+        : 'Hey -- you mentioned yesterday that you expected to feel ${snippet.toLowerCase().trimRight()}. How did that go?';
+
+    if (mounted) {
+      setState(() {
+        _chatHistory.add(_ChatMessage(
+          text: greeting,
+          isUser: false,
+          time: DateTime.now(),
+        ));
+      });
+      _persistChatHistory();
+    }
   }
 
   void _loadChatHistory() {
@@ -172,6 +217,8 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
     // Clear previous session when user starts a fresh check-in
     await StorageService.clearLastChatSession();
+    // Lock session date at check-in start -- prevents midnight drift
+    _sessionDate = DateTime.now();
     setState(() {
       _chatHistory = [];
       _lastAutoLogSummary = null;
@@ -201,7 +248,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
 
         final currentToday = ref.read(todayLogProvider);
-        final now = DateTime.now();
+        final now = _sessionDate;
         final isToday = requestedPeriodDate.year == now.year &&
             requestedPeriodDate.month == now.month &&
             requestedPeriodDate.day == now.day;
@@ -268,6 +315,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       userText: userText,
       fallbackMood: userChangedMood ? _selectedMood : null,
       fallbackSymptoms: _selectedSymptoms.toList(),
+      sessionDate: _sessionDate,
     );
 
     // Store the user message text before we clear for check-in history seeding
@@ -512,6 +560,14 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       _chatController.clear();
     }
 
+    // On first message of a new chat, lock the session date.
+    // This prevents symptom logs drifting to the next calendar day if
+    // the user sends a message near midnight and Luna responds after midnight.
+    if (_chatHistory.isEmpty) {
+      _sessionDate = DateTime.now();
+    }
+    final sessionDate = _sessionDate;
+
     // ── Pending Stop Interception ──────────────────────────────────────────
     if (_pendingStopDate != null) {
       if (PeriodDateExtractor.isConfirmation(text)) {
@@ -654,7 +710,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
 
       final currentToday = ref.read(todayLogProvider);
-      final now = DateTime.now();
+      final now = sessionDate;
       final isToday = requestedPeriodDate.year == now.year &&
           requestedPeriodDate.month == now.month &&
           requestedPeriodDate.day == now.day;
@@ -673,9 +729,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           id: LunaMemoryEntry.newId(),
           category: 'body_pattern',
           content: 'Expected to experience: ${text.trim()}',
-          createdAt: DateTime.now(),
+          createdAt: sessionDate,
         ),
       );
+      // Immediately sync explicit memories to cloud (user's data, not meta)
+      unawaited(CloudGroundTruthService.syncAll());
     }
 
     if (hasPeriodStop) {
@@ -808,6 +866,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       rawAiLog: rawLog,
       userText: text,
       hasSpecificDateRequest: requestedPeriodDate != null,
+      sessionDate: sessionDate,
     );
 
     // Also check if DeepSeek provided periodStartDate or cycleDay in its structured output
@@ -825,7 +884,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           } else if (map['cycleDay'] != null) {
             final cd = map['cycleDay'] as int?;
             if (cd != null && cd >= 1 && cd <= 60) {
-              final now = DateTime.now();
+              final now = sessionDate;
               requestedPeriodDate = DateTime(now.year, now.month, now.day).subtract(Duration(days: cd - 1));
             }
           }
@@ -963,6 +1022,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     MoodLevel? fallbackMood,
     List<String>? fallbackSymptoms,
     bool hasSpecificDateRequest = false,
+    DateTime? sessionDate,
   }) async {
     // AI-emitted provenance (language-agnostic, from DeepSeek structured output)
     bool? aiEmittedPeriodStarted;
@@ -1225,6 +1285,16 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             }
           }
         }
+
+        // Regex fallback for memory nested object (handles malformed JSON where jsonDecode fails)
+        if (aiEmittedMemoryNote == null) {
+          final memCatMatch = RegExp(r'"memory"\s*:\s*\{[^}]*"category"\s*:\s*"([^"]+)"').firstMatch(rawAiLog);
+          final memNoteMatch = RegExp(r'"memory"\s*:\s*\{[^}]*"note"\s*:\s*"([^"]+)"').firstMatch(rawAiLog);
+          if (memNoteMatch != null) {
+            aiEmittedMemoryCategory = memCatMatch?.group(1);
+            aiEmittedMemoryNote = memNoteMatch.group(1);
+          }
+        }
       }
     }
 
@@ -1386,7 +1456,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       return null;
     }
 
-    final now = DateTime.now();
+    final now = sessionDate ?? DateTime.now();
     final todayMidnight = DateTime(now.year, now.month, now.day);
     DateTime targetDate;
     if (targetResult.isExplicit) {
@@ -1433,9 +1503,11 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           id: LunaMemoryEntry.newId(),
           category: detectedMemoryCategory ?? 'preference',
           content: detectedMemoryNote,
-          createdAt: DateTime.now(),
+          createdAt: now,  // Use session-anchored now
         ),
       );
+      // Immediately sync explicit memories to cloud (user's data, not meta)
+      unawaited(CloudGroundTruthService.syncAll());
     }
 
 
