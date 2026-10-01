@@ -594,7 +594,7 @@ class DeepSeekService {
     }
     // Enforce daily AI request budget
     if (!StorageService.canMakeAiRequest) {
-      return 'I\'ve had a very full day of conversations. Let\'s pick this up fresh tomorrow -- I\'ll be here for you. 💜';
+      return 'I\'m right here with you, always. Even while my cloud connection catches its breath, I\'m holding space for you and listening to your body. How are you feeling in yourself right now? 💜';
     }
 
     try {

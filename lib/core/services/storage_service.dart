@@ -263,7 +263,8 @@ class StorageService {
   }
 
   // ── AI API Key & Budget Protection ────────────────────────────────
-  static const int maxDailyAiRequests = 25;
+  static const int maxDailyAiRequests = 100;
+  static const String kUnlimitedAiMode = 'unlimited_ai_mode';
 
   static String? getDeepSeekApiKey() {
     return _prefs?.getString('deepseek_api_key');
@@ -278,12 +279,20 @@ class StorageService {
     }
   }
 
+  static bool get isUnlimitedAiMode =>
+      _prefs?.getBool(kUnlimitedAiMode) ?? false;
+
+  static Future<void> setUnlimitedAiMode(bool enabled) async {
+    await _prefs?.setBool(kUnlimitedAiMode, enabled);
+  }
+
   static int get dailyAiRequestCount {
     final key = 'ai_req_count_$_todayKey';
     return _prefs?.getInt(key) ?? 0;
   }
 
   static bool get canMakeAiRequest {
+    if (isUnlimitedAiMode) return true;
     return dailyAiRequestCount < maxDailyAiRequests;
   }
 

@@ -237,6 +237,27 @@ void main() {
       await StorageService.cacheAiResponse(cacheKey, '{"status":"cached"}');
       expect(StorageService.getCachedAiResponse(cacheKey), equals('{"status":"cached"}'));
     });
+
+    test('Unlimited AI Mode bypasses rate limits while preserving request telemetry', () async {
+      expect(StorageService.isUnlimitedAiMode, isFalse);
+
+      // Enable unlimited AI mode for test device
+      await StorageService.setUnlimitedAiMode(true);
+      expect(StorageService.isUnlimitedAiMode, isTrue);
+
+      // Simulate hitting the limit
+      final initialCount = StorageService.dailyAiRequestCount;
+      expect(StorageService.canMakeAiRequest, isTrue);
+
+      // Increment request count and verify telemetry is preserved
+      await StorageService.incrementAiRequestCount();
+      expect(StorageService.dailyAiRequestCount, equals(initialCount + 1));
+      expect(StorageService.canMakeAiRequest, isTrue);
+
+      // Revert unlimited AI mode
+      await StorageService.setUnlimitedAiMode(false);
+      expect(StorageService.isUnlimitedAiMode, isFalse);
+    });
   });
 
   group('Cycle Engine & UX Theme Tests', () {

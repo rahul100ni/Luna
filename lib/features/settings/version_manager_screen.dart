@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/phase_constants.dart';
 import '../../core/services/deepseek_service.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/services/telemetry_service.dart';
 
 // ── Firebase Realtime Database REST endpoints ────────────────────────────────
@@ -58,11 +59,15 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
   String _downloadingId = '';
   double _downloadProgress = 0;
 
+  // Device testing overrides
+  bool _isUnlimitedAi = false;
+
   @override
   void initState() {
     super.initState();
     _fetchVersions();
     _apiKeyCtrl.text = DeepSeekService.apiKey;
+    _isUnlimitedAi = StorageService.isUnlimitedAiMode;
   }
 
   @override
@@ -598,7 +603,21 @@ class _VersionManagerScreenState extends State<VersionManagerScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // 3. Add Version Trigger
+                    // 3. Testing Overrides (Unlimited AI Mode)
+                    _AdminTestingOverridesCard(
+                      isUnlimited: _isUnlimitedAi,
+                      colors: c,
+                      onToggleUnlimited: (val) async {
+                        await StorageService.setUnlimitedAiMode(val);
+                        setState(() => _isUnlimitedAi = val);
+                        _showSnack(val
+                            ? 'Unlimited AI mode active on this device ✓'
+                            : 'Standard daily AI limit restored');
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 4. Add Version Trigger
                     GestureDetector(
                       onTap: () => setState(() => _showAddForm = !_showAddForm),
                       child: Container(
@@ -1066,6 +1085,134 @@ class _AdminApiKeyCard extends StatelessWidget {
                             color: c.accent),
                       ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Admin Testing Overrides Card ──────────────────────────────────────────────
+class _AdminTestingOverridesCard extends StatelessWidget {
+  final bool isUnlimited;
+  final PhaseColors colors;
+  final ValueChanged<bool> onToggleUnlimited;
+
+  const _AdminTestingOverridesCard({
+    required this.isUnlimited,
+    required this.colors,
+    required this.onToggleUnlimited,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isUnlimited
+              ? Colors.amber.withValues(alpha: 0.5)
+              : c.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🧪', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              Text(
+                'Device Testing Controls',
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: c.onSurface,
+                ),
+              ),
+              const Spacer(),
+              if (isUnlimited)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    'UNLIMITED',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.amber,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Overrides daily request caps on this device while maintaining complete token telemetry tracking',
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              color: c.onSurface.withValues(alpha: 0.45),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: c.background.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isUnlimited
+                    ? Colors.amber.withValues(alpha: 0.3)
+                    : c.onSurface.withValues(alpha: 0.08),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Unlimited AI Tokens / Requests',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: c.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isUnlimited
+                            ? 'Active: Zero rate-limiting, all requests processed'
+                            : 'Standard: Capped at ${StorageService.maxDailyAiRequests} requests/day',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          color: isUnlimited
+                              ? Colors.amber.withValues(alpha: 0.8)
+                              : c.onSurface.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: isUnlimited,
+                  activeThumbColor: Colors.amber,
+                  activeTrackColor: Colors.amber.withValues(alpha: 0.3),
+                  onChanged: onToggleUnlimited,
+                ),
+              ],
             ),
           ),
         ],
