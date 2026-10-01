@@ -81,8 +81,8 @@ class CloudGroundTruthService {
       final sanitizedKey = sanitizeAccountKey(syncId);
       final profile = StorageService.getProfile();
       final periodHistory = await StorageService.getPeriodHistory();
-      final logEntries = await StorageService.getLogEntries(limit: 365);
-      final memories = await StorageService.getMemories(limit: 100);
+      final logEntries = await StorageService.getLogEntries(limit: 3650);
+      final memories = await StorageService.getMemories(limit: 2000);
       final now = DateTime.now();
 
       // Tier 1: Absolute Ground Truth (strictly user-entered / verified data)
@@ -189,6 +189,8 @@ class CloudGroundTruthService {
       int logsRestored = 0;
       int memoriesRestored = 0;
       UserProfile? restoredProfile;
+      // 0. ATOMIC WIPE: Wipe local user tables first to prevent contaminated hybrid merges
+      await StorageService.wipeLocalUserDataForRestore();
 
       // 1. Restore Profile from snapshot or fallback
       if (snapshot != null && snapshot['profile'] != null) {
@@ -260,6 +262,9 @@ class CloudGroundTruthService {
       // 7. Store confirmed sync ID and update last sync timestamp
       await StorageService.setCloudSyncId(rawSyncId);
       await StorageService.setLastCloudSyncTime(DateTime.now());
+
+      // Guarantee no adjacent cycle collisions in restored data
+      await StorageService.selfHealAdjacentCycles();
 
       return RestoreResult(
         success: true,

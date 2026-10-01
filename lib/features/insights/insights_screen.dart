@@ -479,7 +479,7 @@ class _CycleBlueprintCard extends ConsumerWidget {
               _MetricTile(
                 title: 'Cycle Length',
                 value: isUnknown ? 'Calibrating' : '$cycleLen days',
-                subtitle: isUnknown ? '28d baseline' : 'Typical rhythm',
+                subtitle: isUnknown ? 'Calibrating rhythm' : 'Typical rhythm',
                 colors: colors,
               ),
               const SizedBox(width: 8),

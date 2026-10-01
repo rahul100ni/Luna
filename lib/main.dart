@@ -89,7 +89,9 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/luna',
-      pageBuilder: (_, __) => const NoTransitionPage(child: LunaAiScreen()),
+      pageBuilder: (_, state) => NoTransitionPage(
+        child: LunaAiScreen(resume: state.uri.queryParameters['resume']),
+      ),
     ),
     GoRoute(
       path: '/knowledge',

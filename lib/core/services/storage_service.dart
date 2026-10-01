@@ -107,27 +107,15 @@ class StorageService {
         } catch (_) {}
         // Self-heal: collapse any period_history entries that are < 14 days apart (keep earliest)
         // This resolves the Bug 3 adjacent cycle collision caused by multi-path inserts.
-        try {
-          final allRows = await _db!.query('period_history', orderBy: 'start_date ASC');
-          DateTime? lastKept;
-          for (final row in allRows) {
-            final dateStr = row['start_date'] as String?;
-            if (dateStr == null) continue;
-            final d = DateTime.tryParse(dateStr);
-            if (d == null) continue;
-            final norm = DateTime(d.year, d.month, d.day);
-            if (lastKept != null && norm.difference(lastKept).inDays.abs() < 14) {
-              // This entry is too close to the previous kept entry -- delete it (it's a duplicate bleed day)
-              await _db!.delete('period_history', where: 'id = ?', whereArgs: [row['id']]);
-            } else {
-              lastKept = norm;
-            }
-          }
-        } catch (_) {}
+        await selfHealAdjacentCycles();
         // Automatic lossless migration of legacy period starts from log_entries (VISION Pillar Nine)
         await migrateLegacyPeriodStarts();
+        // Post-migration self-heal to guarantee zero collisions from legacy logs
+        await selfHealAdjacentCycles();
         // Automatic resolution of historical bleed durations and cycle lengths
         await migrateHistoricalCycleIntegrity();
+        // Automatic cleanup of ghost symptoms accidentally stamped on historical cycle anchors
+        await selfHealGhostSymptomsOnHistoricalAnchors();
       }
     } catch (e) {
       _db = null;
@@ -165,7 +153,7 @@ class StorageService {
     } catch (_) {}
   }
 
-  static Future<List<LogEntry>> getLogEntries({int limit = 90}) async {
+  static Future<List<LogEntry>> getLogEntries({int limit = 1825}) async {
     if (_db == null) return []; // graceful degradation
     try {
       final maps = await _db!.query(
@@ -219,6 +207,21 @@ class StorageService {
     }
     // 2. Wipe all SharedPreferences (profile, settings, cache, API key, etc.)
     await _prefs?.clear();
+  }
+
+  /// Atomically wipes local user data (cycles, logs, memories, profile, chat session)
+  /// before restoring a clean snapshot from Cloud Vault.
+  /// Preserves device settings and API keys.
+  static Future<void> wipeLocalUserDataForRestore() async {
+    if (_db != null) {
+      try {
+        await _db!.delete('period_history');
+        await _db!.delete('log_entries');
+        await _db!.delete('luna_memories');
+      } catch (_) {}
+    }
+    await _prefs?.remove('user_profile');
+    await clearLastChatSession();
   }
 
   // ── Settings ──────────────────────────────────────────────────────
@@ -374,6 +377,8 @@ class StorageService {
         entry.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+      // Guarantee zero adjacent collisions after any insert
+      await selfHealAdjacentCycles();
     } catch (_) {}
   }
 
@@ -444,6 +449,68 @@ class StorageService {
     } catch (_) {}
   }
 
+  /// Self-heals period_history by scanning all cycles chronologically and collapsing
+  /// any duplicate entries that are spaced < 14 days apart into the earliest true Day 1.
+  /// Guarantees that multi-path inserts, cloud sync anomalies, or consecutive bleeding days
+  /// never spawn impossible 1-day or sub-14-day cycles.
+  static Future<void> selfHealAdjacentCycles() async {
+    if (_db == null) return;
+    try {
+      final allRows = await _db!.query('period_history', orderBy: 'start_date ASC');
+      DateTime? lastKept;
+      for (final row in allRows) {
+        final dateStr = row['start_date'] as String?;
+        if (dateStr == null) continue;
+        final d = DateTime.tryParse(dateStr);
+        if (d == null) continue;
+        final norm = DateTime(d.year, d.month, d.day);
+        if (lastKept != null && norm.difference(lastKept).inDays.abs() < 14) {
+          // This entry is too close to the previous kept entry (less than 14 days) -- collapse/delete it
+          await _db!.delete('period_history', where: 'id = ?', whereArgs: [row['id']]);
+        } else {
+          lastKept = norm;
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Self-heals log_entries by scanning for any ghost symptom entries that were inadvertently
+  /// created on historical cycle anchor dates (>= 14 days before the latest period start)
+  /// without explicit user notes, where symptoms were copied from today's context.
+  /// Preserves periodStarted flag while clearing uncorroborated biomarkers.
+  static Future<void> selfHealGhostSymptomsOnHistoricalAnchors() async {
+    if (_db == null) return;
+    try {
+      final history = await getPeriodHistory();
+      if (history.length < 2) return;
+      final latestAnchor = history.first.startDate;
+      final allLogs = await getLogEntries(limit: 1825);
+
+      for (final cycle in history.skip(1)) {
+        final cDate = DateTime(cycle.startDate.year, cycle.startDate.month, cycle.startDate.day);
+        if (latestAnchor.difference(cDate).inDays >= 14) {
+          final ghostLog = allLogs.where((l) =>
+            l.date.year == cDate.year &&
+            l.date.month == cDate.month &&
+            l.date.day == cDate.day &&
+            (l.notes == null || l.notes!.isEmpty) &&
+            (l.symptoms.isNotEmpty || l.cramps != null || l.mood != null)
+          ).firstOrNull;
+          if (ghostLog != null) {
+            final cleaned = ghostLog.copyWith(
+              symptoms: [],
+              cramps: CrampLevel.none,
+              mood: null,
+              energyLevel: null,
+              sleepQuality: null,
+            );
+            await saveLogEntry(cleaned);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   static Future<void> clearPeriodHistory() async {
     if (_db == null) return;
     try {
@@ -465,13 +532,18 @@ class StorageService {
 
       if (legacyRows.isEmpty) return;
 
-      // Fetch existing period_history start dates normalized to YYYY-MM-DD
+      // Fetch existing period_history start dates normalized to YYYY-MM-DD and DateTime objects
       final existingRows = await _db!.rawQuery('SELECT start_date FROM period_history');
       final existingDateStrs = <String>{};
+      final existingDates = <DateTime>[];
       for (final r in existingRows) {
         final s = r['start_date'] as String?;
         if (s != null && s.length >= 10) {
           existingDateStrs.add(s.substring(0, 10));
+          final parsed = DateTime.tryParse(s);
+          if (parsed != null) {
+            existingDates.add(DateTime(parsed.year, parsed.month, parsed.day));
+          }
         }
       }
 
@@ -485,7 +557,12 @@ class StorageService {
         final normDate = DateTime(d.year, d.month, d.day);
         final dateKey = normDate.toIso8601String().substring(0, 10);
 
-        // If this date is already within 14 days of an existing cycle start, it is Day 2+ of that cycle
+        // Strict 14-day cycle guard: skip if this date is within 14 days of ANY existing cycle start
+        final isAdjacentToExisting = existingDates.any((ed) => normDate.difference(ed).inDays.abs() < 14);
+        if (isAdjacentToExisting) {
+          continue;
+        }
+
         if (lastCycleStart != null && normDate.difference(lastCycleStart).inDays.abs() < 14) {
           continue;
         }
@@ -503,6 +580,7 @@ class StorageService {
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
           existingDateStrs.add(dateKey);
+          existingDates.add(normDate);
         }
       }
     } catch (_) {}

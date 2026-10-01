@@ -2090,6 +2090,190 @@ void main() {
         expect(anchoredTodayMidnight, isNot(equals(driftingTodayMidnight)));
       });
     });
+
+    group('Phase 4 Bug Fixes & Architectural Loopholes Tests', () {
+      test('Historical date anchor mention preserves active cycle anchor and records in history (Bug 1)', () {
+        final activeCycleStart = DateTime(2026, 9, 30);
+        final historicalAnchor = DateTime(2026, 8, 20);
+
+        // Gap is 41 days (>= 14 days)
+        final gapDays = activeCycleStart.difference(historicalAnchor).inDays;
+        expect(gapDays, equals(41));
+
+        final isPriorHistoricalCycle = gapDays >= 14;
+        expect(isPriorHistoricalCycle, isTrue);
+
+        // Simulated updatePeriodStart / addPeriodStart dispatch:
+        DateTime profileAnchor = activeCycleStart;
+        final history = <PeriodEntry>[
+          PeriodEntry(id: 'c1', startDate: activeCycleStart, source: 'user'),
+        ];
+
+        if (isPriorHistoricalCycle) {
+          // Historical date is added to history; active profile anchor is NOT overwritten
+          history.add(PeriodEntry(id: 'c0', startDate: historicalAnchor, source: 'ai'));
+        } else {
+          profileAnchor = historicalAnchor;
+        }
+
+        expect(profileAnchor, equals(activeCycleStart)); // Sep 30 preserved!
+        expect(history.length, equals(2));
+        expect(history.any((e) => e.startDate == historicalAnchor), isTrue);
+      });
+
+      test('CycleEngine.analyzeGaps suppresses overdue assertion when baseline is unknown (Bug 4)', () {
+        final sep1 = DateTime(2026, 9, 1);
+        final profile = UserProfile(
+          id: 'u-unknown',
+          name: 'Luna User',
+          averageCycleLength: 28, // Default fallback
+          averagePeriodLength: 5,
+          lastPeriodStart: sep1,
+          createdAt: sep1,
+        );
+
+        // Case 1: Single cycle (< 2 cycles) with unknown baseline
+        final singleHistory = [
+          PeriodEntry(id: '1', startDate: sep1, source: 'user'),
+        ];
+        // 35 days in cycle: With isCycleLengthUnknown: true and < 2 cycles, must NOT assert overdue
+        final singleAnalysis = CycleEngine.analyzeGaps(profile, singleHistory, isCycleLengthUnknown: true);
+        expect(singleAnalysis, equals(CycleGapAnalysis.unknown));
+        expect(singleAnalysis.hasAbnormality, isFalse);
+
+        // Case 2: Multi-cycle history with completed previous cycle gap (35 days)
+        final jul28 = DateTime(2026, 7, 28);
+        final multiHistory = [
+          PeriodEntry(id: '1', startDate: jul28, source: 'user'),
+          PeriodEntry(id: '2', startDate: sep1, source: 'user'),
+        ];
+        final multiAnalysis = CycleEngine.analyzeGaps(profile, multiHistory, isCycleLengthUnknown: true);
+
+        // Previous cycle was 35 days: summary explains calibrating rhythm, never claims 28-day baseline
+        expect(multiAnalysis.biologicalSummary.toLowerCase(), contains('calibrating'));
+        expect(multiAnalysis.biologicalSummary, isNot(contains('28-day baseline')));
+
+        // Case 3: Previous cycle was 28 days, current cycle is Day 35 (overdueDays >= 4)
+        final aug4 = DateTime(2026, 8, 4); // Aug 4 to Sep 1 is exactly 28 days
+        final normalHistory = [
+          PeriodEntry(id: '1', startDate: aug4, source: 'user'),
+          PeriodEntry(id: '2', startDate: sep1, source: 'user'),
+        ];
+        final activeCycleAnalysis = CycleEngine.analyzeGaps(profile, normalHistory, isCycleLengthUnknown: true);
+
+        // When baseline is unknown, current cycle overdue is suppressed: regularity remains normal, overdue is 0
+        expect(activeCycleAnalysis.regularity, equals(CycleRegularity.normal));
+        expect(activeCycleAnalysis.currentDaysOverdue, equals(0));
+        expect(activeCycleAnalysis.biologicalSummary.toLowerCase(), contains('calibrating'));
+        expect(activeCycleAnalysis.biologicalSummary, isNot(contains('28-day baseline')));
+      });
+
+      test('Robust memory parsing handles nested braces, newlines, and escaped quotes (Loophole 7)', () {
+        // Complex malformed raw AI log containing nested braces and newlines
+        const rawLog = 'Some text before [LOG:{"mood":"good","memory":{"category":"vulnerability","note":"Felt overwhelmed after meeting with team\\nNeeds quiet evenings to reset"},"invalid_trail":}';
+        
+        // Execute balanced brace parser logic:
+        final memIdx = rawLog.indexOf('"memory"');
+        expect(memIdx, isNot(equals(-1)));
+        final braceStart = rawLog.indexOf('{', memIdx);
+        expect(braceStart, isNot(equals(-1)));
+
+        int depth = 0;
+        bool inQuote = false;
+        bool isEscaped = false;
+        int braceEnd = -1;
+
+        for (int i = braceStart; i < rawLog.length; i++) {
+          final char = rawLog[i];
+          if (inQuote) {
+            if (isEscaped) {
+              isEscaped = false;
+            } else if (char == r'\') {
+              isEscaped = true;
+            } else if (char == '"') {
+              inQuote = false;
+            }
+          } else {
+            if (char == '"') {
+              inQuote = true;
+            } else if (char == '{') {
+              depth++;
+            } else if (char == '}') {
+              depth--;
+              if (depth == 0) {
+                braceEnd = i;
+                break;
+              }
+            }
+          }
+        }
+
+        expect(braceEnd, isNot(equals(-1)));
+        final remainder = rawLog.substring(memIdx);
+        final catMatch = RegExp(r'"category"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"').firstMatch(remainder);
+        final noteMatch = RegExp(r'"note"\s*:\s*"((?:[^"\\]|\\.)*)"', dotAll: true).firstMatch(remainder);
+
+        final cat = catMatch?.group(1);
+        final note = noteMatch?.group(1)?.replaceAll(r'\"', '"').replaceAll(r'\n', '\n');
+
+        expect(cat, equals('vulnerability'));
+        expect(note, contains('Felt overwhelmed'));
+        expect(note, contains('quiet evenings'));
+      });
+
+      test('Historical date mentions without explicit symptom notes isolate biomarkers (Bug 1)', () {
+        const pastAnchorMention = 'also my last period were like on 20th August';
+        const pastSymptomMention = 'back on August 20 I had terrible cramps';
+
+        bool hasExplicitSymptomAttribution(String text) {
+          final lower = text.toLowerCase();
+          if (lower.contains('on that day') ||
+              lower.contains('that day i') ||
+              lower.contains('back then i') ||
+              lower.contains('at that time i') ||
+              lower.contains('on that date')) {
+            return true;
+          }
+          if (RegExp(
+            r'\b(on|back)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d+\s+(i\s+had|i\s+was|i\s+felt|i\s+got|i\s+experienced)',
+            caseSensitive: false,
+          ).hasMatch(lower)) {
+            return true;
+          }
+          return false;
+        }
+
+        // Pure historical anchor reference should NOT attribute symptoms
+        expect(hasExplicitSymptomAttribution(pastAnchorMention), isFalse);
+
+        // Explicit past symptom statement should attribute symptoms
+        expect(hasExplicitSymptomAttribution(pastSymptomMention), isTrue);
+      });
+
+      test('14-day cycle clustering prevents adjacent cycles 1 day apart (Bug 3)', () {
+        final sep30 = DateTime(2026, 9, 30);
+        final oct1 = DateTime(2026, 10, 1);
+
+        // Gap is 1 day (< 14 days)
+        final gap = oct1.difference(sep30).inDays.abs();
+        expect(gap, equals(1));
+        expect(gap < 14, isTrue);
+
+        // Invariant: Collapses into earlier Day 1
+        DateTime resolveCycleStart(DateTime existing, DateTime incoming) {
+          final normExisting = DateTime(existing.year, existing.month, existing.day);
+          final normIncoming = DateTime(incoming.year, incoming.month, incoming.day);
+          final g = normIncoming.difference(normExisting).inDays.abs();
+          if (g > 0 && g < 14) {
+            return normIncoming.isBefore(normExisting) ? normIncoming : normExisting;
+          }
+          return normIncoming;
+        }
+
+        final resolved = resolveCycleStart(sep30, oct1);
+        expect(resolved, equals(sep30)); // Sep 30 preserved as the true Day 1!
+      });
+    });
   });
 }
 

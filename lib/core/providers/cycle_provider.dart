@@ -288,6 +288,19 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
       return;
     }
 
+    // If oldDate was NOT explicitly provided, check if normNew is >= 14 days away from ALL existing entries.
+    // If it is, this is a separate historical cycle (e.g. August 20 when latest is Sep 30), NOT an edit of the current cycle!
+    if (oldDate == null) {
+      final nearby = state.where((p) {
+        final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
+        return (pNorm.difference(normNew).inDays.abs()) < 14;
+      }).firstOrNull;
+      if (nearby == null) {
+        await addPeriodStart(normNew, source: 'historical');
+        return;
+      }
+    }
+
     // Find the target entry to correct
     final target = state.where((p) =>
         p.startDate.year == normOld!.year &&
@@ -299,11 +312,11 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
         }).firstOrNull ??
         state.first;
 
-    // Clean up any accidental entries strictly AFTER normNew in the same cycle
+    // Clean up any accidental entries strictly AFTER normNew in the same cycle (< 14 days)
     if (target.id == state.first.id) {
       final phantomLater = state.where((p) {
         final pNorm = DateTime(p.startDate.year, p.startDate.month, p.startDate.day);
-        return p.id != target.id && pNorm.isAfter(normNew);
+        return p.id != target.id && pNorm.isAfter(normNew) && pNorm.difference(normNew).inDays < 14;
       }).toList();
       for (final p in phantomLater) {
         await StorageService.deletePeriodEntry(p.id);
@@ -320,7 +333,7 @@ class PeriodHistoryNotifier extends StateNotifier<List<PeriodEntry>> {
     if (previousNormOld.year != normNew.year ||
         previousNormOld.month != normNew.month ||
         previousNormOld.day != normNew.day) {
-      final allLogs = await StorageService.getLogEntries(limit: 365);
+      final allLogs = await StorageService.getLogEntries(limit: 1825);
       final orphanEntry = allLogs.where((e) =>
           e.date.year == previousNormOld.year &&
           e.date.month == previousNormOld.month &&

@@ -572,13 +572,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               final newId = controller.text.trim();
               if (newId.isNotEmpty) {
                 await StorageService.setCloudSyncId(newId);
+                if (mounted) setState(() {});
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: Text(
+              'Save ID',
+              style: GoogleFonts.dmSans(
+                color: colors.onSurface.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newId = controller.text.trim();
+              if (newId.isNotEmpty) {
+                await StorageService.setCloudSyncId(newId);
                 await CloudGroundTruthService.syncAll(explicitSyncId: newId);
                 if (mounted) setState(() {});
               }
               if (ctx.mounted) Navigator.pop(ctx);
             },
             child: Text(
-              'Save & Sync',
+              'Save & Backup',
               style: GoogleFonts.dmSans(
                 color: colors.accent,
                 fontWeight: FontWeight.w600,
@@ -779,41 +796,175 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ── 7. About Luna dialog ─────────────────────────────────────────────────────
 
-  void _showAboutDialog(PhaseColors colors) {
-    showDialog(
+  void _showAboutLunaSheet(PhaseColors colors) {
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: colors.surface,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'About Luna 🌙',
-          style: GoogleFonts.cormorantGaramond(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: colors.onSurface,
-          ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border.all(color: colors.primary.withValues(alpha: 0.2)),
         ),
-        content: Text(
-          'Luna is a cycle companion built with love, here to help you understand '
-          'your body, honour your rhythms, and show up for yourself every '
-          'single day.\n\nAll your data stays on your device.\n\nVersion 1.1.24.55',
-          style: GoogleFonts.dmSans(
-            fontSize: 14,
-            color: colors.onSurface.withValues(alpha: 0.7),
-            height: 1.6,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Close',
-              style: GoogleFonts.dmSans(color: colors.accent),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [colors.primary, colors.secondary],
+                    ),
+                  ),
+                  child: const Center(
+                    child: Text('🌙', style: TextStyle(fontSize: 26)),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Luna',
+                        style: GoogleFonts.cormorantGaramond(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                      Text(
+                        'v1.1.24.61',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Luna is an intimate, scientifically grounded companion designed to honor and demystify your natural biological rhythms.',
+              style: GoogleFonts.dmSans(
+                fontSize: 14,
+                color: colors.onSurface.withValues(alpha: 0.8),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildAboutPillar(
+              icon: Icons.lock_outline_rounded,
+              title: '100% Private & Device-Owned',
+              desc: 'Your logs and period dates live strictly on your device. Zero tracking, zero third-party data brokers.',
+              colors: colors,
+            ),
+            const SizedBox(height: 12),
+            _buildAboutPillar(
+              icon: Icons.biotech_outlined,
+              title: 'Endocrinology-First Science',
+              desc: 'No artificial 28-day assumptions. Luna respects your real biology, whether your rhythm is 21, 35, or 45 days.',
+              colors: colors,
+            ),
+            const SizedBox(height: 12),
+            _buildAboutPillar(
+              icon: Icons.favorite_outline_rounded,
+              title: 'Intimate Neural Memory',
+              desc: 'Luna remembers your emotional context, pain patterns, and vulnerabilities with deep, gentle empathy.',
+              colors: colors,
+            ),
+            const SizedBox(height: 12),
+            _buildAboutPillar(
+              icon: Icons.cloud_done_outlined,
+              title: 'Offline-First & Cloud Vault',
+              desc: 'Works completely offline. Optional encrypted cloud backup allows seamless restoration across devices.',
+              colors: colors,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(
+                  'Close',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildAboutPillar({
+    required IconData icon,
+    required String title,
+    required String desc,
+    required PhaseColors colors,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: colors.accent),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                desc,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  color: colors.onSurface.withValues(alpha: 0.65),
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -965,15 +1116,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 20),
 
-          // ── About section ─────────────────────────────────────────────────
-          _SectionHeader(label: 'About', colors: colors),
-          _SettingsTile(
-            icon: Icons.favorite_outline,
-            label: 'About Luna',
-            colors: colors,
-            onTap: () => _showAboutDialog(colors),
-          ),
-          const SizedBox(height: 20),
+
 
           // -- Luna's Memory section -------------------------------------------
           _SectionHeader(label: "What Luna Knows", colors: colors),
@@ -1031,6 +1174,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               );
             },
           ),
+          const SizedBox(height: 20),
+
+          // -- About section ---------------------------------------------------
+          _SectionHeader(label: 'About', colors: colors),
+          _SettingsTile(
+            icon: Icons.favorite_outline,
+            label: 'About Luna',
+            sublabel: 'v1.1.24.61 · Philosophy & privacy',
+            colors: colors,
+            onTap: () => _showAboutLunaSheet(colors),
+          ),
           const SizedBox(height: 40),
 
           // ── Secret version footer (tap 5× to open version manager) ────────
@@ -1041,7 +1195,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.only(bottom: 32),
               child: Column(children: [
                 Text(
-                  'Luna v1.1.24.61 (Beta-1)',
+                  'Luna v1.1.24.61',
                   style: GoogleFonts.dmSans(
                     fontSize: 11,
                     color: colors.onSurface.withValues(alpha: 0.18),

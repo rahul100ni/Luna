@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/constants/phase_constants.dart';
 import '../../core/models/log_entry.dart';
 import '../../core/models/luna_memory_entry.dart';
 import '../../core/providers/cycle_provider.dart';
@@ -39,7 +41,8 @@ String _formatPeriodDate(DateTime d) {
 }
 
 class LunaAiScreen extends ConsumerStatefulWidget {
-  const LunaAiScreen({super.key});
+  final String? resume;
+  const LunaAiScreen({super.key, this.resume});
 
   @override
   ConsumerState<LunaAiScreen> createState() => _LunaAiScreenState();
@@ -76,16 +79,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
   final _textController = TextEditingController();
   final _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  bool _showTextInput = false;
   LunaResponse? _response;
   bool _loading = false;
   bool _chatLoading = false;
   bool _chatMode = false;
   bool _showScienceCard = false;
   String? _lastAutoLogSummary;
+  _AutoLogResult? _lastAutoLogResult;
   bool _isCheckInLogExpanded = false;
   final Set<int> _expandedChatLogIndices = {};
   List<_ChatMessage> _chatHistory = [];
+  List<String> _dynamicChips = [];
   DateTime? _pendingPeriodDate;
   DateTime? _pendingStopDate;
   DateTime? _lastPreviousAnchor;
@@ -116,6 +120,10 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
+    if (widget.resume == 'true' || widget.resume == '1') {
+      _chatMode = true;
+    }
+
     // Bug 10 fix: restore last chat session from persistence
     _loadChatHistory();
 
@@ -135,6 +143,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       // If yesterday she said "I know I'll have cramps tomorrow", Luna should
       // proactively open the conversation today -- not wait passively.
       _checkForTimeBoundExpectations();
+      _updateDynamicChips();
     });
   }
 
@@ -172,6 +181,171 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         ));
       });
       _persistChatHistory();
+    }
+  }
+
+  String _getLastChatSnippet() {
+    for (int i = _chatHistory.length - 1; i >= 0; i--) {
+      final msg = _chatHistory[i];
+      final text = msg.text.replaceAll(RegExp(r'\[LOG:.*?\]', dotAll: true), '').trim();
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return 'Tap to continue chatting with Luna';
+  }
+
+  Future<void> _updateDynamicChips() async {
+    final chips = <String>[];
+    final now = DateTime.now();
+
+    // 0. Active conversation context from recent messages in _chatHistory (Phase 4 UX fix)
+    if (_chatHistory.isNotEmpty) {
+      final recentTurns = _chatHistory.reversed.take(4).map((m) => m.text.toLowerCase()).join(' ');
+      if (recentTurns.contains('safe') ||
+          recentTurns.contains('intimat') ||
+          recentTurns.contains('partner') ||
+          recentTurns.contains('ovulat') ||
+          recentTurns.contains('fertile') ||
+          recentTurns.contains('window')) {
+        chips.add('When is my peak fertile window this cycle?');
+        chips.add('Can stress delay my ovulation date?');
+        chips.add('How do hormone shifts affect libido?');
+      }
+      if (recentTurns.contains('cramp') ||
+          recentTurns.contains('pain') ||
+          recentTurns.contains('ache') ||
+          recentTurns.contains('pelvic') ||
+          recentTurns.contains('hurts')) {
+        chips.add('What herbal teas reduce prostaglandins?');
+        chips.add('Should I try magnesium glycinate for cramps?');
+        chips.add('Gentle pelvic stretches that bring relief');
+      }
+      if (recentTurns.contains('food') ||
+          recentTurns.contains('crav') ||
+          recentTurns.contains('eat') ||
+          recentTurns.contains('chocolate') ||
+          recentTurns.contains('sweet')) {
+        chips.add('Healthy alternatives for sugar cravings');
+        chips.add('Iron-rich snacks for bleeding days');
+        chips.add('Does caffeine worsen cramps?');
+      }
+      if (recentTurns.contains('sleep') ||
+          recentTurns.contains('tired') ||
+          recentTurns.contains('exhaust') ||
+          recentTurns.contains('insomnia') ||
+          recentTurns.contains('drained')) {
+        chips.add('Why do progesterone drops disrupt sleep?');
+        chips.add('A calming bedtime wind-down for this phase');
+        chips.add('Should I take a gentle nap today?');
+      }
+      if (recentTurns.contains('anxious') ||
+          recentTurns.contains('cry') ||
+          recentTurns.contains('sensitiv') ||
+          recentTurns.contains('mood') ||
+          recentTurns.contains('stress') ||
+          recentTurns.contains('overwhelm') ||
+          recentTurns.contains('irrita')) {
+        chips.add('How to explain my mood to my partner');
+        chips.add('Is this hormonal or just life stress?');
+        chips.add('A gentle 5-minute breathing reset');
+      }
+      if (recentTurns.contains('date') ||
+          recentTurns.contains('calendar') ||
+          recentTurns.contains('cycle') ||
+          recentTurns.contains('history') ||
+          recentTurns.contains('period')) {
+        chips.add('How does Luna track my rhythm over time?');
+        chips.add('What is normal cycle variation?');
+        chips.add('When should I expect my next phase transition?');
+      }
+    }
+
+    // 1. Time-bound / expectation memories from recent interactions
+    try {
+      final memories = await StorageService.getMemories(limit: 25);
+      for (final mem in memories) {
+        final lower = mem.content.toLowerCase();
+        if (now.difference(mem.createdAt).inHours <= 48) {
+          if (lower.contains('cramp') || lower.contains('pain')) {
+            if (!chips.contains('I have cramps as I mentioned yesterday')) {
+              chips.add('I have cramps as I mentioned yesterday');
+            }
+          } else if (lower.contains('headache') || lower.contains('migraine')) {
+            if (!chips.contains('How can I soothe this headache today?')) {
+              chips.add('How can I soothe this headache today?');
+            }
+          } else if (lower.contains('tired') || lower.contains('exhausted') || lower.contains('fatigue')) {
+            if (!chips.contains('Still feeling low energy like yesterday')) {
+              chips.add('Still feeling low energy like yesterday');
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Today's logged symptoms / biomarkers
+    final todayEntry = ref.read(todayLogProvider);
+    if (todayEntry != null) {
+      if (todayEntry.cramps != null && todayEntry.cramps != CrampLevel.none) {
+        chips.add('Any relief tips for my cramps?');
+      }
+      if (todayEntry.symptoms.contains('Headache')) {
+        chips.add('Natural ways to soothe a headache right now');
+      }
+      if (todayEntry.symptoms.contains('Bloating')) {
+        chips.add('What helps with cycle bloating?');
+      }
+      if (todayEntry.symptoms.contains('Brain fog')) {
+        chips.add('Why do I have brain fog today?');
+      }
+    }
+
+    // 3. Cycle phase context
+    final cycleState = ref.read(cycleStateProvider);
+    final phase = cycleState?.phase ?? CyclePhase.follicular;
+    switch (phase) {
+      case CyclePhase.menstrual:
+        chips.add('What gentle foods are best right now?');
+        chips.add('Comfort stretch ideas for cramps');
+        chips.add('Why is my body so exhausted today?');
+        break;
+      case CyclePhase.follicular:
+        chips.add('Best ways to channel this rising energy');
+        chips.add('What workouts work best in follicular phase?');
+        chips.add('Why does estrogen boost my mood?');
+        break;
+      case CyclePhase.ovulatory:
+        chips.add('Why do I feel so confident today?');
+        chips.add('What are my peak fertile signs right now?');
+        chips.add('Best nutrition for ovulation phase');
+        break;
+      case CyclePhase.earlyLuteal:
+        chips.add('Why am I craving comforting foods?');
+        chips.add('How to keep energy steady in early luteal');
+        chips.add('Tips for focusing on detailed tasks today');
+        break;
+      case CyclePhase.lateLuteal:
+        chips.add('Why am I feeling so sensitive today?');
+        chips.add('Cozy ways to handle PMS emotional dips');
+        chips.add('Is it normal to crave sweets right now?');
+        break;
+    }
+
+    // 4. Default fallbacks if empty
+    if (chips.isEmpty) {
+      chips.addAll([
+        'Why does this phase affect my focus?',
+        'What should I eat right now?',
+        'Can I do a tough workout today?',
+      ]);
+    }
+
+    final unique = chips.toSet().toList();
+    if (mounted) {
+      setState(() {
+        _dynamicChips = unique.take(6).toList();
+      });
     }
   }
 
@@ -244,17 +418,24 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           currentAnchor.month == requestedPeriodDate.month &&
           currentAnchor.day == requestedPeriodDate.day;
       if (!isSameAsAnchor) {
-        previousAnchorForCheckIn = currentAnchor;
-        await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
+        final isPrior = currentAnchor != null &&
+            currentAnchor.difference(requestedPeriodDate).inDays >= 14;
+        if (isPrior) {
+          // Historical cycle: record in history without overwriting active cycle anchor
+          await ref.read(periodHistoryProvider.notifier).addPeriodStart(requestedPeriodDate, source: 'checkin');
+        } else {
+          previousAnchorForCheckIn = currentAnchor;
+          await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
 
-        final currentToday = ref.read(todayLogProvider);
-        final now = _sessionDate;
-        final isToday = requestedPeriodDate.year == now.year &&
-            requestedPeriodDate.month == now.month &&
-            requestedPeriodDate.day == now.day;
-        if (!isToday && currentToday?.periodStarted == true) {
-          final updatedToday = currentToday!.copyWith(periodStarted: false);
-          await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+          final currentToday = ref.read(todayLogProvider);
+          final now = _sessionDate;
+          final isToday = requestedPeriodDate.year == now.year &&
+              requestedPeriodDate.month == now.month &&
+              requestedPeriodDate.day == now.day;
+          if (!isToday && currentToday?.periodStarted == true) {
+            final updatedToday = currentToday!.copyWith(periodStarted: false);
+            await ref.read(logEntriesProvider.notifier).addEntry(updatedToday);
+          }
         }
       }
     }
@@ -323,6 +504,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     setState(() {
       _response = response;
       _lastAutoLogSummary = autoLogResult?.summary;
+      _lastAutoLogResult = autoLogResult;
       _loading = false;
     });
   }
@@ -349,10 +531,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           time: DateTime.now(),
           autoLogNote: _lastAutoLogSummary,
           previousPeriodDate: _lastPreviousAnchor,
+          memoryId: _lastAutoLogResult?.memoryId,
         ),
       ];
       _chatMode = true;
     });
+
+    _updateDynamicChips();
 
     // Persist the initial conversation seed
     _persistChatHistory();
@@ -430,6 +615,13 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
   Future<void> _undoAutoLog(DateTime date, LogEntry? previousEntry, int msgIndex) async {
     await ref.read(logEntriesProvider.notifier).restoreSnapshot(date, previousEntry);
+    if (msgIndex < _chatHistory.length) {
+      final memId = _chatHistory[msgIndex].memoryId;
+      if (memId != null) {
+        await StorageService.deleteMemory(memId);
+        unawaited(CloudGroundTruthService.syncAll());
+      }
+    }
     setState(() {
       if (msgIndex < _chatHistory.length) {
         _chatHistory[msgIndex] = _chatHistory[msgIndex].copyWith(autoLogUndone: true);
@@ -674,8 +866,8 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     // VISION Pillar Ten: Passive meta-data capture -- completely silent background write.
     // Track message length bucket and cycle day so Luna can notice communication
     // rhythm patterns over time (e.g. brief on Day 2, expressive on Day 7).
-    // No UI update. No user-facing display. Pure background intelligence.
-    unawaited(_captureMessageMeta(text));
+    // Awaited to guarantee write commits to SQLite before any process termination.
+    await _captureMessageMeta(text);
 
     final currentAnchor = ref.read(profileProvider)?.lastPeriodStart;
 
@@ -692,8 +884,17 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
     }
 
+    // Historical anchor detection (Bug 1 fix):
+    // If the date is >= 14 days before currentAnchor, it's a PRIOR cycle in history,
+    // NOT an edit or replacement of the current active cycle.
+    final isPriorHistoricalCycle = requestedPeriodDate != null &&
+        currentAnchor != null &&
+        currentAnchor.difference(requestedPeriodDate).inDays >= 14;
+
     final hasOverlappingAnchor = requestedPeriodDate != null &&
         currentAnchor != null &&
+        !isPriorHistoricalCycle &&
+        (currentAnchor.difference(requestedPeriodDate).inDays.abs() < 14) &&
         (currentAnchor.year != requestedPeriodDate.year ||
          currentAnchor.month != requestedPeriodDate.month ||
          currentAnchor.day != requestedPeriodDate.day);
@@ -703,10 +904,15 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     // CRITICAL: !hasOverlappingAnchor was removed -- it allowed AI-hallucinated dates in
     // [LOG:...] tags to silently update the anchor even when the user said nothing about dates.
     final isDirectCommand = requestedPeriodDate != null &&
+        !isPriorHistoricalCycle &&
         (PeriodDateExtractor.isDirectCorrectionCommand(text) || currentAnchor == null);
 
     DateTime? previousAnchorForCommand;
-    if (isDirectCommand) {
+    if (isPriorHistoricalCycle) {
+      // Historical cycle: record in history without overwriting active cycle anchor
+      await ref.read(periodHistoryProvider.notifier).addPeriodStart(requestedPeriodDate, source: 'ai');
+      _pendingPeriodDate = null;
+    } else if (isDirectCommand) {
       previousAnchorForCommand = currentAnchor;
       // Direct explicit user command or no conflicting anchor: apply update immediately
       await ref.read(periodHistoryProvider.notifier).updatePeriodStart(requestedPeriodDate);
@@ -788,7 +994,15 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             })
         .toList();
 
-    if (isDirectCommand) {
+    if (isPriorHistoricalCycle) {
+      final dateStr = _formatPeriodDate(requestedPeriodDate);
+      final currStr = _formatPeriodDate(currentAnchor);
+      conversationMessages.add({
+        'role': 'system',
+        'content':
+            'SYSTEM INSTRUCTION: The user mentioned a prior period date ($dateStr). This is a historical cycle anchor preceding her current cycle which started on $currStr (Day ${cycleState.dayOfCycle}). Her current cycle remains anchored on Day ${cycleState.dayOfCycle} ($currStr). Reassure her that her previous cycle start on $dateStr is recorded in her history, and confirm her current cycle is still on Day ${cycleState.dayOfCycle}. DO NOT claim she is on Day 42 or off-cycle!',
+      });
+    } else if (isDirectCommand) {
       final dateStr = _formatPeriodDate(requestedPeriodDate);
       conversationMessages.add({
         'role': 'system',
@@ -912,6 +1126,20 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       }
     }
 
+    // Historical cycle detection (Bug 1 fix):
+    // If the date is >= 14 days before currentAnchor, it's a PRIOR cycle in history,
+    // NOT an edit or replacement of the current active cycle.
+    final isAiDatePrior = requestedPeriodDate != null &&
+        currentAnchor != null &&
+        currentAnchor.difference(requestedPeriodDate).inDays >= 14;
+    final isPrior = isPriorHistoricalCycle || isAiDatePrior;
+
+    if (isPrior && requestedPeriodDate != null) {
+      await ref.read(periodHistoryProvider.notifier).addPeriodStart(requestedPeriodDate, source: 'ai');
+      _pendingPeriodDate = null;
+      requestedPeriodDate = null; // Do not show confirmation card for prior cycles!
+    }
+
     if (requestedPeriodDate != null) {
       final dateStr = _formatPeriodDate(requestedPeriodDate);
       if (isDirectCommand) {
@@ -955,6 +1183,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           pendingPeriodDate: requestedPeriodDate,
           periodDateConfirmed: isDirectCommand ? true : null,
           previousPeriodDate: isDirectCommand ? previousAnchorForCommand : null,
+          memoryId: autoLogResult?.memoryId,
         ),
       );
       _chatLoading = false;
@@ -962,6 +1191,72 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     // Persist after each new Luna response
     _persistChatHistory();
     _scrollToBottom();
+    await _updateDynamicChips();
+  }
+
+  /// Robust memory extractor that handles nested braces, newlines, escaped quotes,
+  /// and complex punctuation (Loophole 7 fix).
+  static Map<String, String>? _parseMemoryFromRawLog(String rawLog) {
+    if (rawLog.isEmpty) return null;
+    final memIdx = rawLog.indexOf('"memory"');
+    if (memIdx == -1) return null;
+    final braceStart = rawLog.indexOf('{', memIdx);
+    if (braceStart == -1) return null;
+
+    int depth = 0;
+    bool inQuote = false;
+    bool isEscaped = false;
+    int braceEnd = -1;
+
+    for (int i = braceStart; i < rawLog.length; i++) {
+      final char = rawLog[i];
+      if (inQuote) {
+        if (isEscaped) {
+          isEscaped = false;
+        } else if (char == r'\') {
+          isEscaped = true;
+        } else if (char == '"') {
+          inQuote = false;
+        }
+      } else {
+        if (char == '"') {
+          inQuote = true;
+        } else if (char == '{') {
+          depth++;
+        } else if (char == '}') {
+          depth--;
+          if (depth == 0) {
+            braceEnd = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (braceEnd != -1) {
+      final memSubstring = rawLog.substring(braceStart, braceEnd + 1);
+      try {
+        final decoded = jsonDecode(memSubstring) as Map<String, dynamic>;
+        final cat = decoded['category']?.toString().trim();
+        final note = decoded['note']?.toString().trim();
+        if (note != null && note.isNotEmpty) {
+          return {'category': cat ?? 'preference', 'note': note};
+        }
+      } catch (_) {}
+    }
+
+    // Fallback extraction across newlines and escaped quotes
+    final remainder = rawLog.substring(memIdx);
+    final catMatch = RegExp(r'"category"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"').firstMatch(remainder);
+    final noteMatch = RegExp(r'"note"\s*:\s*"((?:[^"\\]|\\.)*)"', dotAll: true).firstMatch(remainder);
+    if (noteMatch != null) {
+      final cat = catMatch?.group(1)?.replaceAll(r'\"', '"');
+      final note = noteMatch.group(1)?.replaceAll(r'\"', '"').replaceAll(r'\n', '\n');
+      if (note != null && note.trim().isNotEmpty) {
+        return {'category': cat ?? 'preference', 'note': note.trim()};
+      }
+    }
+    return null;
   }
 
   /// Returns true if the user explicitly attributes symptoms to a specific past date.
@@ -1312,13 +1607,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
           }
         }
 
-        // Regex fallback for memory nested object (handles malformed JSON where jsonDecode fails)
+        // Robust fallback for memory nested object (handles malformed JSON, nested braces, newlines, escaped quotes)
         if (aiEmittedMemoryNote == null) {
-          final memCatMatch = RegExp(r'"memory"\s*:\s*\{[^}]*"category"\s*:\s*"([^"]+)"').firstMatch(rawAiLog);
-          final memNoteMatch = RegExp(r'"memory"\s*:\s*\{[^}]*"note"\s*:\s*"([^"]+)"').firstMatch(rawAiLog);
-          if (memNoteMatch != null) {
-            aiEmittedMemoryCategory = memCatMatch?.group(1);
-            aiEmittedMemoryNote = memNoteMatch.group(1);
+          final mem = _parseMemoryFromRawLog(rawAiLog);
+          if (mem != null) {
+            aiEmittedMemoryCategory = mem['category'];
+            aiEmittedMemoryNote = mem['note'];
           }
         }
       }
@@ -1453,28 +1747,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       heuristicSymptoms.addAll(corroborated);
     }
 
-    // 3b. MERGE STEP: Resolve final values.
-    // Rule: aiEmitted wins when available (language-agnostic, trusted).
-    // Otherwise use corroborated heuristic value.
-    // Fallback mood (from UI chip) is lowest priority.
-    final bool? detectedPeriodStarted = aiEmittedPeriodStarted ?? heuristicPeriodStarted;
-    final FlowLevel? detectedFlow = aiEmittedFlow ?? heuristicFlow;
-    final CrampLevel? detectedCramps = aiEmittedCramps ?? heuristicCramps;
-    final MoodLevel? detectedMood = aiEmittedMood ?? heuristicMood; // heuristicMood includes fallbackMood
-    final int? detectedEnergy = aiEmittedEnergy ?? heuristicEnergy;
-    final SleepQuality? detectedSleep = aiEmittedSleep ?? heuristicSleep;
-    final String? detectedNotes = aiEmittedNotes;
-    final String? detectedMemoryCategory = aiEmittedMemoryCategory;
-    final String? detectedMemoryNote = aiEmittedMemoryNote;
-
-    // Merge symptoms: AI-emitted symptoms + corroborated heuristic symptoms (deduplicated)
-    for (final s in aiEmittedSymptoms) {
-      if (!detectedSymptoms.contains(s)) detectedSymptoms.add(s);
-    }
-    for (final s in heuristicSymptoms) {
-      if (!detectedSymptoms.contains(s)) detectedSymptoms.add(s);
-    }
-
     // Resolve target date from text or AI output
     final targetResult = PeriodDateExtractor.extractTargetDate(userText);
     if (targetResult.isFuture) {
@@ -1516,6 +1788,43 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       heuristicSleep = null;
       heuristicEnergy = null;
       heuristicSymptoms.clear();
+      detectedSymptoms.clear();
+    }
+
+    // 3b. MERGE STEP: Resolve final values.
+    // Rule: aiEmitted wins when available (language-agnostic, trusted).
+    // Otherwise use corroborated heuristic value.
+    // Fallback mood (from UI chip) is lowest priority.
+    final bool? detectedPeriodStarted = aiEmittedPeriodStarted ?? heuristicPeriodStarted;
+    final FlowLevel? detectedFlow = aiEmittedFlow ?? heuristicFlow;
+    final CrampLevel? detectedCramps = (!isToday && !_hasExplicitSymptomAttributionForDate(userText))
+        ? null
+        : (aiEmittedCramps ?? heuristicCramps);
+    final MoodLevel? detectedMood = (!isToday && !_hasExplicitSymptomAttributionForDate(userText))
+        ? null
+        : (aiEmittedMood ?? heuristicMood); // heuristicMood includes fallbackMood
+    final int? detectedEnergy = (!isToday && !_hasExplicitSymptomAttributionForDate(userText))
+        ? null
+        : (aiEmittedEnergy ?? heuristicEnergy);
+    final SleepQuality? detectedSleep = (!isToday && !_hasExplicitSymptomAttributionForDate(userText))
+        ? null
+        : (aiEmittedSleep ?? heuristicSleep);
+    final String? detectedNotes = (!isToday && !_hasExplicitSymptomAttributionForDate(userText))
+        ? null
+        : aiEmittedNotes;
+    final String? detectedMemoryCategory = aiEmittedMemoryCategory;
+    final String? detectedMemoryNote = aiEmittedMemoryNote;
+
+    // Merge symptoms: AI-emitted symptoms + corroborated heuristic symptoms (deduplicated)
+    if (isToday || _hasExplicitSymptomAttributionForDate(userText)) {
+      for (final s in aiEmittedSymptoms) {
+        if (!detectedSymptoms.contains(s)) detectedSymptoms.add(s);
+      }
+      for (final s in heuristicSymptoms) {
+        if (!detectedSymptoms.contains(s)) detectedSymptoms.add(s);
+      }
+    } else {
+      detectedSymptoms.clear();
     }
 
     // If the log is for a past date, or user specified a specific period date,
@@ -1542,10 +1851,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     }
 
     // 6. Persist memory if captured
+    String? savedMemoryId;
     if (detectedMemoryNote != null && detectedMemoryNote.isNotEmpty) {
+      savedMemoryId = LunaMemoryEntry.newId();
       await StorageService.saveMemory(
         LunaMemoryEntry(
-          id: LunaMemoryEntry.newId(),
+          id: savedMemoryId,
           category: detectedMemoryCategory ?? 'preference',
           content: detectedMemoryNote,
           createdAt: now,  // Use session-anchored now
@@ -1674,6 +1985,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
       summary: fullSummary,
       date: targetDate,
       previousEntry: targetEntry,
+      memoryId: savedMemoryId,
     );
   }
 
@@ -1725,8 +2037,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
               : KeyedSubtree(
                   key: const ValueKey('luna_checkin_mode'),
                   child: Scaffold(
-              backgroundColor: colors.background,
-              body: Stack(
+                    backgroundColor: colors.background,
+                    resizeToAvoidBottomInset: true,
+                    bottomNavigationBar: MediaQuery.of(context).viewInsets.bottom > 0
+                        ? null
+                        : const LunaBottomNav(currentIndex: 2),
+                    body: Stack(
                 children: [
                   // Ambient glow top-right
                   Positioned(
@@ -1868,43 +2184,81 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
                         if (_chatHistory.isNotEmpty && _response == null && !_loading) ...[
                           const SizedBox(height: 16),
-                          Center(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() => _chatMode = true);
-                                _scrollToBottom();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: colors.primary.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(24),
-                                  border: Border.all(color: colors.primary.withValues(alpha: 0.35)),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colors.primary.withValues(alpha: 0.1),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text('💬', style: TextStyle(fontSize: 14)),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Resume conversation with Luna',
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: colors.accent,
+                          GestureDetector(
+                            onTap: () {
+                              setState(() => _chatMode = true);
+                              _scrollToBottom();
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: colors.surface.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: colors.primary.withValues(alpha: 0.25)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: colors.primary.withValues(alpha: 0.08),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: RadialGradient(
+                                        colors: [colors.primary, colors.secondary],
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    Icon(Icons.arrow_forward_rounded, size: 14, color: colors.accent),
-                                  ],
-                                ),
+                                    child: const Center(
+                                      child: Text('💬', style: TextStyle(fontSize: 18)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Previous conversation',
+                                              style: GoogleFonts.dmSans(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: colors.accent,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Jump back in ->',
+                                              style: GoogleFonts.dmSans(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: colors.onSurface.withValues(alpha: 0.5),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _getLastChatSnippet(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 13,
+                                            color: colors.onSurface.withValues(alpha: 0.8),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ).animate().fadeIn(delay: 80.ms),
@@ -1936,7 +2290,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                               return GestureDetector(
                                 onTap: () => setState(() {
                                   _selectedMood = sel ? null : m;
-                                  _showTextInput = false;
                                 }),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 200),
@@ -2030,125 +2383,110 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                             }).toList(),
                           ).animate().fadeIn(delay: 220.ms),
 
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 18),
 
-                          GestureDetector(
-                            onTap: () => setState(() => _showTextInput = !_showTextInput),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: _showTextInput
-                                    ? colors.primary.withValues(alpha: 0.1)
-                                    : colors.surface.withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: _showTextInput
-                                      ? colors.primary.withValues(alpha: 0.4)
-                                      : colors.onSurface.withValues(alpha: 0.06),
-                                ),
+                          // Organic free-flowing input card
+                          Container(
+                            decoration: BoxDecoration(
+                              color: colors.surface.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: _textController.text.trim().isNotEmpty
+                                    ? colors.accent.withValues(alpha: 0.4)
+                                    : colors.onSurface.withValues(alpha: 0.08),
+                                width: 1,
                               ),
-                              child: Row(children: [
-                                Icon(Icons.edit_outlined, size: 15, color: colors.accent.withValues(alpha: 0.7)),
-                                const SizedBox(width: 10),
-                                Text('Or just tell me what\'s on your mind...',
-                                  style: GoogleFonts.dmSans(fontSize: 13, color: colors.accent.withValues(alpha: 0.7))),
-                              ]),
                             ),
-                          ).animate().fadeIn(delay: 250.ms),
-
-                          if (_showTextInput) ...[
-                            const SizedBox(height: 10),
-                            TextField(
+                            child: TextField(
                               controller: _textController,
-                              autofocus: true,
+                              minLines: 2,
                               maxLines: 4,
                               textInputAction: TextInputAction.send,
                               onChanged: (v) => setState(() {}),
                               onSubmitted: (_) {
-                                if (_textController.text.trim().isNotEmpty && !_loading) {
+                                if ((_selectedMood != null || _textController.text.trim().isNotEmpty) && !_loading) {
+                                  HapticFeedback.mediumImpact();
                                   _checkIn();
                                 }
                               },
                               style: GoogleFonts.dmSans(fontSize: 14, color: colors.onSurface),
                               decoration: InputDecoration(
-                                filled: true, fillColor: colors.surface,
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: colors.accent, width: 1.5)),
-                                hintText: 'Vent, ask, or describe how you feel...',
-                                hintStyle: TextStyle(color: colors.onSurface.withValues(alpha: 0.3), fontSize: 14),
-                                contentPadding: const EdgeInsets.fromLTRB(16, 16, 56, 16),
-                                suffixIcon: _textController.text.isNotEmpty
-                                    ? Padding(
-                                        padding: const EdgeInsets.only(right: 8),
-                                        child: GestureDetector(
-                                          onTap: _loading ? null : _checkIn,
-                                          child: Container(
-                                            margin: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: colors.primary,
-                                              borderRadius: BorderRadius.circular(10),
-                                            ),
-                                            child: _loading
-                                                ? const Padding(
-                                                    padding: EdgeInsets.all(4),
-                                                    child: CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                                    ),
-                                                  )
-                                                : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-                                          ),
-                                        ),
-                                      )
-                                    : null,
+                                filled: false,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                hintText: 'Share what you\'re experiencing or ask Luna...',
+                                hintStyle: TextStyle(
+                                  color: colors.onSurface.withValues(alpha: 0.35),
+                                  fontSize: 13.5,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                               ),
-                            ).animate().fadeIn(),
-                          ],
+                            ),
+                          ).animate().fadeIn(delay: 240.ms),
 
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 22),
 
-                          // CTA: Talk to Luna
+                          // Single responsive CTA: Talk to Luna
                           GestureDetector(
-                            onTap: (_selectedMood != null || _textController.text.isNotEmpty) && !_loading
-                                ? _checkIn
+                            onTap: (_selectedMood != null || _textController.text.trim().isNotEmpty) && !_loading
+                                ? () {
+                                    HapticFeedback.mediumImpact();
+                                    _checkIn();
+                                  }
                                 : null,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(vertical: 18),
                               decoration: BoxDecoration(
-                                gradient: (_selectedMood != null || _textController.text.isNotEmpty)
+                                gradient: (_selectedMood != null || _textController.text.trim().isNotEmpty)
                                     ? LinearGradient(colors: [colors.primary, colors.secondary])
                                     : null,
-                                color: (_selectedMood != null || _textController.text.isNotEmpty)
-                                    ? null : colors.surface.withValues(alpha: 0.5),
+                                color: (_selectedMood != null || _textController.text.trim().isNotEmpty)
+                                    ? null
+                                    : colors.surface.withValues(alpha: 0.4),
                                 borderRadius: BorderRadius.circular(18),
-                                boxShadow: (_selectedMood != null || _textController.text.isNotEmpty)
-                                    ? [BoxShadow(color: colors.primary.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 6))]
+                                boxShadow: (_selectedMood != null || _textController.text.trim().isNotEmpty)
+                                    ? [
+                                        BoxShadow(
+                                          color: colors.primary.withValues(alpha: 0.35),
+                                          blurRadius: 20,
+                                          offset: const Offset(0, 6),
+                                        )
+                                      ]
                                     : [],
                               ),
                               child: _loading
                                   ? const Center(
                                       child: SizedBox(
-                                        width: 22, height: 22,
+                                        width: 22,
+                                        height: 22,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
                                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                         ),
                                       ),
                                     )
-                                  : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                      const Text('🌙', style: TextStyle(fontSize: 18)),
-                                      const SizedBox(width: 10),
-                                      Text('Talk to Luna',
-                                        style: GoogleFonts.dmSans(
-                                          fontSize: 16, fontWeight: FontWeight.w600,
-                                          color: (_selectedMood != null || _textController.text.isNotEmpty)
-                                              ? Colors.white : colors.onSurface.withValues(alpha: 0.3),
-                                        )),
-                                    ]),
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Text('🌙', style: TextStyle(fontSize: 18)),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          'Talk to Luna',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: (_selectedMood != null || _textController.text.trim().isNotEmpty)
+                                                ? Colors.white
+                                                : colors.onSurface.withValues(alpha: 0.3),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                             ),
-                          ).animate().fadeIn(delay: 300.ms),
+                          ).animate().fadeIn(delay: 280.ms),
                         ],
 
                         // Loading state
@@ -2333,7 +2671,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                                     _selectedSymptoms.clear();
                                     _textController.clear();
                                     _showScienceCard = false;
-                                    _showTextInput = false;
                                     _lastUserText = '';
                                     _lastAutoLogSummary = null;
                                     _isCheckInLogExpanded = false;
@@ -2367,12 +2704,6 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                 ),
               ],
             ),
-          ),
-          const Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: LunaBottomNav(currentIndex: 2),
           ),
         ],
       ),
@@ -2489,27 +2820,21 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                   ),
                 ),
 
-                // Quick suggested conversation chips
-                Container(
-                  height: 32,
-                  margin: const EdgeInsets.only(bottom: 6),
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: [
-                      _buildChatChip(
-                        (cycleState != null && profile?.lastPeriodStart != null && cycleState.dayOfCycle > 0)
-                            ? 'Why does this phase affect my focus?'
-                            : 'Why am I having low energy today?',
-                        colors,
-                      ),
-                      const SizedBox(width: 8),
-                      _buildChatChip('What should I eat right now?', colors),
-                      const SizedBox(width: 8),
-                      _buildChatChip('Can I do a tough workout today?', colors),
-                    ],
+                // Dynamic memory-aware suggestion chips
+                if (_dynamicChips.isNotEmpty)
+                  Container(
+                    height: 36,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _dynamicChips.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        return _buildChatChip(_dynamicChips[index], colors);
+                      },
+                    ),
                   ),
-                ),
 
                 // Input row
                 Container(
@@ -2529,6 +2854,7 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) {
                             if (_chatController.text.trim().isNotEmpty && !_chatLoading) {
+                              HapticFeedback.mediumImpact();
                               _sendChatMessage();
                             }
                           },
@@ -2554,29 +2880,52 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
                       ),
                       const SizedBox(width: 10),
                       GestureDetector(
-                        onTap: _chatLoading ? null : _sendChatMessage,
-                        child: Container(
-                          width: 46, height: 46,
+                        onTap: (_chatController.text.trim().isNotEmpty && !_chatLoading)
+                            ? () {
+                                HapticFeedback.mediumImpact();
+                                _sendChatMessage();
+                              }
+                            : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: LinearGradient(colors: [colors.primary, colors.secondary]),
-                            boxShadow: [
-                              BoxShadow(
-                                color: colors.primary.withValues(alpha: 0.35),
-                                blurRadius: 12,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
+                            gradient: (_chatController.text.trim().isNotEmpty && !_chatLoading)
+                                ? LinearGradient(colors: [colors.primary, colors.accent])
+                                : null,
+                            color: (_chatController.text.trim().isNotEmpty && !_chatLoading)
+                                ? null
+                                : colors.surface.withValues(alpha: 0.6),
+                            boxShadow: (_chatController.text.trim().isNotEmpty && !_chatLoading)
+                                ? [
+                                    BoxShadow(
+                                      color: colors.primary.withValues(alpha: 0.4),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ]
+                                : [],
                           ),
                           child: _chatLoading
-                              ? const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ? Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(colors.accent),
+                                    ),
                                   ),
                                 )
-                              : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                              : Icon(
+                                  Icons.arrow_upward_rounded,
+                                  color: (_chatController.text.trim().isNotEmpty && !_chatLoading)
+                                      ? Colors.white
+                                      : colors.onSurface.withValues(alpha: 0.3),
+                                  size: 22,
+                                ),
                         ),
                       ),
                     ],
@@ -3113,20 +3462,38 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
 
   Widget _buildChatChip(String text, dynamic colors) {
     return GestureDetector(
-      onTap: _chatLoading ? null : () => _sendChatMessage(text),
+      onTap: _chatLoading
+          ? null
+          : () {
+              HapticFeedback.lightImpact();
+              setState(() {
+                _dynamicChips.remove(text);
+              });
+              _sendChatMessage(text);
+              if (_dynamicChips.length < 3) {
+                _updateDynamicChips();
+              }
+            },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: colors.surface.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: colors.onSurface.withValues(alpha: 0.08)),
+          color: colors.surface.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: colors.onSurface.withValues(alpha: 0.1)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
         child: Center(
           child: Text(
             text,
             style: GoogleFonts.dmSans(
-              fontSize: 11,
-              color: colors.accent.withValues(alpha: 0.85),
+              fontSize: 12,
+              color: colors.accent.withValues(alpha: 0.95),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -3295,7 +3662,8 @@ class _AutoLogResult {
   final String summary;
   final DateTime date;
   final LogEntry? previousEntry;
-  const _AutoLogResult({required this.summary, required this.date, this.previousEntry});
+  final String? memoryId;
+  const _AutoLogResult({required this.summary, required this.date, this.previousEntry, this.memoryId});
 }
 
 /// Chat message model
@@ -3311,6 +3679,7 @@ class _ChatMessage {
   final bool? periodDateConfirmed;
   final DateTime? previousPeriodDate;
   final bool periodDateUndone;
+  final String? memoryId;
 
   const _ChatMessage({
     required this.text,
@@ -3324,6 +3693,7 @@ class _ChatMessage {
     this.periodDateConfirmed,
     this.previousPeriodDate,
     this.periodDateUndone = false,
+    this.memoryId,
   });
 
   _ChatMessage copyWith({
@@ -3338,6 +3708,7 @@ class _ChatMessage {
     bool? periodDateConfirmed,
     DateTime? previousPeriodDate,
     bool? periodDateUndone,
+    String? memoryId,
     bool clearPendingPeriodDate = false,
   }) {
     return _ChatMessage(
@@ -3354,6 +3725,7 @@ class _ChatMessage {
       periodDateConfirmed: periodDateConfirmed ?? this.periodDateConfirmed,
       previousPeriodDate: previousPeriodDate ?? this.previousPeriodDate,
       periodDateUndone: periodDateUndone ?? this.periodDateUndone,
+      memoryId: memoryId ?? this.memoryId,
     );
   }
 
@@ -3369,6 +3741,7 @@ class _ChatMessage {
         'periodDateConfirmed': periodDateConfirmed,
         'previousPeriodDate': previousPeriodDate?.toIso8601String(),
         'periodDateUndone': periodDateUndone,
+        'memoryId': memoryId,
       };
 
   factory _ChatMessage.fromMap(Map<String, dynamic> map) => _ChatMessage(
@@ -3391,5 +3764,6 @@ class _ChatMessage {
             ? DateTime.tryParse(map['previousPeriodDate'] as String)
             : null,
         periodDateUndone: map['periodDateUndone'] as bool? ?? false,
+        memoryId: map['memoryId'] as String?,
       );
 }

@@ -85,6 +85,7 @@ class DeepSeekService {
     buffer.writeln("USER CONTEXT & CURRENT BODY LOG:");
     buffer.writeln("- Name: $userName");
 
+    final isUnknownBaseline = StorageService.isCycleLengthUnknown();
     if (!hasCycleAnchor || dayOfCycle <= 0) {
       buffer.writeln(
           "- Cycle Status: Cycle start date has NOT been recorded yet (no period logged).");
@@ -93,8 +94,15 @@ class DeepSeekService {
       buffer.writeln(
           "- ATTITUDE: Be honest and natural: you don't know her cycle scientifically yet, but regardless of that, you are here as her genuine friend: 'I don't have your cycle data yet to break down the hormones, but I'm here right now as your friend. How are you feeling today?' Meet her where she is, without asking cold medical questions.");
     } else {
-      buffer.writeln(
-          "- Cycle Status: Day $dayOfCycle of $cycleLength-day cycle (${phaseInfo.name} Phase)");
+      if (isUnknownBaseline) {
+        buffer.writeln(
+            "- Cycle Status: Day $dayOfCycle (${phaseInfo.name} Phase) -- Baseline cycle length is still calibrating from real history.");
+        buffer.writeln(
+            "- BASELINE MANDATE: She chose 'Luna will figure it out' and has NOT confirmed a baseline cycle length. NEVER tell her she has a '28-day cycle' or '28-day baseline'!");
+      } else {
+        buffer.writeln(
+            "- Cycle Status: Day $dayOfCycle of $cycleLength-day cycle (${phaseInfo.name} Phase)");
+      }
       buffer.writeln("- Biological Phase: ${phaseInfo.name} (${phaseInfo.tagline})");
       buffer.writeln("- Biological Hormone Reality: ${phaseInfo.scienceBody}");
     }
@@ -122,6 +130,9 @@ class DeepSeekService {
         buffer.writeln('- Estimated Ovulation Window: ${fmtDate(ovulationApproxDay)} (approx)');
         buffer.writeln('- Estimated Fertile Window: ${fertileStart.day} ${monthNames[fertileStart.month - 1]} to ${fertileEnd.day} ${monthNames[fertileEnd.month - 1]} ${fertileEnd.year}');
         buffer.writeln('- Estimated Next Period Start: ${fmtDate(nextPeriod)}');
+        if (isUnknownBaseline) {
+          buffer.writeln('- CALIBRATION & ESTIMATES: Because her baseline is still calibrating, ovulation and next period dates are early preliminary estimates based on an average cycle. When discussing dates, explain warmly that these dates are preliminary estimates while Luna learns her rhythm, and NEVER claim a 28-day baseline.');
+        }
       }
       buffer.writeln('- RULE: You are the app and you are always fully aware of real-world dates. When she asks for calendar dates instead of cycle days, map them directly and confidently. NEVER say you do not know the date or ask her what today is.');
     }
@@ -254,7 +265,9 @@ class DeepSeekService {
       buffer.writeln(
           "- DO NOT RE-LOG ALREADY SAVED DATA: The items listed in 'USER'S ALREADY SAVED LOG FOR TODAY' above are ALREADY in the database. NEVER echo or re-emit them in [LOG:...].");
       buffer.writeln(
-          "- HISTORICAL DATE ISOLATION: If the user mentions a past calendar date (e.g. 'my period was on August 20th', 'last month on the 15th') ONLY to clarify a cycle history or anchor, DO NOT copy or apply today's logged symptoms onto that historical date. Symptoms listed under 'ALREADY SAVED LOG FOR TODAY' apply STRICTLY to today. NEVER stamp them onto a historical date unless the user EXPLICITLY says 'on that day I had [symptom]'. A mention of a historical date without explicit per-symptom attribution = cycle anchor update ONLY, zero symptom log for that date.");
+          "- HISTORICAL DATE ISOLATION & ZERO HALLUCINATION: If the user mentions a past calendar date (e.g. 'my period was on August 20th', 'last month on the 15th') ONLY to clarify a cycle history or anchor, DO NOT copy or apply today's logged symptoms onto that historical date. Symptoms listed under 'ALREADY SAVED LOG FOR TODAY' apply STRICTLY to today. NEVER stamp them onto a historical date unless the user EXPLICITLY says 'on that day I had [symptom]'. A mention of a historical date without explicit per-symptom attribution = cycle anchor update ONLY, zero symptom log for that date. NEVER claim she mentioned a specific cycle length (e.g. 'which lines up with that 42-day cycle you mentioned') unless she explicitly stated those exact words!");
+      buffer.writeln(
+          "- PRIOR CYCLE DISTINCTION: If the user is currently on an active cycle (e.g. Day 2 starting Sep 30) and mentions a previous date (e.g. 'also my last period were on 20th August'), understand that August 20 is her PREVIOUS cycle start, NOT a replacement of her current cycle! Do NOT treat her current cycle as Day 42 or say she is off-cycle. Her current cycle started Sep 30; August 20 was the cycle before that.");
       buffer.writeln(
           "- MEMORY-ONLY LOG: If she shares something important that should be remembered (a person, a preference, a life context, a vulnerability) but NO new biomarkers, you CAN and SHOULD still emit [LOG:{\"memory\":{\"category\":\"...\",\"note\":\"...\"}}] as a standalone tag. Do NOT skip memory capture just because there are no biomarkers to log.");
       buffer.writeln(
@@ -286,7 +299,7 @@ class DeepSeekService {
     LongitudinalProfile? patternProfile,
     CycleGapAnalysis? gapAnalysis,
   }) async {
-    final memories = await StorageService.getMemories(limit: 15);
+    final memories = await StorageService.getMemories(limit: 50);
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
       hasCycleAnchor: hasCycleAnchor,
@@ -421,7 +434,7 @@ class DeepSeekService {
     LongitudinalProfile? patternProfile,
     CycleGapAnalysis? gapAnalysis,
   }) async {
-    final memories = await StorageService.getMemories(limit: 25);
+    final memories = await StorageService.getMemories(limit: 50);
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
       hasCycleAnchor: hasCycleAnchor,
@@ -556,7 +569,7 @@ class DeepSeekService {
     LongitudinalProfile? patternProfile,
     CycleGapAnalysis? gapAnalysis,
   }) async {
-    final memories = await StorageService.getMemories(limit: 25);
+    final memories = await StorageService.getMemories(limit: 50);
 
     final systemPrompt = _buildSystemPrompt(
       userName: userName,

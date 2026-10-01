@@ -19,7 +19,7 @@
 
 ## 🎯 Why Luna Exists
 
-Most period-tracking apps treat a woman's body as an advertising asset or a static date counter. Luna was engineered from the ground up as a biological companion — honoring real endocrinology, 100% on-device privacy, and zero paywalls.
+Most period-tracking apps treat a woman's body as an advertising asset or a static date counter. Luna was engineered from the ground up as a biological companion -- honoring real endocrinology, 100% on-device privacy, and zero paywalls.
 
 <p align="center">
   <img src=".github/assets/comparison.svg" alt="Legacy Trackers vs Luna" width="100%" />
@@ -29,7 +29,7 @@ Most period-tracking apps treat a woman's body as an advertising asset or a stat
 
 ## 🎨 The Adaptive Living Design System
 
-Luna has no static dark or light mode. Instead, the entire visual language — ambient radial glows, typography highlights, card surfaces, and navigation accents — dynamically morphs to reflect your real hormonal state:
+Luna has no static dark or light mode. Instead, the entire visual language -- ambient radial glows, typography highlights, card surfaces, and navigation accents -- dynamically morphs to reflect your real hormonal state:
 
 <p align="center">
   <img src=".github/assets/phases.svg" alt="Luna Phase System" width="100%" />
@@ -75,7 +75,7 @@ Luna has no static dark or light mode. Instead, the entire visual language — a
 
 ### 📅 Visual Rhythm Calendar & Context-Aware Tracking
 * **Continuous Period Flow Banding**: Menstrual bleeding days connect horizontally across the calendar grid with smooth, translucent ribbons.
-* **Context-Aware Day 1 Anchoring**: Period started toggles adapt seamlessly to cycle status — no stuck, redundant buttons.
+* **Context-Aware Day 1 Anchoring**: Period started toggles adapt seamlessly to cycle status -- no stuck, redundant buttons.
 * **Adult Energy Slider**: Fast 1–5 interactive slider (*Drained* → *Peak*) to capture biological stamina.
 
 </td>
@@ -97,7 +97,7 @@ Luna has no static dark or light mode. Instead, the entire visual language — a
 * **100% On-Device SQLite**: All cycle entries, symptoms, notes, and profile settings remain exclusively in your phone's encrypted sandbox (`luna.db`).
 * **Play Protect Certified**: Registered under official developer package ID `app.vakya.luna` for clean installs on Android certified devices.
 * **Zero User Tracking**: No Google Analytics, no Facebook SDK, no AppsFlyer, no ad networks.
-* **No Account Mandate**: Launch the app and use it immediately — no phone numbers, passwords, or emails required.
+* **No Account Mandate**: Launch the app and use it immediately -- no phone numbers, passwords, or emails required.
 
 ---
 
@@ -184,7 +184,7 @@ The compiled production binaries will be generated at:
 
 ### 📦 Download Pre-built Release APKs
 Download the latest verified production builds from [GitHub Releases](https://github.com/rahul100ni/Luna/releases):
-* **`Luna-v1.0.0.apk`** *(Recommended)*: Optimized for 64-bit ARM Android devices (~9.5 MB).
+* **`Luna-v1.1.24.61.apk`** *(Recommended)*: Optimized for 64-bit ARM Android devices (~9.7 MB).
 * **`Luna-universal.apk`**: Universal compatibility for all Android devices (~26 MB).
 * **`Luna-armeabi-v7a.apk`**: For legacy 32-bit devices (~9.0 MB).
 * **`Luna-x86_64.apk`**: For Android emulators and Chromebooks (~9.7 MB).

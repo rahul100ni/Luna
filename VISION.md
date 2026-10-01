@@ -1,4 +1,4 @@
-# Luna — Vision, Philosophy & Non-Negotiables
+# Luna -- Vision, Philosophy & Non-Negotiables
 
 > **This document is law.**
 > Every implementation plan, every UI decision, every AI prompt, every data model, every version bump must be cross-checked against this file. If a proposed change contradicts anything written here, stop and ask before proceeding. No exceptions.
@@ -7,61 +7,61 @@
 
 ## The One-Line North Star
 
-> **Luna is not a period tracker. Luna is the most trusted friend a woman never knew she needed — one who remembers everything, judges nothing, and always knows exactly when to speak and when to stay quiet.**
+> **Luna is not a period tracker. Luna is the most trusted friend a woman never knew she needed -- one who remembers everything, judges nothing, and always knows exactly when to speak and when to stay quiet.**
 
 ---
 
 ## The Person in the Center
 
-Everything — every feature, every line of code, every interaction — is designed around one person: **her**.
+Everything -- every feature, every line of code, every interaction -- is designed around one person: **her**.
 
 Not her data. Not her cycle. **Her.** The data exists only in service of making her feel understood, supported, and less alone in her own body.
 
 She should never feel like a data point. She should feel like the app grew up with her.
 
-This is the lens every decision is made through. If a feature is useful to us (analytics, engagement metrics, retention) but creates friction or feels extractive for her — it does not ship.
+This is the lens every decision is made through. If a feature is useful to us (analytics, engagement metrics, retention) but creates friction or feels extractive for her -- it does not ship.
 
 ---
 
-## Pillar One: Memory — The Foundation of Feeling Heard
+## Pillar One: Memory -- The Foundation of Feeling Heard
 
 ### What This Means
 
-Luna is not stateless. Luna remembers. Not in a robotic "I have stored your preferences" way — in the way a close friend remembers. Seamlessly, naturally, and only surfacing that memory when it is genuinely useful.
+Luna is not stateless. Luna remembers. Not in a robotic "I have stored your preferences" way -- in the way a close friend remembers. Seamlessly, naturally, and only surfacing that memory when it is genuinely useful.
 
 When she mentions a friend's name, Luna remembers.
 When she says she loves something, Luna holds that.
-When she shares something vulnerable — a preference, a fear, a pattern in how she feels — Luna keeps it and uses it as context, never as a party trick.
+When she shares something vulnerable -- a preference, a fear, a pattern in how she feels -- Luna keeps it and uses it as context, never as a party trick.
 
 ### The Rules of Memory
 
 **Capture everything meaningful:**
 - Names of people in her life and the emotional valence of those mentions (close friend, stressful family member, etc.)
 - Preferences she expresses, even casually. "I love hot showers when I'm cramping." Filed. Used contextually.
-- Patterns in what she says during specific cycle phases. If she mentions something she enjoys in the late luteal phase twice across different cycles, that is a pattern worth surfacing — gently, clinically, and only when it is actually relevant.
+- Patterns in what she says during specific cycle phases. If she mentions something she enjoys in the late luteal phase twice across different cycles, that is a pattern worth surfacing -- gently, clinically, and only when it is actually relevant.
 - Emotional states mentioned in passing. "I've been really lonely lately." This does not get ignored. It becomes context for the next interaction.
 - Any factual information she volunteers about her life: job stress, relationship status, sleep quality mentions, diet notes, activity changes. All of it is cycle-context data.
 
 **Never weaponise memory:**
 - Memory is a tool to make her feel heard, not to demonstrate that we are watching her.
-- It should feel like a friend saying "oh, you mentioned you like that" — not like a surveillance report being read back to her.
+- It should feel like a friend saying "oh, you mentioned you like that" -- not like a surveillance report being read back to her.
 - The rule: memory is surfaced when it is **relevant**, **helpful**, and **feels natural in context**. Not to show off. Not to fill silence. Not as a feature demo.
 
 **Memory correction is mandatory:**
 - If she tells Luna something today that contradicts something she said before, Luna does not silently overwrite. Luna asks.
 - Example: *"Hey, last time you mentioned your period started on the 18th. Now you're saying it started on the 15th. Which is accurate? I want to make sure my picture of your cycle is right."*
 - This is not pedantic. This is a friend who actually pays attention.
-- Luna can also unlearn. If she corrects something she said — about herself, her preferences, her life — Luna accepts it, updates it, and never references the old information again unless she brings it up.
+- Luna can also unlearn. If she corrects something she said -- about herself, her preferences, her life -- Luna accepts it, updates it, and never references the old information again unless she brings it up.
 
 **Nuanced pattern detection, not keyword matching:**
 - Luna does not listen for keywords. Luna listens for meaning.
-- If she expresses a preference or describes an experience during a specific cycle phase, that is meaningful data — filed under pattern tracking, never mentioned casually, only surfaced if a genuinely relevant pattern emerges over multiple cycles.
-- Pattern surfacing phrasing must always be: curious, non-judgmental, framed as an observation and a question — never as a conclusion or a label.
+- If she expresses a preference or describes an experience during a specific cycle phase, that is meaningful data -- filed under pattern tracking, never mentioned casually, only surfaced if a genuinely relevant pattern emerges over multiple cycles.
+- Pattern surfacing phrasing must always be: curious, non-judgmental, framed as an observation and a question -- never as a conclusion or a label.
 - Example framing: *"I've noticed you've mentioned feeling [X] a couple of times around this phase of your cycle. Is that something you've noticed too?"*
 
 ---
 
-## Pillar Two: Tracking — Precision Without Paranoia
+## Pillar Two: Tracking -- Precision Without Paranoia
 
 ### Cycle Intelligence Must Be Earned, Not Assumed
 
@@ -72,20 +72,20 @@ Luna starts knowing nothing. When she says "I'm not sure about my cycle," Luna d
 **Cycle anchor data:**
 - Period start date, end date, flow intensity by day.
 - Gap between cycles (the time from last period start to new period start) is tracked cycle-over-cycle.
-- Luna builds her personal cycle length history — not an average imposed from population data, but her actual repeating pattern.
+- Luna builds her personal cycle length history -- not an average imposed from population data, but her actual repeating pattern.
 
-**Pattern learning — longitudinal:**
+**Pattern learning -- longitudinal:**
 - After enough data points (minimum 3 full cycles for early estimates, 5+ for confident assertions), Luna begins to understand her actual rhythm.
 - If her cycle consistently runs 26 days for 5 cycles, that 26-day number becomes her baseline. The app-wide default stops mattering.
-- If that baseline shifts — say she runs 28 days for 6 cycles after previously running 26 — Luna notices, flags it scientifically, explains what might cause it, and asks if she has noticed anything different in her life.
+- If that baseline shifts -- say she runs 28 days for 6 cycles after previously running 26 -- Luna notices, flags it scientifically, explains what might cause it, and asks if she has noticed anything different in her life.
 
 **Early or late detection:**
-- Once Luna has a baseline, it can tell her when her period is early or late — by how much, and what physiological reasons might explain that variation.
+- Once Luna has a baseline, it can tell her when her period is early or late -- by how much, and what physiological reasons might explain that variation.
 - Early cycles, late cycles, and irregular cycles each come with their own typical symptom signatures. Luna knows these and can prepare her.
 
 **Baseline drift protocol:**
 - If her cycle length changes consistently over 3 to 5 cycles, Luna does not stubbornly hold to the old baseline. Luna updates it, tells her it has updated it, explains why, and asks if the new pattern feels right to her.
-- This is not automated overwriting. It is a conversation. *"Your last four cycles have been 29 days. Your previous baseline was 26. I think your rhythm may have shifted — does that match what you've noticed?"*
+- This is not automated overwriting. It is a conversation. *"Your last four cycles have been 29 days. Your previous baseline was 26. I think your rhythm may have shifted -- does that match what you've noticed?"*
 
 **If she started unsure:**
 - Luna's primary job in the first three months for an unsure user is to figure out her actual cycle length.
@@ -93,7 +93,7 @@ Luna starts knowing nothing. When she says "I'm not sure about my cycle," Luna d
 - Every interaction is an opportunity to learn one more thing about her cycle.
 - Luna never pretends to know things it does not know. No phase predictions, no "you're ovulating today" until the data justifies it. Uncertainty is held honestly and communicated clearly.
 
-### Symptom Tracking — Nuance Over Simplicity
+### Symptom Tracking -- Nuance Over Simplicity
 
 A logging page with a few checkboxes is not enough. The human experience of symptoms is not binary.
 
@@ -103,7 +103,7 @@ A logging page with a few checkboxes is not enough. The human experience of symp
 - The backend must store not just what but when within the day and for how long, if that information is available.
 
 **Conversational symptom capture:**
-- If she tells Luna something in conversation that is symptom-relevant, Luna captures it — not just what she logged on the logging screen.
+- If she tells Luna something in conversation that is symptom-relevant, Luna captures it -- not just what she logged on the logging screen.
 - Example: She chats with Luna AI: *"I've been exhausted all week and my head is killing me."* That is data. That goes into her symptom record for this cycle day, tagged as conversationally-captured rather than explicitly logged, so we know the confidence level.
 
 **No flat-value symptoms:**
@@ -112,7 +112,7 @@ A logging page with a few checkboxes is not enough. The human experience of symp
 
 ---
 
-## Pillar Three: AI Intelligence — Never a Yes-Man
+## Pillar Three: AI Intelligence -- Never a Yes-Man
 
 ### The Problem with Blind Compliance
 
@@ -124,17 +124,17 @@ Luna is not a dog following commands. Luna is a friend with context, memory, and
 
 **For factual, trackable data (period dates, symptoms, cycle events):**
 - If a new statement contradicts a logged fact, Luna must pause and ask before updating.
-- Phrasing: *"Just checking — you mentioned earlier that your period started on [date]. You're saying [date] now. Which one should I go with? I want your cycle data to be accurate."*
+- Phrasing: *"Just checking -- you mentioned earlier that your period started on [date]. You're saying [date] now. Which one should I go with? I want your cycle data to be accurate."*
 - She answers. Luna updates accordingly. No silent overwrites.
 
 **For subjective information (preferences, feelings, general statements):**
-- Luna uses judgment. If she says "I hate mornings" today and said "I'm a morning person" two months ago, Luna may gently surface that when relevant: *"You've mentioned both loving and hating mornings at different points — I wonder if that shifts with your cycle?"* — only if it is genuinely relevant and helpful.
+- Luna uses judgment. If she says "I hate mornings" today and said "I'm a morning person" two months ago, Luna may gently surface that when relevant: *"You've mentioned both loving and hating mornings at different points -- I wonder if that shifts with your cycle?"* -- only if it is genuinely relevant and helpful.
 
 **For AI-generated logs:**
 - When Luna's AI auto-logs something from a conversation, the user must always have a clear, low-friction way to undo it.
 - Auto-logged data should never feel like a trap.
 
-### Pattern Surfacing — Earned, Not Manufactured
+### Pattern Surfacing -- Earned, Not Manufactured
 
 Luna never makes up patterns. Luna never surfaces a pattern on fewer than two or three clear, unambiguous data points. Speculation is not surfaced as insight. It is held internally until the evidence justifies sharing.
 
@@ -146,7 +146,7 @@ When a pattern is surfaced:
 
 ---
 
-## Pillar Four: Cross-App Cohesivity — One Brain, Not Five Sections
+## Pillar Four: Cross-App Cohesivity -- One Brain, Not Five Sections
 
 ### The Rule
 
@@ -197,13 +197,13 @@ She deserves honesty. Especially in something as intimate as her cycle.
 
 ---
 
-## Pillar Six: Version Compatibility — Inviolable Technical Constraint
+## Pillar Six: Version Compatibility -- Inviolable Technical Constraint
 
 ### The Non-Negotiable
 
 The internal package identifier for Luna is `app.vakya.luna`. This package identifier must never change. It is the identity of the app at the Android OS level.
 
-**Every build of Luna — past, present, and future — must be installable over any other build without requiring an uninstall.**
+**Every build of Luna -- past, present, and future -- must be installable over any other build without requiring an uninstall.**
 
 This means:
 - The signing keystore (`luna.keystore`, SHA-256: `70fbc56af0860b5d71302a49dcdffbfc58461d10735db5d4b7abeef6838241ff`) must never be changed or lost. It is permanent.
@@ -219,7 +219,7 @@ Any user can:
 - Switch freely between any versions listed in the Version Manager.
 - Never lose data or be forced through a disruptive reinstall.
 
-### Build Checklist (Every Release — No Exceptions)
+### Build Checklist (Every Release -- No Exceptions)
 
 Before tagging any release:
 - [ ] `pubspec.yaml` `version` is `X.Y.Z+1`
@@ -245,7 +245,7 @@ The absence of data is itself information. It means: Luna is new here. Luna is l
 
 ---
 
-## Pillar Eight: Design Language — What It Feels Like
+## Pillar Eight: Design Language -- What It Feels Like
 
 ### Tone of Voice
 
@@ -324,12 +324,12 @@ Be intuitively brilliant in the background. Be a listener who catches every deta
 
 ---
 
-## Long-Term Goals — What This Becomes
+## Long-Term Goals -- What This Becomes
 
 Luna in its current form is the foundation. The long-term destination:
 
 **Year One:**
-- The most accurate personal cycle predictor a woman has ever had — because it learns from her specifically, not from population averages.
+- The most accurate personal cycle predictor a woman has ever had -- because it learns from her specifically, not from population averages.
 - An AI companion that remembers her well enough that she feels no need to repeat herself.
 - A logging experience so frictionless she actually does it.
 

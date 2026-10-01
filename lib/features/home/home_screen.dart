@@ -7,6 +7,7 @@ import '../../core/constants/phase_constants.dart';
 import '../../core/providers/cycle_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/services/cycle_engine.dart';
+import '../../core/services/storage_service.dart';
 import '../../shared/widgets/bottom_nav.dart';
 import '../../shared/widgets/phase_orb.dart';
 import 'widgets/daily_prescription_card.dart';
@@ -143,7 +144,14 @@ class HomeScreen extends ConsumerWidget {
                     _QuickActionsRow(colors: colors)
                         .animate().fadeIn(delay: 150.ms, duration: 400.ms),
 
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 16),
+
+                    // ── Resume Conversation Banner (if active chat exists) ──
+                    if (StorageService.getLastChatSession().isNotEmpty) ...[
+                      _ResumeChatCard(colors: colors)
+                          .animate().fadeIn(delay: 160.ms, duration: 400.ms),
+                      const SizedBox(height: 16),
+                    ],
 
                     if (!dataIsAssumed) ...[
                       // ── What's Happening in Your Body ─────────────────────
@@ -801,6 +809,149 @@ class _ActionItem {
     this.isPrimary = false,
     required this.onTap,
   });
+}
+
+// ── Resume Conversation Card ──────────────────────────────────────────────────
+class _ResumeChatCard extends StatelessWidget {
+  final PhaseColors colors;
+  const _ResumeChatCard({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = StorageService.getLastChatSession();
+    if (raw.isEmpty) return const SizedBox.shrink();
+
+    String? lastSnippet;
+    DateTime? lastTime;
+    for (int i = raw.length - 1; i >= 0; i--) {
+      final msg = raw[i];
+      final text = msg['text'] as String?;
+      if (text != null && text.trim().isNotEmpty) {
+        lastSnippet = text.trim();
+        final timeStr = msg['time'] as String?;
+        if (timeStr != null) {
+          lastTime = DateTime.tryParse(timeStr);
+        }
+        break;
+      }
+    }
+
+    if (lastSnippet == null) return const SizedBox.shrink();
+
+    lastSnippet = lastSnippet.replaceAll(RegExp(r'\[LOG:.*?\]', dotAll: true), '').trim();
+    if (lastSnippet.length > 70) {
+      lastSnippet = '${lastSnippet.substring(0, 67)}...';
+    }
+
+    String timeLabel = 'Recent';
+    if (lastTime != null) {
+      final diff = DateTime.now().difference(lastTime);
+      if (diff.inMinutes < 60) {
+        timeLabel = diff.inMinutes <= 1 ? 'Just now' : '${diff.inMinutes}m ago';
+      } else if (diff.inHours < 24) {
+        timeLabel = '${diff.inHours}h ago';
+      } else if (diff.inDays == 1) {
+        timeLabel = 'Yesterday';
+      } else {
+        timeLabel = '${diff.inDays}d ago';
+      }
+    }
+
+    return GestureDetector(
+      onTap: () => context.push('/luna?resume=true'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: colors.primary.withValues(alpha: 0.22),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colors.primary.withValues(alpha: 0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    colors.primary.withValues(alpha: 0.85),
+                    colors.secondary.withValues(alpha: 0.45),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colors.primary.withValues(alpha: 0.25),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Text('🌙', style: TextStyle(fontSize: 17)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Continue conversation',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        timeLabel,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          color: colors.accent.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '"$lastSnippet"',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      color: colors.onSurface.withValues(alpha: 0.6),
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 13,
+              color: colors.onSurface.withValues(alpha: 0.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Science Teaser ───────────────────────────────────────────────────────────

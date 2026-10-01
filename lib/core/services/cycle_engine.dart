@@ -297,6 +297,10 @@ class CycleEngine {
 
     if (periodHistory == null || periodHistory.length < 2) {
       if (overdueDays >= 4) {
+        if (isCycleLengthUnknown) {
+          // If baseline is unknown and history is insufficient, she cannot be delayed past an unconfirmed baseline!
+          return CycleGapAnalysis.unknown;
+        }
         return CycleGapAnalysis(
           currentDaysOverdue: overdueDays,
           regularity: CycleRegularity.overdue,
@@ -319,13 +323,15 @@ class CycleEngine {
     if (gaps.isEmpty) {
       if (overdueDays >= 4) {
         final overdueText = isCycleLengthUnknown
-            ? 'Current cycle is Day ${overdueDays + baseline + 1}, delayed by $overdueDays days past expected date. Baseline is still calibrating from her real history.'
+            ? 'Current cycle is Day ${overdueDays + baseline + 1}. Baseline rhythm is still calibrating from her real history.'
             : 'Current cycle is Day ${overdueDays + baseline + 1}, delayed by $overdueDays days.';
         return CycleGapAnalysis(
-          currentDaysOverdue: overdueDays,
-          regularity: CycleRegularity.overdue,
+          currentDaysOverdue: isCycleLengthUnknown ? 0 : overdueDays,
+          regularity: isCycleLengthUnknown ? CycleRegularity.normal : CycleRegularity.overdue,
           biologicalSummary: overdueText,
-          clinicalGuidanceDirective: 'Her period is currently $overdueDays days delayed. Address with biological empathy on delayed follicular phase.',
+          clinicalGuidanceDirective: isCycleLengthUnknown
+              ? 'Cycle is in progress. Continue observing rhythm without assuming an overdue state.'
+              : 'Her period is currently $overdueDays days delayed. Address with biological empathy on delayed follicular phase.',
         );
       }
       return CycleGapAnalysis.unknown;
@@ -360,13 +366,18 @@ class CycleEngine {
         clinicalGuidanceDirective: 'Her cycle arrived ${-deviation} days early. Explain the biology: early follicular recruitment, anovulatory cycle, or a shorter luteal phase due to lower progesterone synthesis. Guide her with nourishing foods that support progesterone and nervous system grounding, without sounding clinical or giving generic clichés.',
       );
     } else if (overdueDays >= 4) {
+      final summary = isCycleLengthUnknown
+          ? 'Current cycle is Day ${overdueDays + baseline + 1}. Baseline rhythm is still calibrating from her real history.'
+          : 'Current cycle is Day ${overdueDays + baseline + 1} ($overdueDays days overdue), previous gap was $latestGap days.';
       return CycleGapAnalysis(
         lastCycleGap: latestGap,
         deviationFromBaseline: deviation,
-        currentDaysOverdue: overdueDays,
-        regularity: CycleRegularity.overdue,
-        biologicalSummary: 'Current cycle is Day ${overdueDays + baseline + 1} ($overdueDays days overdue), previous gap was $latestGap days.',
-        clinicalGuidanceDirective: 'Her period is currently $overdueDays days delayed past expected date. Explain endocrinology of delayed ovulation (stress, cortisol, sleep or metabolic shift) rather than generic dos and donts.',
+        currentDaysOverdue: isCycleLengthUnknown ? 0 : overdueDays,
+        regularity: isCycleLengthUnknown ? CycleRegularity.normal : CycleRegularity.overdue,
+        biologicalSummary: summary,
+        clinicalGuidanceDirective: isCycleLengthUnknown
+            ? 'Cycle is in progress. Continue observing rhythm without assuming an overdue state.'
+            : 'Her period is currently $overdueDays days delayed past expected date. Explain endocrinology of delayed ovulation (stress, cortisol, sleep or metabolic shift) rather than generic dos and donts.',
       );
     } else {
       return CycleGapAnalysis(
