@@ -500,7 +500,7 @@ final cycleGapAnalysisProvider = Provider<CycleGapAnalysis>((ref) {
   final profile = ref.watch(profileProvider);
   final history = ref.watch(periodHistoryProvider);
   if (profile == null) return CycleGapAnalysis.unknown;
-  return CycleEngine.analyzeGaps(profile, history);
+  return CycleEngine.analyzeGaps(profile, history, isCycleLengthUnknown: StorageService.isCycleLengthUnknown());
 });
 
 // -- Unknown Period Length State Provider ---------------------------------------
@@ -521,7 +521,8 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
   }
 
   Future<void> _load() async {
-    state = await StorageService.getLogEntries();
+    // Use a generous limit (5 years) to ensure full longitudinal pattern analysis
+    state = await StorageService.getLogEntries(limit: 1825);
     _recomputePeriodLength();
   }
 
@@ -852,7 +853,7 @@ class LogEntriesNotifier extends StateNotifier<List<LogEntry>> {
   }
 
   Future<void> refresh() async {
-    state = await StorageService.getLogEntries();
+    state = await StorageService.getLogEntries(limit: 1825);
   }
 
   LogEntry? get todayEntry {

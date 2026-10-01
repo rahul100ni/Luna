@@ -657,6 +657,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               if (syncKey.isEmpty) return;
               Navigator.pop(ctx);
 
+              // SAFETY: Show a destructive action confirmation before wiping local data.
+              // Restoring from a new Sync ID completely replaces all local records.
+              if (!mounted) return;
+              final confirmed = await showDialog<bool>(
+                context: context,
+                barrierColor: Colors.black.withValues(alpha: 0.7),
+                builder: (confirmCtx) => AlertDialog(
+                  backgroundColor: colors.surface,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  title: Text(
+                    'Replace device data?',
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: colors.onSurface,
+                    ),
+                  ),
+                  content: Text(
+                    'Restoring from this Cloud Vault will replace ALL cycle data, logs, and memories on this device. This prevents mixing different accounts and cannot be undone.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13.5,
+                      color: colors.onSurface.withValues(alpha: 0.65),
+                      height: 1.5,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(confirmCtx, false),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.dmSans(
+                          color: colors.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(confirmCtx, true),
+                      child: Text(
+                        'Replace & Restore',
+                        style: GoogleFonts.dmSans(
+                          color: const Color(0xFFD94F6E),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed != true) return;
+
+              // Capture context-dependent refs BEFORE any additional async gaps
+              if (!mounted) return;
               final scaffoldMessenger = ScaffoldMessenger.of(context);
               scaffoldMessenger.showSnackBar(
                 SnackBar(

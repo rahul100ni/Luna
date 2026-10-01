@@ -193,34 +193,37 @@ class _LunaMemoriesScreenState extends ConsumerState<LunaMemoriesScreen>
 
     return Scaffold(
       backgroundColor: colors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _Header(colors: colors, onBack: () => Navigator.of(context).pop()),
-            _QuoteBar(colors: colors, totalMemories: _memories.length),
-            const SizedBox(height: 12),
-            _SearchBar(controller: _searchController, colors: colors),
-            const SizedBox(height: 12),
-            _CategoryFilterRow(
-              categoryCounts: _categoryCounts,
-              selectedCategory: _filterCategory,
-              colors: colors,
-              onSelect: (cat) => setState(() => _filterCategory = cat == _filterCategory ? null : cat),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: _loading
-                  ? _LoadingShimmer(colors: colors)
-                  : _filtered.isEmpty
-                      ? _EmptyState(colors: colors, hasFilter: _filterCategory != null || _searchQuery.isNotEmpty)
-                      : _MemoryList(
-                          memories: _filtered,
-                          colors: colors,
-                          onDelete: (m) => _deleteMemory(m, colors),
-                          onEdit: (m) => _editMemory(m, colors),
-                        ),
-            ),
-          ],
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(), // Dismiss keyboard on tap outside
+        child: SafeArea(
+          child: Column(
+            children: [
+              _Header(colors: colors, onBack: () => Navigator.of(context).pop()),
+              _QuoteBar(colors: colors, totalMemories: _memories.length),
+              const SizedBox(height: 14),
+              _SearchBar(controller: _searchController, colors: colors),
+              const SizedBox(height: 10),
+              _CategoryFilterRow(
+                categoryCounts: _categoryCounts,
+                selectedCategory: _filterCategory,
+                colors: colors,
+                onSelect: (cat) => setState(() => _filterCategory = cat == _filterCategory ? null : cat),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: _loading
+                    ? _LoadingShimmer(colors: colors)
+                    : _filtered.isEmpty
+                        ? _EmptyState(colors: colors, hasFilter: _filterCategory != null || _searchQuery.isNotEmpty)
+                        : _MemoryList(
+                            memories: _filtered,
+                            colors: colors,
+                            onDelete: (m) => _deleteMemory(m, colors),
+                            onEdit: (m) => _editMemory(m, colors),
+                          ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -360,21 +363,61 @@ class _SearchBar extends StatelessWidget {
         decoration: BoxDecoration(
           color: colors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: colors.onSurface.withValues(alpha: 0.06), width: 0.5),
+          border: Border.all(color: colors.onSurface.withValues(alpha: 0.07), width: 0.8),
         ),
-        child: TextField(
-          controller: controller,
-          style: GoogleFonts.dmSans(fontSize: 13.5, color: colors.onSurface),
-          decoration: InputDecoration(
-            hintText: 'Search memories...',
-            hintStyle: GoogleFonts.dmSans(
-              fontSize: 13.5,
-              color: colors.onSurface.withValues(alpha: 0.3),
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            Icon(Icons.search_rounded, color: colors.onSurface.withValues(alpha: 0.3), size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  color: colors.onSurface,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search what Luna remembers...',
+                  hintStyle: GoogleFonts.dmSans(
+                    fontSize: 13.5,
+                    color: colors.onSurface.withValues(alpha: 0.28),
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                ),
+              ),
             ),
-            prefixIcon: Icon(Icons.search_rounded, color: colors.onSurface.withValues(alpha: 0.35), size: 18),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 12),
-          ),
+            // Clear button -- only visible when typing
+            AnimatedBuilder(
+              animation: controller,
+              builder: (_, __) {
+                if (controller.text.isEmpty) return const SizedBox(width: 14);
+                return GestureDetector(
+                  onTap: () {
+                    controller.clear();
+                    FocusScope.of(context).unfocus();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 10, left: 4),
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: colors.onSurface.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 12,
+                        color: colors.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );

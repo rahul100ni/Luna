@@ -105,6 +105,25 @@ class StorageService {
             )
           ''');
         } catch (_) {}
+        // Self-heal: collapse any period_history entries that are < 14 days apart (keep earliest)
+        // This resolves the Bug 3 adjacent cycle collision caused by multi-path inserts.
+        try {
+          final allRows = await _db!.query('period_history', orderBy: 'start_date ASC');
+          DateTime? lastKept;
+          for (final row in allRows) {
+            final dateStr = row['start_date'] as String?;
+            if (dateStr == null) continue;
+            final d = DateTime.tryParse(dateStr);
+            if (d == null) continue;
+            final norm = DateTime(d.year, d.month, d.day);
+            if (lastKept != null && norm.difference(lastKept).inDays.abs() < 14) {
+              // This entry is too close to the previous kept entry -- delete it (it's a duplicate bleed day)
+              await _db!.delete('period_history', where: 'id = ?', whereArgs: [row['id']]);
+            } else {
+              lastKept = norm;
+            }
+          }
+        } catch (_) {}
         // Automatic lossless migration of legacy period starts from log_entries (VISION Pillar Nine)
         await migrateLegacyPeriodStarts();
         // Automatic resolution of historical bleed durations and cycle lengths
@@ -285,8 +304,9 @@ class StorageService {
   /// the conversation survives navigation away and app restarts.
   static Future<void> saveLastChatSession(
       List<Map<String, dynamic>> messages) async {
-    final trimmed = messages.length > 30
-        ? messages.sublist(messages.length - 30)
+    // Keep last 60 messages so users can scroll back through meaningful history
+    final trimmed = messages.length > 60
+        ? messages.sublist(messages.length - 60)
         : messages;
     await _prefs?.setString('last_chat_session', jsonEncode(trimmed));
   }
@@ -317,6 +337,29 @@ class StorageService {
     try {
       final normDate = DateTime(entry.startDate.year, entry.startDate.month, entry.startDate.day);
       final datePrefix = '${normDate.year.toString().padLeft(4, '0')}-${normDate.month.toString().padLeft(2, '0')}-${normDate.day.toString().padLeft(2, '0')}';
+
+      // 14-DAY CYCLE GAP INVARIANT (Bug 3 fix):
+      // No two period entries may exist within 14 days of each other.
+      // If one arrives within 14 days of an existing entry, keep whichever is earlier (true Day 1).
+      final allExisting = await _db!.query('period_history', orderBy: 'start_date ASC');
+      for (final row in allExisting) {
+        final existingDateStr = row['start_date'] as String?;
+        if (existingDateStr == null) continue;
+        final existingDate = DateTime.tryParse(existingDateStr);
+        if (existingDate == null) continue;
+        final normExisting = DateTime(existingDate.year, existingDate.month, existingDate.day);
+        final gap = normDate.difference(normExisting).inDays.abs();
+        final isSameId = row['id'] == entry.id;
+        if (gap > 0 && gap < 14 && !isSameId) {
+          if (normDate.isBefore(normExisting)) {
+            // New entry is earlier (truer Day 1): delete the conflicting later entry
+            await _db!.delete('period_history', where: 'id = ?', whereArgs: [row['id']]);
+          } else {
+            // Existing entry is earlier (already the true Day 1): silently reject new entry
+            return;
+          }
+        }
+      }
 
       // Remove any conflicting entry for this same calendar day with a different ID
       await _db!.delete(

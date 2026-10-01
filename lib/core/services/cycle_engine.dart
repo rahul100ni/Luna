@@ -281,7 +281,7 @@ class CycleEngine {
         p.startDate.month == n.month && p.startDate.day == n.day);
   }
 
-  static CycleGapAnalysis analyzeGaps(UserProfile profile, List<PeriodEntry>? periodHistory) {
+  static CycleGapAnalysis analyzeGaps(UserProfile profile, List<PeriodEntry>? periodHistory, {bool isCycleLengthUnknown = false}) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final baseline = profile.averageCycleLength;
@@ -318,10 +318,13 @@ class CycleEngine {
 
     if (gaps.isEmpty) {
       if (overdueDays >= 4) {
+        final overdueText = isCycleLengthUnknown
+            ? 'Current cycle is Day ${overdueDays + baseline + 1}, delayed by $overdueDays days past expected date. Baseline is still calibrating from her real history.'
+            : 'Current cycle is Day ${overdueDays + baseline + 1}, delayed by $overdueDays days.';
         return CycleGapAnalysis(
           currentDaysOverdue: overdueDays,
           regularity: CycleRegularity.overdue,
-          biologicalSummary: 'Current cycle is Day ${overdueDays + baseline + 1}, delayed by $overdueDays days.',
+          biologicalSummary: overdueText,
           clinicalGuidanceDirective: 'Her period is currently $overdueDays days delayed. Address with biological empathy on delayed follicular phase.',
         );
       }
@@ -331,12 +334,19 @@ class CycleEngine {
     final latestGap = gaps.last;
     final deviation = latestGap - baseline;
 
+    // Build baseline reference string: avoid stating "28-day baseline" if user never confirmed one.
+    final baselineRef = isCycleLengthUnknown
+        ? 'her emerging rhythm (baseline calibrating)'
+        : 'her $baseline-day baseline';
+
     if (deviation >= 4) {
       return CycleGapAnalysis(
         lastCycleGap: latestGap,
         deviationFromBaseline: deviation,
         regularity: CycleRegularity.delayed,
-        biologicalSummary: 'Last cycle was $latestGap days ($deviation days longer than her $baseline-day baseline).',
+        biologicalSummary: isCycleLengthUnknown
+            ? 'Last cycle was $latestGap days. Baseline rhythm is still calibrating from her real history.'
+            : 'Last cycle was $latestGap days ($deviation days longer than $baselineRef).',
         clinicalGuidanceDirective: 'Her cycle was delayed by $deviation days. Address this variation with deep endocrinological empathy: explain that the follicular phase stretched due to delayed ovulation (often caused by cortisol, psychological stress, circadian shift, travel, metabolic strain, or illness), while the luteal phase remains biologically fixed at 12-14 days. Reassure her that this is a healthy, protective nervous system response, not a failure of her body. Do not offer generic dos and donts.',
       );
     } else if (deviation <= -4) {
@@ -344,7 +354,9 @@ class CycleEngine {
         lastCycleGap: latestGap,
         deviationFromBaseline: deviation,
         regularity: CycleRegularity.early,
-        biologicalSummary: 'Last cycle was $latestGap days (${-deviation} days shorter than her $baseline-day baseline).',
+        biologicalSummary: isCycleLengthUnknown
+            ? 'Last cycle was $latestGap days. Baseline rhythm is still calibrating from her real history.'
+            : 'Last cycle was $latestGap days (${-deviation} days shorter than $baselineRef).',
         clinicalGuidanceDirective: 'Her cycle arrived ${-deviation} days early. Explain the biology: early follicular recruitment, anovulatory cycle, or a shorter luteal phase due to lower progesterone synthesis. Guide her with nourishing foods that support progesterone and nervous system grounding, without sounding clinical or giving generic clichés.',
       );
     } else if (overdueDays >= 4) {
@@ -361,7 +373,9 @@ class CycleEngine {
         lastCycleGap: latestGap,
         deviationFromBaseline: deviation,
         regularity: CycleRegularity.normal,
-        biologicalSummary: 'Cycle gap is $latestGap days (consistent with her $baseline-day rhythm).',
+        biologicalSummary: isCycleLengthUnknown
+            ? 'Cycle gap is $latestGap days. Baseline is calibrating from her real history.'
+            : 'Cycle gap is $latestGap days (consistent with $baselineRef).',
         clinicalGuidanceDirective: 'Cycle rhythm is consistent with baseline.',
       );
     }

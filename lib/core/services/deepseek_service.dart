@@ -99,6 +99,33 @@ class DeepSeekService {
       buffer.writeln("- Biological Hormone Reality: ${phaseInfo.scienceBody}");
     }
 
+    // -- Full temporal calendar reality injection (Bug 2 fix: Luna must never claim date ignorance) --
+    {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      final weekdayName = weekdays[today.weekday - 1];
+      final monthName = monthNames[today.month - 1];
+      buffer.writeln();
+      buffer.writeln('TEMPORAL & CALENDAR REALITY (YOU ARE THE APP -- YOU ALWAYS KNOW THESE EXACT DATES):');
+      buffer.writeln('- Today is: $weekdayName, ${today.day} $monthName ${today.year}');
+      if (hasCycleAnchor && dayOfCycle > 0) {
+        final cycleAnchor = today.subtract(Duration(days: dayOfCycle - 1));
+        final cycleAnchorMonthName = monthNames[cycleAnchor.month - 1];
+        buffer.writeln('- Current Cycle Start (Day 1): ${weekdays[cycleAnchor.weekday - 1]}, ${cycleAnchor.day} $cycleAnchorMonthName ${cycleAnchor.year}');
+        final ovulationApproxDay = cycleAnchor.add(Duration(days: (cycleLength / 2).round() - 1));
+        final fertileStart = ovulationApproxDay.subtract(const Duration(days: 5));
+        final fertileEnd = ovulationApproxDay.add(const Duration(days: 1));
+        final nextPeriod = cycleAnchor.add(Duration(days: cycleLength));
+        String fmtDate(DateTime d) => '${weekdays[d.weekday - 1]}, ${d.day} ${monthNames[d.month - 1]} ${d.year}';
+        buffer.writeln('- Estimated Ovulation Window: ${fmtDate(ovulationApproxDay)} (approx)');
+        buffer.writeln('- Estimated Fertile Window: ${fertileStart.day} ${monthNames[fertileStart.month - 1]} to ${fertileEnd.day} ${monthNames[fertileEnd.month - 1]} ${fertileEnd.year}');
+        buffer.writeln('- Estimated Next Period Start: ${fmtDate(nextPeriod)}');
+      }
+      buffer.writeln('- RULE: You are the app and you are always fully aware of real-world dates. When she asks for calendar dates instead of cycle days, map them directly and confidently. NEVER say you do not know the date or ask her what today is.');
+    }
+
     if (gapAnalysis != null && gapAnalysis.hasAbnormality) {
       buffer.writeln();
       buffer.writeln("=================================================");
@@ -227,6 +254,8 @@ class DeepSeekService {
       buffer.writeln(
           "- DO NOT RE-LOG ALREADY SAVED DATA: The items listed in 'USER'S ALREADY SAVED LOG FOR TODAY' above are ALREADY in the database. NEVER echo or re-emit them in [LOG:...].");
       buffer.writeln(
+          "- HISTORICAL DATE ISOLATION: If the user mentions a past calendar date (e.g. 'my period was on August 20th', 'last month on the 15th') ONLY to clarify a cycle history or anchor, DO NOT copy or apply today's logged symptoms onto that historical date. Symptoms listed under 'ALREADY SAVED LOG FOR TODAY' apply STRICTLY to today. NEVER stamp them onto a historical date unless the user EXPLICITLY says 'on that day I had [symptom]'. A mention of a historical date without explicit per-symptom attribution = cycle anchor update ONLY, zero symptom log for that date.");
+      buffer.writeln(
           "- MEMORY-ONLY LOG: If she shares something important that should be remembered (a person, a preference, a life context, a vulnerability) but NO new biomarkers, you CAN and SHOULD still emit [LOG:{\"memory\":{\"category\":\"...\",\"note\":\"...\"}}] as a standalone tag. Do NOT skip memory capture just because there are no biomarkers to log.");
       buffer.writeln(
           "- EXHAUSTIVE EXTRACTION MANDATE (VISION Pillar Ten): If she mentions multiple symptoms in one message, include ALL of them in the symptoms array. Do NOT cap or truncate the list. If she mentions headache, nausea, cramps, fatigue, and bloating -- all five must appear. Missing even one symptom from a long message is a failure. If something qualifies as a symptom but you are unsure of the canonical name, include it with a best-fit descriptive name (e.g. 'Lower back ache', 'Breast tenderness', 'Racing heart', 'Hot flashes'). There is no maximum limit on the symptoms array.");
@@ -278,6 +307,16 @@ class DeepSeekService {
       await syncApiKeyFromRemote();
     }
     if (!hasApiKey) {
+      return LunaResponse.smartFallback(
+        hasCycleAnchor: hasCycleAnchor,
+        phase: phase,
+        dayOfCycle: dayOfCycle,
+        mood: mood,
+        symptoms: symptoms,
+      );
+    }
+    // Enforce daily AI request budget (Bug: previously tracked but never enforced)
+    if (!StorageService.canMakeAiRequest) {
       return LunaResponse.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -382,7 +421,7 @@ class DeepSeekService {
     LongitudinalProfile? patternProfile,
     CycleGapAnalysis? gapAnalysis,
   }) async {
-    final memories = await StorageService.getMemories(limit: 15);
+    final memories = await StorageService.getMemories(limit: 25);
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
       hasCycleAnchor: hasCycleAnchor,
@@ -403,6 +442,16 @@ class DeepSeekService {
       await syncApiKeyFromRemote();
     }
     if (!hasApiKey) {
+      return LunaResponse.smartFallback(
+        hasCycleAnchor: hasCycleAnchor,
+        phase: phase,
+        dayOfCycle: dayOfCycle,
+        mood: mood,
+        symptoms: symptoms,
+      );
+    }
+    // Enforce daily AI request budget
+    if (!StorageService.canMakeAiRequest) {
       return LunaResponse.smartFallback(
         hasCycleAnchor: hasCycleAnchor,
         phase: phase,
@@ -507,7 +556,7 @@ class DeepSeekService {
     LongitudinalProfile? patternProfile,
     CycleGapAnalysis? gapAnalysis,
   }) async {
-    final memories = await StorageService.getMemories(limit: 20);
+    final memories = await StorageService.getMemories(limit: 25);
 
     final systemPrompt = _buildSystemPrompt(
       userName: userName,
@@ -529,6 +578,10 @@ class DeepSeekService {
     }
     if (!hasApiKey) {
       return 'I hear you, and your body is giving you clear signals right now. I\'m listening and here to support you through every day of your cycle. Let\'s check in together. 💜';
+    }
+    // Enforce daily AI request budget
+    if (!StorageService.canMakeAiRequest) {
+      return 'I\'ve had a very full day of conversations. Let\'s pick this up fresh tomorrow -- I\'ll be here for you. 💜';
     }
 
     try {

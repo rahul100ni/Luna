@@ -215,12 +215,12 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     if (_selectedMood == null && _textController.text.trim().isEmpty) return;
     if (_loading) return;
 
-    // Clear previous session when user starts a fresh check-in
-    await StorageService.clearLastChatSession();
     // Lock session date at check-in start -- prevents midnight drift
     _sessionDate = DateTime.now();
     setState(() {
-      _chatHistory = [];
+      // NOTE: We intentionally DO NOT clear _chatHistory here.
+      // Chat history is preserved across check-ins so the user can review past conversations.
+      // New check-in exchanges are appended to the stream in _enterChatMode.
       _lastAutoLogSummary = null;
       _isCheckInLogExpanded = false;
       _expandedChatLogIndices.clear();
@@ -338,7 +338,10 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
             : 'Hey Luna';
 
     setState(() {
+      // Append new check-in exchange to existing history instead of replacing it.
+      // This preserves prior conversations so the user can always scroll back.
       _chatHistory = [
+        ..._chatHistory,
         _ChatMessage(text: userMsg, isUser: true, time: DateTime.now()),
         _ChatMessage(
           text: _response!.validation,
@@ -961,6 +964,29 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
     _scrollToBottom();
   }
 
+  /// Returns true if the user explicitly attributes symptoms to a specific past date.
+  /// e.g. "on that day I had cramps", "back then I was feeling nauseous", "on August 20 I felt terrible".
+  /// This is used by the Ghost Symptom Guard to prevent copying today's biomarkers onto historical anchor dates.
+  bool _hasExplicitSymptomAttributionForDate(String text) {
+    final lower = text.toLowerCase();
+    // Explicit "on that day" / "back then" / "at that time" patterns
+    if (lower.contains('on that day') ||
+        lower.contains('that day i') ||
+        lower.contains('back then i') ||
+        lower.contains('at that time i') ||
+        lower.contains('on that date')) {
+      return true;
+    }
+    // Patterns like "on August 20 I had/felt/was"
+    if (RegExp(
+      r'\b(on|back)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d+\s+(i\s+had|i\s+was|i\s+felt|i\s+got|i\s+experienced)',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      return true;
+    }
+    return false;
+  }
+
   bool _isSymptomCorroborated(String symptom, String lowerText) {
     final sLower = symptom.toLowerCase().trim();
     switch (sLower) {
@@ -1472,7 +1498,26 @@ class _LunaAiScreenState extends ConsumerState<LunaAiScreen>
         targetDate.month == now.month &&
         targetDate.day == now.day;
 
-    // 4. CRITICAL BIOLOGICAL MANDATE:
+    // GHOST SYMPTOM GUARD (Bug 1 fix):
+    // If the user is referencing a past date WITHOUT explicitly attributing symptoms to it
+    // (e.g. "my last period was on Aug 20" -- purely an anchor mention), do NOT stamp today's
+    // already-logged symptoms onto that historical date. Clear all non-period biomarkers.
+    if (!isToday && !_hasExplicitSymptomAttributionForDate(userText)) {
+      aiEmittedSymptoms.clear();
+      // Keep aiEmittedPeriodStarted and aiEmittedFlow -- those ARE date-specific.
+      // Clear subjective biomarkers that belong to today's context, not the historical date.
+      aiEmittedCramps = null;
+      aiEmittedMood = null;
+      aiEmittedSleep = null;
+      aiEmittedEnergy = null;
+      aiEmittedNotes = null;
+      heuristicCramps = null;
+      heuristicMood = null;
+      heuristicSleep = null;
+      heuristicEnergy = null;
+      heuristicSymptoms.clear();
+    }
+
     // If the log is for a past date, or user specified a specific period date,
     // do NOT anchor period start to TODAY.
     bool? resolvedPeriodStarted = detectedPeriodStarted;
