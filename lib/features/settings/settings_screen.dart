@@ -989,7 +989,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.only(bottom: 32),
               child: Column(children: [
                 Text(
-                  'Luna v1.1.24.55',
+                  'Luna v1.1.24.61 (Beta-1)',
                   style: GoogleFonts.dmSans(
                     fontSize: 11,
                     color: colors.onSurface.withValues(alpha: 0.18),
