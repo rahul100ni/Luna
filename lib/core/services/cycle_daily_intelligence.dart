@@ -16,7 +16,7 @@ class DayGuidance {
 
 class CycleDailyIntelligence {
   static const Map<int, DayGuidance> _dailyMap = {
-    // ── MENSTRUAL PHASE (Days 1–5) ──────────────────────────────────
+    // ── MENSTRUAL PHASE (Days 1-5) ──────────────────────────────────
     1: DayGuidance(
       dayHighlight: 'Cycle Onset · Peak Uterine Contractions',
       doThis: 'Use heat therapy & restful postures: heat directly relaxes uterine smooth muscles and reduces cramping prostaglandins.',
@@ -48,7 +48,7 @@ class CycleDailyIntelligence {
       biologicalContext: 'Endometrial repair is underway; ovarian follicles begin competing for maturation.',
     ),
 
-    // ── FOLLICULAR PHASE (Days 6–13) ────────────────────────────────
+    // ── FOLLICULAR PHASE (Days 6-13) ────────────────────────────────
     6: DayGuidance(
       dayHighlight: 'Early Follicular · Rising Estrogen',
       doThis: 'Introduce moderate cardio or progressive strength training: climbing estradiol increases insulin sensitivity.',
@@ -95,10 +95,10 @@ class CycleDailyIntelligence {
       dayHighlight: 'LH Surge · Highest Vitality',
       doThis: 'Push athletic personal records or lead high-stakes deliverables: testosterone joins peak estrogen.',
       avoidThis: 'Underestimating your drive: you are biologically at your monthly peak of stamina and resilience.',
-      biologicalContext: 'Luteinizing Hormone (LH) surges rapidly from the pituitary, preparing follicle release within 24–36 hrs.',
+      biologicalContext: 'Luteinizing Hormone (LH) surges rapidly from the pituitary, preparing follicle release within 24-36 hrs.',
     ),
 
-    // ── OVULATION PHASE (Days 14–16) ────────────────────────────────
+    // ── OVULATION PHASE (Days 14-16) ────────────────────────────────
     14: DayGuidance(
       dayHighlight: 'Ovulation Peak · Maximum Magnetism',
       doThis: 'Step into the spotlight, have pivotal conversations, and radiate confidence: vocal clarity and facial symmetry peak.',
@@ -118,7 +118,7 @@ class CycleDailyIntelligence {
       biologicalContext: 'Estrogen dips briefly while progesterone climbs, shifting focus from external to internal.',
     ),
 
-    // ── EARLY LUTEAL PHASE (Days 17–22) ─────────────────────────────
+    // ── EARLY LUTEAL PHASE (Days 17-22) ─────────────────────────────
     17: DayGuidance(
       dayHighlight: 'Progesterone Awakening · Cozy Focus',
       doThis: 'Organize, edit, categorize, and complete open loops: progesterone activates calm, detail-oriented GABA pathways.',
@@ -127,9 +127,9 @@ class CycleDailyIntelligence {
     ),
     18: DayGuidance(
       dayHighlight: 'Metabolic Warmth · Calorie Burn Rises',
-      doThis: 'Nourish with warm complex carbs (sweet potatoes, oats, quinoa): resting metabolic rate rises by 100–300 kcal/day.',
+      doThis: 'Nourish with warm complex carbs (sweet potatoes, oats, quinoa): resting metabolic rate rises by 100-300 kcal/day.',
       avoidThis: 'Extreme caloric restriction or skipping meals: progesterone metabolism strictly requires steady fuel.',
-      biologicalContext: 'Basal body temperature increases by ~0.3–0.5°C; thyroid and metabolic demands climb.',
+      biologicalContext: 'Basal body temperature increases by ~0.3-0.5°C; thyroid and metabolic demands climb.',
     ),
     19: DayGuidance(
       dayHighlight: 'Steady Endurance · Pilates & Resistance',
@@ -156,7 +156,7 @@ class CycleDailyIntelligence {
       biologicalContext: 'The corpus luteum begins its scheduled sunset if pregnancy has not occurred.',
     ),
 
-    // ── LATE LUTEAL / PMS PHASE (Days 23–28+) ────────────────────────
+    // ── LATE LUTEAL / PMS PHASE (Days 23-28+) ────────────────────────
     23: DayGuidance(
       dayHighlight: 'Hormone Taper · Amygdala Sensitization',
       doThis: 'Supplement with magnesium and prioritize hydration: relaxes pelvic smooth muscles and reduces fluid pooling.',
@@ -211,7 +211,7 @@ class CycleDailyIntelligence {
       return _dailyMap[dayOfCycle]!;
     }
 
-    // For longer cycles (e.g. Day 29–35)
+    // For longer cycles (e.g. Day 29-35)
     if (dayOfCycle > 28) {
       return DayGuidance(
         dayHighlight: 'Extended Cycle Day $dayOfCycle · Gentle Holding Pattern',

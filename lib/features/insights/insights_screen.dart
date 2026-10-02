@@ -548,28 +548,28 @@ class _CycleBlueprintCard extends ConsumerWidget {
               _PhasePill(
                 emoji: '🩸',
                 label: 'Menstrual',
-                range: '1–$mDays d',
+                range: '1-$mDays d',
                 color: const Color(0xFFE07070),
                 onTap: () => _showPhaseDetails(context, CyclePhase.menstrual),
               ),
               _PhasePill(
                 emoji: '🌱',
                 label: 'Follicular',
-                range: '${mDays + 1}–${mDays + fDays} d',
+                range: '${mDays + 1}-${mDays + fDays} d',
                 color: const Color(0xFF4CAF87),
                 onTap: () => _showPhaseDetails(context, CyclePhase.follicular),
               ),
               _PhasePill(
                 emoji: '✨',
                 label: 'Ovulation',
-                range: '${mDays + fDays + 1}–${mDays + fDays + oDays} d',
+                range: '${mDays + fDays + 1}-${mDays + fDays + oDays} d',
                 color: const Color(0xFFF2B43A),
                 onTap: () => _showPhaseDetails(context, CyclePhase.ovulatory),
               ),
               _PhasePill(
                 emoji: '🌙',
                 label: 'Luteal',
-                range: '${cycleLen - lDays + 1}–$cycleLen d',
+                range: '${cycleLen - lDays + 1}-$cycleLen d',
                 color: const Color(0xFF9B84D4),
                 onTap: () => _showPhaseDetails(context, CyclePhase.lateLuteal),
               ),
@@ -1172,7 +1172,7 @@ class _EnergyRhythmCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '1–5 Scale',
+                  '1-5 Scale',
                   style: GoogleFonts.dmSans(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
@@ -1614,7 +1614,7 @@ class _PhaseIntelligenceSection extends StatelessWidget {
     switch (currentPhase) {
       case CyclePhase.menstrual:
         nutritionTip = 'Iron replenishing & magnesium-dense foods. Dark chocolate (70%+), red lentils, warm bone broths, and ginger tea.';
-        sleepTip = 'Sleep needs increase by 1–2 hours. Uterine contractions demand cellular repair during deep non-REM delta wave sleep.';
+        sleepTip = 'Sleep needs increase by 1-2 hours. Uterine contractions demand cellular repair during deep non-REM delta wave sleep.';
         workoutTip = 'Restorative movement only. Gentle walks, pelvic yoga, and slow stretching. Avoid strenuous HIIT to prevent cortisol elevation.';
         break;
       case CyclePhase.follicular:
@@ -1628,12 +1628,12 @@ class _PhaseIntelligenceSection extends StatelessWidget {
         workoutTip = 'Maximum strength and high pain tolerance. Optimal time for personal records and high-intensity sprint training.';
         break;
       case CyclePhase.earlyLuteal:
-        nutritionTip = 'Progesterone elevates metabolic rate by 100–300 kcal/day. Prioritize magnesium, healthy fats (avocado, seeds), and steady protein.';
+        nutritionTip = 'Progesterone elevates metabolic rate by 100-300 kcal/day. Prioritize magnesium, healthy fats (avocado, seeds), and steady protein.';
         sleepTip = 'Core body temperature rises by ~0.5°C. Keep your bedroom cooler (18°C) to prevent night waking and support REM cycles.';
         workoutTip = 'Shift towards steady-state endurance, moderate resistance, and Pilates. Longer rest periods between sets.';
         break;
       case CyclePhase.lateLuteal:
-        nutritionTip = 'Serotonin production depends on steady blood sugar. Eat complex carbs every 3–4 hours (sweet potato, oats) to prevent mood crashes.';
+        nutritionTip = 'Serotonin production depends on steady blood sugar. Eat complex carbs every 3-4 hours (sweet potato, oats) to prevent mood crashes.';
         sleepTip = 'Progesterone drop can cause light, fragmented sleep. A warm magnesium bath and zero caffeine after 12pm greatly helps.';
         workoutTip = 'Cortisol sensitivity is heightened. Avoid high-stress workouts. Embrace walking in nature, slow swimming, and gentle movement.';
         break;
@@ -2671,7 +2671,7 @@ class _PatternTileState extends State<_PatternTile> {
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      'Days ${pattern.cycleDays.first}–${pattern.cycleDays.last}',
+                      'Days ${pattern.cycleDays.first}-${pattern.cycleDays.last}',
                       style: GoogleFonts.dmSans(
                         fontSize: 11,
                         fontWeight: FontWeight.w500,

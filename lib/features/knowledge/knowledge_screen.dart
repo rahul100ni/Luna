@@ -439,11 +439,11 @@ class _PhaseDeepDiveState extends ConsumerState<_PhaseDeepDive> {
 
   String _getDayRange(CyclePhase phase) {
     switch (phase) {
-      case CyclePhase.menstrual: return '1–5';
-      case CyclePhase.follicular: return '6–13';
-      case CyclePhase.ovulatory: return '14–16';
-      case CyclePhase.earlyLuteal: return '17–22';
-      case CyclePhase.lateLuteal: return '23–28';
+      case CyclePhase.menstrual: return '1-5';
+      case CyclePhase.follicular: return '6-13';
+      case CyclePhase.ovulatory: return '14-16';
+      case CyclePhase.earlyLuteal: return '17-22';
+      case CyclePhase.lateLuteal: return '23-28';
     }
   }
 }

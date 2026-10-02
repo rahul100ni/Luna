@@ -383,11 +383,11 @@ class _LegendSheet extends StatelessWidget {
     final folStart = periodLen + 1;
     final folEnd = 13.clamp(folStart, 16);
     final items = [
-      (const Color(0xFFD94F6E), '🩸', 'Menstrual Phase', 'Days 1–$periodLen · Period flow & deep system reset'),
-      (const Color(0xFF4CAF87), '🌱', 'Follicular Phase', 'Days $folStart–$folEnd · Rising estrogen & mental drive'),
-      (const Color(0xFFF2B43A), '✨', 'Ovulation Peak', 'Days 14–16 · Peak energy, confidence & fertile window'),
-      (const Color(0xFFE8A87C), '🍂', 'Early Luteal', 'Days 17–22 · Calming progesterone & focus'),
-      (const Color(0xFF9B84D4), '🌙', 'Late Luteal (PMS)', 'Days 23–28 · Amygdala sensitivity & gentle pacing'),
+      (const Color(0xFFD94F6E), '🩸', 'Menstrual Phase', 'Days 1-$periodLen · Period flow & deep system reset'),
+      (const Color(0xFF4CAF87), '🌱', 'Follicular Phase', 'Days $folStart-$folEnd · Rising estrogen & mental drive'),
+      (const Color(0xFFF2B43A), '✨', 'Ovulation Peak', 'Days 14-16 · Peak energy, confidence & fertile window'),
+      (const Color(0xFFE8A87C), '🍂', 'Early Luteal', 'Days 17-22 · Calming progesterone & focus'),
+      (const Color(0xFF9B84D4), '🌙', 'Late Luteal (PMS)', 'Days 23-28 · Amygdala sensitivity & gentle pacing'),
     ];
 
     return Container(
